@@ -256,31 +256,34 @@ const NOTIF_ICON = {
 };
 
 // ─── Transfer-mode badge colour map ──────────────────────────────────────────
-const MODE_BADGE = {
-  NEFT     : 'badge-info',
-  RTGS     : 'badge-brand',
-  IMPS     : 'badge-warning',
-  INTERNAL : 'badge-success',
-  SALARY   : 'badge-success',
-  INTEREST : 'badge-info',
-  SYSTEM   : 'badge-info',
-  CHARGE   : 'badge-danger',
-  REVERSAL : 'badge-warning',
+// Each badge uses a solid dark container bg-[#1c1c2d] with a crisp micro-border
+// instead of the semi-transparent Tailwind utility classes, matching the
+// original design token specification exactly.
+const MODE_BADGE_TEXT = {
+  NEFT     : 'text-blue-400',
+  RTGS     : 'text-brand-400',
+  IMPS     : 'text-yellow-400',
+  INTERNAL : 'text-green-400',
+  SALARY   : 'text-green-400',
+  INTEREST : 'text-blue-400',
+  SYSTEM   : 'text-slate-300',
+  CHARGE   : 'text-red-400',
+  REVERSAL : 'text-yellow-400',
 };
 
 // ─── Quick-action tile ────────────────────────────────────────────────────────
-function QuickAction({ to, icon: Icon, label, color }) {
+// Container: solid dark bg-[#161622], crisp micro-border border-white/[0.04],
+// hover lifts the border to white/[0.1]. Icon badge: rounded-2xl bg-[#1c1c2d].
+function QuickAction({ to, icon: Icon, label, iconTextColor }) {
   return (
     <Link
       to={to}
-      className="glass-card-hover p-4 flex flex-col items-center gap-2.5 text-center"
+      className="bg-[#161622] border border-white/[0.04] hover:border-white/[0.1] rounded-2xl p-4 flex flex-col items-center gap-2.5 text-center transition cursor-pointer group"
     >
-      <div
-        className={`w-11 h-11 rounded-2xl flex items-center justify-center ${color}`}
-      >
-        <Icon className="text-xl text-white" />
+      <div className="w-11 h-11 rounded-2xl bg-[#1c1c2d] border border-white/[0.04] flex items-center justify-center group-hover:scale-105 transition-transform">
+        <Icon className={`text-xl ${iconTextColor}`} />
       </div>
-      <p className="text-dark-200 text-xs font-medium leading-tight">{label}</p>
+      <p className="text-slate-300 text-xs font-medium leading-tight">{label}</p>
     </Link>
   );
 }
@@ -307,7 +310,7 @@ function TransactionRow({ tx, index }) {
   const amount = parseFloat(tx.amount) || 0;
   const balanceAfter = parseFloat(tx.balance_after) || 0;
 
-  const modeBadgeClass = MODE_BADGE[tx.transfer_mode] || 'badge-info';
+  const modeBadgeTextColor = MODE_BADGE_TEXT[tx.transfer_mode] || 'text-slate-400';
 
   return (
     <motion.div
@@ -334,10 +337,13 @@ function TransactionRow({ tx, index }) {
           {description}
         </p>
         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-          <span className={`${modeBadgeClass} py-0 px-1.5 text-[10px]`}>
+          {/* Transfer mode badge — solid dark container bg-[#1c1c2d] */}
+          <span
+            className={`inline-flex items-center bg-[#1c1c2d] border border-white/[0.04] rounded-md px-1.5 py-0.5 text-[10px] font-medium ${modeBadgeTextColor}`}
+          >
             {tx.transfer_mode || 'TXN'}
           </span>
-          <span className="text-dark-400 text-xs">
+          <span className="text-slate-500 text-xs">
             {displayDate}{displayTime ? `, ${displayTime}` : ''}
           </span>
         </div>
@@ -352,7 +358,7 @@ function TransactionRow({ tx, index }) {
         >
           {isCredit ? '+' : '-'}₹{amount.toLocaleString('en-IN')}
         </p>
-        <p className="text-dark-500 text-[10px] mt-0.5">
+        <p className="text-slate-600 text-[10px] mt-0.5">
           Bal ₹{balanceAfter.toLocaleString('en-IN')}
         </p>
       </div>
@@ -901,7 +907,7 @@ export default function DashboardPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.08 }}
-                  className="glass-card p-3 text-center"
+                  className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-3 text-center"
                 >
                   <div
                     className={`w-8 h-8 rounded-xl ${stat.bg} flex items-center justify-center mx-auto mb-2`}
@@ -911,49 +917,44 @@ export default function DashboardPage() {
                   <p className="text-white text-sm font-bold leading-tight">
                     {stat.value}
                   </p>
-                  <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">
+                  <p className="text-slate-500 text-[10px] mt-0.5 leading-tight">
                     {stat.label}
                   </p>
                 </motion.div>
               ))}
             </div>
 
-            {/* Quick actions */}
-            <div>
-              <p className="text-dark-300 text-xs uppercase tracking-widest font-medium mb-3">
-                Quick Actions
-              </p>
-              <div className="grid grid-cols-4 gap-2">
+            {/* Quick shortcuts card */}
+            <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-white text-sm font-semibold">Quick Shortcuts</p>
+              </div>
+              {/* 3-column grid as per original spec */}
+              <div className="grid grid-cols-3 gap-4">
                 <QuickAction
                   to="/dashboard/transfer"
                   icon={RiSendPlaneLine}
-                  label="Transfer"
-                  color="bg-brand-500"
+                  label="Send Money"
+                  iconTextColor="text-red-400"
                 />
                 <QuickAction
                   to="/dashboard/statement"
                   icon={RiFileTextLine}
                   label="Statement"
-                  color="bg-blue-500"
+                  iconTextColor="text-purple-400"
                 />
                 <QuickAction
                   to="/dashboard/beneficiaries"
                   icon={RiGroupLine}
-                  label="Beneficiaries"
-                  color="bg-purple-500"
-                />
-                <QuickAction
-                  to="/dashboard/analytics"
-                  icon={RiTrendingUpLine}
-                  label="Analytics"
-                  color="bg-emerald-500"
+                  label="Deposit"
+                  iconTextColor="text-emerald-400"
                 />
               </div>
             </div>
 
             {/* Account detail block */}
-            <div className="glass-card p-4 space-y-3">
-              <p className="text-dark-300 text-xs uppercase tracking-widest font-medium">
+            <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-5 space-y-3">
+              <p className="text-slate-400 text-xs uppercase tracking-widest font-medium">
                 Account Details
               </p>
               {[
@@ -989,7 +990,7 @@ export default function DashboardPage() {
                 },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between text-sm">
-                  <span className="text-dark-300">{label}</span>
+                  <span className="text-slate-400">{label}</span>
                   <span className="text-white font-medium font-mono">{value}</span>
                 </div>
               ))}
@@ -1000,7 +1001,7 @@ export default function DashboardPage() {
           <div className="xl:col-span-3 space-y-5">
 
             {/* Activity analytics — SVG chart */}
-            <div className="glass-card p-5">
+            <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <RiBarChartLine className="text-brand-400 text-lg" />
@@ -1008,7 +1009,7 @@ export default function DashboardPage() {
                     Activity Analytics
                   </p>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-dark-300">
+                <div className="flex items-center gap-4 text-xs text-slate-400">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-green-400 inline-block" />
                     Credits
@@ -1034,7 +1035,7 @@ export default function DashboardPage() {
               {/* Summary totals below chart */}
               <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-white/[0.05]">
                 <div className="text-center">
-                  <p className="text-dark-400 text-xs mb-1">Net Flow</p>
+                  <p className="text-slate-500 text-xs mb-1">Net Flow</p>
                   <p
                     className={`font-bold text-sm ${
                       totalCreditAmount >= totalDebitAmount
@@ -1049,7 +1050,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="text-center">
-                  <p className="text-dark-400 text-xs mb-1">Avg Credit</p>
+                  <p className="text-slate-500 text-xs mb-1">Avg Credit</p>
                   <p className="text-green-400 font-bold text-sm">
                     ₹
                     {totalTransactionCount > 0 &&
@@ -1064,7 +1065,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="text-center">
-                  <p className="text-dark-400 text-xs mb-1">Avg Debit</p>
+                  <p className="text-slate-500 text-xs mb-1">Avg Debit</p>
                   <p className="text-red-400 font-bold text-sm">
                     ₹
                     {totalTransactionCount > 0 &&
@@ -1081,32 +1082,33 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Transaction ledger table */}
-            <div className="glass-card overflow-hidden">
+            {/* Transaction ledger — Recent History card */}
+            <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl overflow-hidden">
+              {/* Card header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
                 <div className="flex items-center gap-2">
                   <RiExchangeLine className="text-brand-400 text-lg" />
                   <p className="text-white font-semibold text-sm">
-                    Recent Transactions
+                    Recent History
                   </p>
                 </div>
                 <Link
                   to="/dashboard/transactions"
                   className="text-brand-400 hover:text-brand-300 text-xs flex items-center gap-1 transition-colors"
                 >
-                  View all <RiArrowRightLine />
+                  View All <RiArrowRightLine />
                 </Link>
               </div>
 
               {/* Column header row */}
-              <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-2.5 border-b border-white/[0.04] text-dark-400 text-xs uppercase tracking-wide">
+              <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-2.5 border-b border-white/[0.04] text-slate-500 text-xs uppercase tracking-wide">
                 <div className="col-span-1" />
                 <div className="col-span-4">Description</div>
                 <div className="col-span-3">Mode / Date</div>
                 <div className="col-span-4 text-right">Amount / Balance</div>
               </div>
 
-              {/* Rows */}
+              {/* History log items — inner container bg-[#161622] */}
               {txLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <div
@@ -1115,22 +1117,22 @@ export default function DashboardPage() {
                   />
                 </div>
               ) : transactions.length === 0 ? (
-                <div className="text-center py-12">
-                  <RiExchangeLine className="text-dark-400 text-5xl mx-auto mb-2" />
-                  <p className="text-dark-400 text-sm">No transactions yet</p>
-                  <p className="text-dark-500 text-xs mt-1">
+                <div className="bg-[#161622] border border-white/[0.04] rounded-2xl mx-5 my-4 py-10 text-center">
+                  <RiExchangeLine className="text-slate-600 text-5xl mx-auto mb-2" />
+                  <p className="text-slate-500 text-sm">No transactions yet</p>
+                  <p className="text-slate-600 text-xs mt-1">
                     Your transaction history will appear here
                   </p>
                 </div>
               ) : (
-                <div className="px-5">
+                <div className="bg-[#161622] border border-white/[0.04] rounded-2xl mx-5 my-4 px-4">
                   {transactions.slice(0, 10).map((tx, index) => (
                     <TransactionRow key={tx.id || index} tx={tx} index={index} />
                   ))}
                 </div>
               )}
 
-              {/* Footer */}
+              {/* Footer — show more link */}
               {transactions.length > 10 && (
                 <div className="px-5 py-3 border-t border-white/[0.04]">
                   <Link
@@ -1145,8 +1147,8 @@ export default function DashboardPage() {
             </div>
 
             {/* Bank information footer card */}
-            <div className="glass-card p-4">
-              <div className="flex items-center gap-3 mb-3">
+            <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-5">
+              <div className="flex items-center gap-3 mb-4">
                 <div className="w-8 h-8 rounded-xl bg-brand-500/10 flex items-center justify-center flex-shrink-0">
                   <RiBankLine className="text-brand-400 text-sm" />
                 </div>
@@ -1166,8 +1168,8 @@ export default function DashboardPage() {
                     ).toLocaleString('en-IN')}`,
                   },
                 ].map(({ label, value }) => (
-                  <div key={label} className="bg-dark-700/40 rounded-xl p-3">
-                    <p className="text-dark-400 text-[10px] uppercase tracking-wide mb-1">
+                  <div key={label} className="bg-[#161622] border border-white/[0.04] rounded-xl p-3">
+                    <p className="text-slate-500 text-[10px] uppercase tracking-wide mb-1">
                       {label}
                     </p>
                     <p className="text-white text-xs font-medium font-mono">{value}</p>
