@@ -1,0 +1,273 @@
+const bcrypt = require('bcryptjs');
+const path = require('path');
+const fs = require('fs');
+const { User, Account, KYCDocument, OTP, SecureLink, Notification } = require('../models');
+const {
+  generateCustomerID, generateAccountNumber, generateIFSC,
+  generateSecureToken, getSecureLinkExpiry, hashValue, generateReferralCode, isExpired,
+} = require('../utils/helpers');
+const {
+  sendKYCUnderReviewEmail, sendVideoKYCEmail, sendAccountApprovedEmail,
+} = require('../services/emailService');
+const { createAuditLog } = require('../middleware/auditLogger');
+const { success, error, badRequest, notFound, created } = require('../utils/apiResponse');
+const logger = require('../utils/logger');
+
+// ─── Submit Account Opening Application ───────────────────────────────────────
+exports.openAccount = async (req, res) => {
+  try {
+    const {
+      firstName, lastName, email, phone, dateOfBirth, gender,
+      fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
+      addressLine1, addressLine2, city, state, pincode, country,
+      aadhaarNumber, panNumber, passportNumber,
+      accountType,
+    } = req.body;
+
+    // Check duplicates
+    const existingEmail = await User.findOne({ where: { email } });
+    if (existingEmail) return badRequest(res, 'An account with this email already exists.');
+
+    const existingPhone = await User.findOne({ where: { phone } });
+    if (existingPhone) return badRequest(res, 'An account with this phone number already exists.');
+
+    // Generate IDs
+    let customerId;
+    let isUnique = false;
+    while (!isUnique) {
+      customerId = generateCustomerID();
+      const existing = await User.findOne({ where: { customer_id: customerId } });
+      if (!existing) isUnique = true;
+    }
+
+    // Create user
+    const user = await User.create({
+      customer_id: customerId,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      phone,
+      date_of_birth: dateOfBirth,
+      gender,
+      father_name: fatherName,
+      mother_name: motherName,
+      marital_status: maritalStatus,
+      nationality: nationality || 'Indian',
+      occupation,
+      annual_income: annualIncome,
+      address_line1: addressLine1,
+      address_line2: addressLine2,
+      city,
+      state,
+      pincode,
+      country: country || 'India',
+      aadhaar_number: aadhaarNumber,
+      pan_number: panNumber,
+      passport_number: passportNumber,
+      account_type: accountType || 'savings',
+      kyc_status: 'pending',
+      account_status: 'pending',
+      email_verified: true, // verified during OTP step
+      referral_code: generateReferralCode(firstName),
+      ip_address: req.ip,
+      device_fingerprint: req.headers['user-agent'],
+    });
+
+    // Save uploaded documents
+    const docTypeMap = {
+      aadhaar: 'aadhaar',
+      pan: 'pan',
+      passport: 'passport',
+      selfie: 'selfie',
+      signature: 'signature',
+      address_proof: 'address_proof',
+    };
+
+    if (req.files) {
+      for (const [fieldName, docType] of Object.entries(docTypeMap)) {
+        const fileArr = req.files[fieldName];
+        if (fileArr && fileArr[0]) {
+          const file = fileArr[0];
+          await KYCDocument.create({
+            user_id: user.id,
+            document_type: docType,
+            file_path: file.path,
+            file_name: file.originalname,
+            file_size: file.size,
+            mime_type: file.mimetype,
+          });
+        }
+      }
+    }
+
+    // Send review email
+    await sendKYCUnderReviewEmail(email, firstName, customerId);
+
+    // Update kyc status to under_review
+    await user.update({ kyc_status: 'under_review' });
+
+    await createAuditLog({
+      userId: user.id,
+      action: 'ACCOUNT_APPLICATION_SUBMITTED',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Account opening application by ${email}`,
+    });
+
+    return created(res, {
+      customerId,
+      message: 'Application submitted successfully. Documents are under review.',
+    }, 'Application submitted successfully.');
+  } catch (err) {
+    logger.error(`Account opening error: ${err.message}`);
+    return error(res, 'Failed to submit application. Please try again.');
+  }
+};
+
+// ─── Video KYC — Verify Link ───────────────────────────────────────────────────
+exports.verifyVideoKYCLink = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const link = await SecureLink.findOne({ where: { token, purpose: 'video_kyc', used: false } });
+
+    if (!link) return badRequest(res, 'Invalid or expired Video KYC link.');
+    if (isExpired(link.expires_at)) {
+      await link.update({ used: true });
+      return badRequest(res, 'This Video KYC link has expired. Please contact support.');
+    }
+
+    const user = await User.findByPk(link.user_id, {
+      attributes: ['id', 'first_name', 'last_name', 'email', 'customer_id'],
+    });
+
+    return success(res, { valid: true, user }, 'Link is valid. Proceed with Video KYC.');
+  } catch (err) {
+    logger.error(`Video KYC link verify error: ${err.message}`);
+    return error(res, 'Failed to verify link.');
+  }
+};
+
+// ─── Submit Video KYC ─────────────────────────────────────────────────────────
+exports.submitVideoKYC = async (req, res) => {
+  try {
+    const { token } = req.body;
+    const link = await SecureLink.findOne({ where: { token, purpose: 'video_kyc', used: false } });
+
+    if (!link) return badRequest(res, 'Invalid or expired Video KYC link.');
+    if (isExpired(link.expires_at)) {
+      await link.update({ used: true });
+      return badRequest(res, 'Video KYC link expired.');
+    }
+
+    if (!req.file) return badRequest(res, 'Video recording is required.');
+
+    await KYCDocument.create({
+      user_id: link.user_id,
+      document_type: 'video_kyc',
+      file_path: req.file.path,
+      file_name: req.file.originalname,
+      file_size: req.file.size,
+      mime_type: req.file.mimetype,
+    });
+
+    await User.update({ video_kyc_completed: true, kyc_status: 'video_kyc_pending' }, {
+      where: { id: link.user_id },
+    });
+
+    await link.update({ used: true, used_at: new Date() });
+
+    await createAuditLog({
+      userId: link.user_id,
+      action: 'VIDEO_KYC_SUBMITTED',
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(res, {}, 'Video KYC submitted successfully. Account will be activated shortly.');
+  } catch (err) {
+    logger.error(`Video KYC submit error: ${err.message}`);
+    return error(res, 'Failed to submit Video KYC.');
+  }
+};
+
+// ─── Verify Setup Link ────────────────────────────────────────────────────────
+exports.verifySetupLink = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const link = await SecureLink.findOne({ where: { token, purpose: 'account_setup', used: false } });
+
+    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (isExpired(link.expires_at)) {
+      await link.update({ used: true });
+      return badRequest(res, 'Setup link has expired. Please contact support.');
+    }
+
+    return success(res, { valid: true }, 'Link is valid. Complete your account setup.');
+  } catch (err) {
+    return error(res, 'Failed to verify setup link.');
+  }
+};
+
+// ─── Get Account Details ──────────────────────────────────────────────────────
+exports.getAccountDetails = async (req, res) => {
+  try {
+    const account = await Account.findOne({
+      where: { user_id: req.user.id },
+    });
+    if (!account) return notFound(res, 'Account not found.');
+    return success(res, { account });
+  } catch (err) {
+    return error(res, 'Failed to fetch account details.');
+  }
+};
+
+// ─── Update Profile ───────────────────────────────────────────────────────────
+exports.updateProfile = async (req, res) => {
+  try {
+    const { accountNickname, darkMode, preferredLanguage, phone } = req.body;
+    const updates = {};
+    if (accountNickname !== undefined) updates.account_nickname = accountNickname;
+    if (darkMode !== undefined) updates.dark_mode = darkMode;
+    if (preferredLanguage) updates.preferred_language = preferredLanguage;
+
+    await User.update(updates, { where: { id: req.user.id } });
+
+    return success(res, {}, 'Profile updated successfully.');
+  } catch (err) {
+    return error(res, 'Failed to update profile.');
+  }
+};
+
+// ─── Request Card / Cheque Book ───────────────────────────────────────────────
+exports.requestCard = async (req, res) => {
+  try {
+    const { requestType, deliveryAddress } = req.body;
+    const { CardRequest } = require('../models');
+
+    const existing = await CardRequest.findOne({
+      where: { user_id: req.user.id, request_type: requestType, status: ['pending', 'processing'] },
+    });
+
+    if (existing) return badRequest(res, `A ${requestType} request is already in progress.`);
+
+    const cardReq = await CardRequest.create({
+      user_id: req.user.id,
+      request_type: requestType,
+      delivery_address: deliveryAddress || req.user.address_line1,
+    });
+
+    await Notification.create({
+      user_id: req.user.id,
+      title: `${requestType === 'debit_card' ? 'Debit Card' : 'Cheque Book'} Request Placed`,
+      message: `Your ${requestType.replace('_', ' ')} request has been placed and is being processed.`,
+      type: 'system',
+    });
+
+    return created(res, { requestId: cardReq.id }, 'Request placed successfully.');
+  } catch (err) {
+    logger.error(`Card request error: ${err.message}`);
+    return error(res, 'Failed to place request.');
+  }
+};

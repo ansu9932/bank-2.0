@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-dark-900 text-white font-sans;
+    background-image: radial-gradient(ellipse at 20% 10%, rgba(200,16,46,0.08) 0%, transparent 50%),
+                      radial-gradient(ellipse at 80% 90%, rgba(200,16,46,0.05) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-dark-800; }
+  ::-webkit-scrollbar-thumb { @apply bg-dark-400 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand-500; }
+
+  ::selection { @apply bg-brand-500 text-white; }
+}
+
+@layer components {
+  /* Glass card */
+  .glass-card {
+    @apply bg-dark-700 border border-white/[0.06] rounded-2xl backdrop-blur-sm shadow-glass;
+    background: linear-gradient(135deg, rgba(30,30,46,0.9) 0%, rgba(17,17,24,0.95) 100%);
+  }
+
+  /* Glass card hover */
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:border-white/[0.10] hover:-translate-y-0.5;
+  }
+
+  /* Input field */
+  .input-field {
+    @apply w-full bg-dark-800 border border-white/[0.08] rounded-xl px-4 py-3 text-white
+           placeholder-dark-300 text-sm transition-all duration-200 outline-none
+           focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply flex items-center justify-center gap-2 px-6 py-3 bg-brand-500 hover:bg-brand-600
+           text-white font-semibold rounded-xl transition-all duration-200 text-sm
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-lg hover:shadow-glow;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2 px-6 py-3 bg-dark-600 hover:bg-dark-500
+           text-white font-medium rounded-xl transition-all duration-200 text-sm
+           border border-white/[0.08] hover:border-white/[0.12] active:scale-95;
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply flex items-center justify-center gap-2 px-4 py-2 text-dark-200 hover:text-white
+           hover:bg-dark-700 rounded-xl transition-all duration-200 text-sm;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success { @apply badge bg-green-500/15 text-green-400; }
+  .badge-danger  { @apply badge bg-red-500/15 text-red-400; }
+  .badge-warning { @apply badge bg-yellow-500/15 text-yellow-400; }
+  .badge-info    { @apply badge bg-blue-500/15 text-blue-400; }
+  .badge-brand   { @apply badge bg-brand-500/15 text-brand-400; }
+
+  /* Stat card */
+  .stat-card {
+    @apply glass-card p-5 relative overflow-hidden;
+  }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-dark-200 hover:text-white
+           hover:bg-white/[0.05] transition-all duration-200 text-sm font-medium cursor-pointer;
+  }
+  .nav-item.active {
+    @apply bg-brand-500/15 text-brand-400 border border-brand-500/20;
+  }
+
+  /* Page header */
+  .page-title {
+    @apply font-display text-2xl font-700 text-white;
+  }
+
+  /* Divider */
+  .divider {
+    @apply border-t border-white/[0.05];
+  }
+
+  /* Skeleton loader */
+  .skeleton {
+    @apply bg-dark-700 rounded-lg animate-pulse;
+    background: linear-gradient(90deg, #1e1e2e 25%, #252535 50%, #1e1e2e 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Table */
+  .table-row {
+    @apply flex items-center gap-4 px-5 py-4 border-b border-white/[0.04]
+           hover:bg-white/[0.02] transition-colors duration-150 last:border-0;
+  }
+
+  /* Modal overlay */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+  }
+
+  /* Form label */
+  .form-label {
+    @apply block text-xs font-medium text-dark-200 mb-1.5 uppercase tracking-wide;
+  }
+
+  /* OTP box */
+  .otp-input {
+    @apply w-12 h-14 text-center text-xl font-bold bg-dark-800 border-2 border-white/[0.08]
+           rounded-xl text-white outline-none transition-all focus:border-brand-500
+           focus:shadow-[0_0_0_3px_rgba(200,16,46,0.15)];
+  }
+}
+
+/* Account card gradient animation */
+.card-shimmer::after {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255,255,255,0.05) 50%,
+    transparent 70%
+  );
+  animation: shimmer 4s linear infinite;
+}
+
+/* Custom number font for balance */
+.balance-display {
+  font-family: 'Space Grotesk', sans-serif;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth page transitions */
+.page-enter { animation: fadeIn 0.3s ease forwards; }
+
+/* Red text gradient */
+.text-gradient-red {
+  background: linear-gradient(135deg, #ff4060, #c8102e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Loading spinner */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(200,16,46,0.2);
+  border-top-color: #c8102e;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
