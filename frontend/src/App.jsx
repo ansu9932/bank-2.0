@@ -16,7 +16,7 @@ import AccountSetupPage from './pages/account-opening/AccountSetupPage';
 
 // Dashboard
 import DashboardLayout from './components/layout/DashboardLayout';
-import DashboardHome from './pages/dashboard/DashboardHome';
+import DashboardPage from './pages/dashboard/DashboardPage';
 import TransactionsPage from './pages/dashboard/TransactionsPage';
 import TransferPage from './pages/dashboard/TransferPage';
 import BeneficiariesPage from './pages/dashboard/BeneficiariesPage';
@@ -29,7 +29,7 @@ import AnalyticsPage from './pages/dashboard/AnalyticsPage';
 // Admin
 import AdminLayout from './components/layout/AdminLayout';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
-import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
 import AdminTransactionsPage from './pages/admin/AdminTransactionsPage';
@@ -98,7 +98,7 @@ export default function App() {
 
         {/* Dashboard */}
         <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
-          <Route index element={<DashboardHome />} />
+          <Route index element={<DashboardPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="transfer" element={<TransferPage />} />
           <Route path="beneficiaries" element={<BeneficiariesPage />} />
@@ -112,11 +112,14 @@ export default function App() {
         {/* Admin */}
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-          <Route index element={<AdminDashboard />} />
+          <Route index element={<AdminDashboardPage />} />
           <Route path="users" element={<AdminUsersPage />} />
           <Route path="users/:id" element={<AdminUserDetailPage />} />
           <Route path="transactions" element={<AdminTransactionsPage />} />
+          {/* audit — matches the /admin/audit path used in Sidebar and AdminLayout */}
           <Route path="audit" element={<AdminAuditPage />} />
+          {/* audit-logs — alias so old bookmarks still work */}
+          <Route path="audit-logs" element={<AdminAuditPage />} />
           <Route path="tickets" element={<AdminTicketsPage />} />
         </Route>
 
