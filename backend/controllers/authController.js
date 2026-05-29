@@ -305,6 +305,42 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
+// ─── Verify Setup Link ────────────────────────────────────────────────────────
+exports.verifySetup = async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token) return badRequest(res, 'Token is required.');
+
+    const link = await SecureLink.findOne({ 
+      where: { token, purpose: 'account_setup', used: false } 
+    });
+
+    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (isExpired(link.expires_at)) {
+      await link.update({ used: true });
+      return badRequest(res, 'Setup link has expired.');
+    }
+
+    const user = await User.findByPk(link.user_id, {
+      attributes: ['id', 'first_name', 'last_name', 'email']
+    });
+
+    if (!user) return notFound(res, 'Associated user account not found.');
+
+    return success(res, { 
+      token,
+      user: {
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email
+      }
+    }, 'Setup link verified successfully.');
+  } catch (err) {
+    logger.error(`Verify setup error: ${err.message}`);
+    return error(res, 'Verification process failed.');
+  }
+};
+
 // ─── Account Setup (after approval) ───────────────────────────────────────────
 exports.setupAccount = async (req, res) => {
   try {

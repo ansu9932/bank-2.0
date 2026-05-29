@@ -93,7 +93,7 @@
 
   /* Page header */
   .page-title {
-    @apply font-display text-2xl font-700 text-white;
+    @apply font-display text-2xl font-bold text-white;
   }
 
   /* Divider */

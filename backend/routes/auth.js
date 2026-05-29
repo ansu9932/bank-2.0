@@ -51,6 +51,6 @@ router.post('/setup-account', [
   body('securityPin').isLength({ min: 4, max: 4 }).isNumeric(),
 ], validate, authController.setupAccount);
 
-router.get('/verify-setup/:token', authController.verifySetupLink);
+router.get('/verify-setup/:token', authController.verifySetup);
 
 module.exports = router;

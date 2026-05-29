@@ -6,14 +6,12 @@ import {
   RiSendPlaneLine,
   RiFileTextLine,
   RiGroupLine,
-  RiTrendingUpLine,
   RiArrowUpLine,
   RiArrowDownLine,
   RiExchangeLine,
   RiArrowRightLine,
   RiEyeLine,
   RiEyeOffLine,
-  RiNfcLine,
   RiWifiLine,
   RiSearchLine,
   RiBellLine,
@@ -530,7 +528,7 @@ function InlineAccountCard({ account, user }) {
               {holderName}
             </p>
           </div>
-          <RiNfcLine className="text-white/25 text-3xl" />
+          <RiWifiLine className="text-white/25 text-3xl transform rotate-90" />
         </div>
       </div>
     </motion.div>
