@@ -102,7 +102,7 @@ function ActivitySVGChart({ points }) {
 
   if (!points || points.length === 0) {
     return (
-      <div className="flex items-center justify-center h-36 text-dark-400 text-sm">
+      <div className="flex items-center justify-center h-36 text-slate-400 text-sm">
         No activity data available
       </div>
     );
@@ -590,19 +590,19 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
           >
             Dashboard
           </h1>
-          <p className="text-dark-300 text-xs">
+          <p className="text-slate-400 text-xs">
             {safeFormat(new Date().toISOString(), 'EEEE, dd MMMM yyyy', 'Today')}
           </p>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 bg-dark-700/80 rounded-xl px-3 py-2 border border-white/[0.06] flex-1 max-w-xs">
-          <RiSearchLine className="text-dark-300 text-base flex-shrink-0" />
+        <div className="hidden md:flex items-center gap-2 bg-[#161622] rounded-xl px-3 py-2 border border-white/[0.08] flex-1 max-w-xs">
+          <RiSearchLine className="text-slate-400 text-base flex-shrink-0" />
           <input
             type="text"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             placeholder="Search transactions…"
-            className="bg-transparent text-sm text-white placeholder-dark-400 outline-none w-full"
+            className="bg-transparent text-sm text-white placeholder-slate-500 outline-none w-full"
           />
         </div>
       </div>
@@ -614,7 +614,7 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
           <button
             type="button"
             onClick={() => setNotifOpen((prev) => !prev)}
-            className="relative p-2.5 rounded-xl hover:bg-white/[0.05] text-dark-200 hover:text-white transition-colors"
+            className="relative p-2.5 rounded-xl hover:bg-white/[0.05] text-slate-300 hover:text-white transition-colors"
             aria-label="Notifications"
           >
             <RiBellLine className="text-xl" />
@@ -633,7 +633,7 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-80 glass-card overflow-hidden z-50 shadow-glass"
+                className="absolute right-0 top-full mt-2 w-80 bg-[#15151f] border border-white/10 rounded-2xl overflow-hidden z-50 shadow-[0_8px_32px_rgba(0,0,0,0.55)] backdrop-blur-md"
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
                   <p className="font-semibold text-sm text-white">Notifications</p>
@@ -650,7 +650,7 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
 
                 <div className="max-h-72 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <p className="text-center text-dark-300 text-sm py-8">
+                    <p className="text-center text-slate-400 text-sm py-8">
                       No notifications
                     </p>
                   ) : (
@@ -669,10 +669,10 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
                             <p className="text-white text-xs font-medium leading-tight">
                               {n.title}
                             </p>
-                            <p className="text-dark-300 text-xs mt-0.5 truncate">
+                            <p className="text-slate-400 text-xs mt-0.5 truncate">
                               {n.message}
                             </p>
-                            <p className="text-dark-400 text-[10px] mt-1">
+                            <p className="text-slate-500 text-[10px] mt-1">
                               {safeDistanceToNow(n.created_at, 'Recently')}
                             </p>
                           </div>
@@ -704,7 +704,7 @@ function DashboardTopBar({ user, notifications, unreadCount, onMarkAllRead }) {
             <p className="text-white text-sm font-medium leading-tight">
               {displayName}
             </p>
-            <p className="text-dark-300 text-[10px] mt-0.5 capitalize">
+            <p className="text-slate-400 text-[10px] mt-0.5 capitalize">
               {statusLabel}
             </p>
           </div>
@@ -832,7 +832,7 @@ export default function DashboardPage() {
 
   // ─── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-0">
+    <div className="w-full max-w-full space-y-0">
 
       {/* ── Sticky glass top-navigation bar ─────────────────────────────── */}
       <DashboardTopBar
@@ -843,15 +843,15 @@ export default function DashboardPage() {
       />
 
       {/* ── Page body ───────────────────────────────────────────────────── */}
-      <div className="space-y-6 px-0 pb-6">
+      <div className="w-full max-w-full space-y-6 px-0 pb-6">
 
         {/* Welcome banner */}
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <h2 className="text-white font-semibold text-base leading-tight">
               Good {greetingWord}, {displayFirstName}! 👋
             </h2>
-            <p className="text-dark-300 text-sm mt-0.5">
+            <p className="text-slate-400 text-sm mt-0.5">
               Here's your complete financial overview
             </p>
           </div>
@@ -861,7 +861,7 @@ export default function DashboardPage() {
               dispatch(fetchAccount());
               dispatch(fetchTransactions({ limit: 50, page: 1 }));
             }}
-            className="p-2 rounded-xl hover:bg-white/[0.05] text-dark-300 hover:text-white transition-colors"
+            className="p-2 rounded-xl hover:bg-white/[0.05] text-slate-400 hover:text-white transition-colors flex-shrink-0"
             aria-label="Refresh dashboard"
           >
             <RiRefreshLine className={`text-xl ${accountLoading || txLoading ? 'animate-spin' : ''}`} />
@@ -869,10 +869,10 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Main two-column grid ─────────────────────────────────────── */}
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
 
           {/* ── Left column (2/5 width on xl) ─────────────────────────── */}
-          <div className="xl:col-span-2 space-y-5">
+          <div className="xl:col-span-2 min-w-0 space-y-5">
 
             {/* Visa savings card */}
             <InlineAccountCard account={account} user={user} />
@@ -998,7 +998,7 @@ export default function DashboardPage() {
           </div>
 
           {/* ── Right column (3/5 width on xl) ────────────────────────── */}
-          <div className="xl:col-span-3 space-y-5">
+          <div className="xl:col-span-3 min-w-0 space-y-5">
 
             {/* Activity analytics — SVG chart */}
             <div className="bg-[#111118] border border-white/[0.06] rounded-[24px] shadow-xl p-5">
