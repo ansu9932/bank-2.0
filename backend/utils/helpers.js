@@ -12,12 +12,15 @@ const generateCustomerID = () => {
 
 /**
  * Generate 16-digit bank account number
+ * Format: 4141 (prefix) + 9 digits (middle) + 4 digits (suffix) = 17 chars total
+ * The 4-digit suffix range (1000–9999) guarantees a stable, uniform width
+ * with no leading-zero truncation.
  */
 const generateAccountNumber = () => {
   const prefix = '4141'; // Alister Bank prefix
   const middle = Math.floor(100000000 + Math.random() * 900000000).toString();
-  const suffix = Math.floor(100 + Math.random() * 900).toString();
-  return prefix + middle + suffix.slice(0, 4);
+  const suffix = Math.floor(1000 + Math.random() * 9000).toString();
+  return prefix + middle + suffix;
 };
 
 /**

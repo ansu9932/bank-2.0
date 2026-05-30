@@ -24,7 +24,7 @@ app.use(hpp());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || 'https://bank-2-0-5ur5.vercel.app',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -103,23 +103,44 @@ const start = async () => {
   try {
     await sequelize.authenticate();
     logger.info('✅ Database connected successfully.');
+    console.log('✅ Database connected successfully.');
 
-    // Sync models (use migrations in production)
-    await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
+    // Force schema alignment + automatic table generation on Hostinger.
+    // alter:true keeps the live MySQL tables in sync with the models on every boot.
+    await sequelize.sync({ alter: true });
     logger.info('✅ Database models synchronized.');
+    console.log('✅ Database models synchronized.');
 
-    // Start cron jobs
-    runKYCWorkflow();
+    // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
+    // Wrapped so any background crash is piped explicitly to stdout for the
+    // Hostinger live tracking dashboard.
+    try {
+      runKYCWorkflow();
+      logger.info('✅ Background workflows (runKYCWorkflow) started.');
+      console.log('✅ Background workflows (runKYCWorkflow) started.');
+    } catch (workflowErr) {
+      logger.error(`Background workflow failed to start: ${workflowErr.message}`);
+      console.error(workflowErr);
+    }
 
     app.listen(PORT, () => {
       logger.info(`\n🏦 ══════════════════════════════════════════════`);
       logger.info(`   ALISTER BANK API SERVER RUNNING`);
       logger.info(`   Port: ${PORT} | Env: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`   Live: https://aqua-salamander-597310.hostingersite.com`);
       logger.info(`   URL:  http://localhost:${PORT}`);
       logger.info(`══════════════════════════════════════════════\n`);
+
+      console.log('\n🏦 ══════════════════════════════════════════════');
+      console.log('   ALISTER BANK API SERVER RUNNING');
+      console.log(`   Port: ${PORT} | Env: ${process.env.NODE_ENV || 'development'}`);
+      console.log('   Live: https://aqua-salamander-597310.hostingersite.com');
+      console.log(`   URL:  http://localhost:${PORT}`);
+      console.log('══════════════════════════════════════════════\n');
     });
   } catch (err) {
     logger.error(`Failed to start server: ${err.message}`);
+    console.error(err);
     process.exit(1);
   }
 };

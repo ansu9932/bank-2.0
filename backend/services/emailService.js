@@ -22,7 +22,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
   try {
     const transport = createTransporter();
     const info = await transport.sendMail({
-      from: process.env.EMAIL_FROM || '"Alister Bank" <noreply@alisterbank.com>',
+      // Hostinger's SMTP relay drops mail whose 'from' header does not match the
+      // authenticated SMTP username. This MUST stay aligned with the SMTP account.
+      from: '"Alister Bank" <info@divyamoolya.in>',
       to,
       subject,
       html,
