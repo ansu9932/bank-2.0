@@ -10,12 +10,6 @@ const sequelize = new Sequelize(
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
-      }
-    },
     pool: {
       max: 10,
       min: 0,
