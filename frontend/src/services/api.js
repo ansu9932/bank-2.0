@@ -5,15 +5,16 @@ import toast from 'react-hot-toast';
  * Central Axios instance for Alister Bank.
  *
  * Request interceptor:  safely attaches the Bearer token for both
- *                       regular user sessions (localStorage 'token') and
- *                       admin sessions (localStorage 'adminToken').
+ * regular user sessions (localStorage 'token') and
+ * admin sessions (localStorage 'adminToken').
  *
  * Response interceptor: handles 401 errors globally — clears ALL session
- *                       keys and redirects to the correct login page only
- *                       when the user is not already on a login page.
+ * keys and redirects to the correct login page only
+ * when the user is not already on a login page.
  */
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  // Fixed: Target VITE_API_BASE_URL and enforce the live Hostinger domain endpoint fallback
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://aqua-salamander-597310.hostingersite.com',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
