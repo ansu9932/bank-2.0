@@ -13,8 +13,8 @@ import toast from 'react-hot-toast';
  * when the user is not already on a login page.
  */
 const api = axios.create({
-  // Fixed: Target VITE_API_BASE_URL and enforce the live Hostinger domain endpoint fallback
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://aqua-salamander-597310.hostingersite.com',
+  // Add /api to the end of your hardcoded Hostinger fallback link
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://aqua-salamander-597310.hostingersite.com/api',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
