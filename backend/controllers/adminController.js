@@ -306,6 +306,140 @@ exports.rejectKYC = async (req, res) => {
   }
 };
 
+// ─── KYC Review Queue (video_kyc_pending + under_review, with documents) ──────
+// Helper: convert an absolute multer disk path into a web path served by the
+// static /uploads route (e.g. /uploads/documents/<uuid>.png).
+const toWebPath = (p) => {
+  if (!p) return null;
+  const norm = String(p).replace(/\\/g, '/');
+  const m = norm.match(/uploads\/.*/);
+  return m ? `/${m[0]}` : norm;
+};
+
+exports.getKYCQueue = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: { kyc_status: { [Op.in]: ['video_kyc_pending', 'under_review'] } },
+      attributes: { exclude: ['password_hash', 'security_pin'] },
+      include: [
+        { model: Account, as: 'account', attributes: ['account_number', 'status', 'account_type', 'balance'] },
+        { model: KYCDocument, as: 'documents' },
+      ],
+      order: [['updated_at', 'DESC']],
+      limit: 100,
+    });
+
+    // Attach a browser-loadable document_url to every KYC document.
+    const queue = users.map((u) => {
+      const json = u.toJSON();
+      json.documents = (json.documents || []).map((d) => ({
+        ...d,
+        document_url: toWebPath(d.file_path),
+      }));
+      return json;
+    });
+
+    return success(res, { queue, count: queue.length });
+  } catch (err) {
+    logger.error(`KYC queue error: ${err.message}`);
+    return error(res, 'Failed to fetch KYC review queue.');
+  }
+};
+
+// ─── KYC Review Decision (approve → activate account / reject) ───────────────
+exports.reviewKYC = async (req, res) => {
+  try {
+    const { decision, reason } = req.body;
+    if (!['approve', 'reject'].includes(decision)) {
+      return badRequest(res, 'decision must be either "approve" or "reject".');
+    }
+
+    const user = await User.findByPk(req.params.id, { include: [{ model: Account, as: 'account' }] });
+    if (!user) return notFound(res, 'User not found.');
+
+    // ── Reject path ──────────────────────────────────────────────────────
+    if (decision === 'reject') {
+      await user.update({ kyc_status: 'rejected' });
+      await KYCDocument.update(
+        { status: 'rejected', rejection_reason: reason || 'Biometric verification failed.', reviewed_by: req.admin.id, reviewed_at: new Date() },
+        { where: { user_id: user.id } }
+      );
+      await Notification.create({
+        user_id: user.id,
+        title: 'KYC Rejected',
+        message: `Your identity verification was rejected. Reason: ${reason || 'Biometric verification failed.'} Please contact support.`,
+        type: 'kyc',
+        priority: 'urgent',
+      });
+      await createAuditLog({
+        adminId: req.admin.id, userId: user.id, action: 'KYC_REVIEW_REJECTED',
+        entityType: 'User', entityId: user.id, newValues: { reason }, ipAddress: req.ip, status: 'success',
+      });
+      return success(res, { kyc_status: 'rejected' }, 'KYC submission rejected. User notified.');
+    }
+
+    // ── Approve path: ensure account exists + activate ───────────────────
+    let account = user.account || (await Account.findOne({ where: { user_id: user.id } }));
+    if (!account) {
+      account = await Account.create({
+        user_id: user.id,
+        account_number: generateAccountNumber(),
+        ifsc_code: generateIFSC('000001'),
+        swift_code: process.env.BANK_SWIFT || 'ALSTINBB',
+        account_type: user.account_type,
+        balance: 0.00,
+        available_balance: 0.00,
+        currency: 'INR',
+        status: 'active',
+      });
+    } else {
+      await account.update({ status: 'active' });
+    }
+
+    await user.update({ kyc_status: 'approved', account_status: 'active' });
+    await KYCDocument.update(
+      { status: 'approved', reviewed_by: req.admin.id, reviewed_at: new Date() },
+      { where: { user_id: user.id } }
+    );
+
+    // If the customer has not yet created login credentials, send a setup link
+    // so the now-active account is actually usable.
+    if (!user.setup_completed) {
+      const setupToken = generateSecureToken();
+      await SecureLink.create({
+        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getSecureLinkExpiry(5),
+      });
+      const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
+      try {
+        await sendAccountApprovedEmail(user.email, user.first_name, setupLink, account.account_number);
+      } catch (mailErr) {
+        logger.error(`Approval email failed: ${mailErr.message}`);
+      }
+    }
+
+    await Notification.create({
+      user_id: user.id,
+      title: 'KYC Approved! 🎉',
+      message: 'Your identity verification passed and your account is now active.',
+      type: 'kyc',
+      priority: 'high',
+    });
+    await createAuditLog({
+      adminId: req.admin.id, userId: user.id, action: 'KYC_REVIEW_APPROVED',
+      entityType: 'User', entityId: user.id, ipAddress: req.ip, status: 'success',
+    });
+
+    return success(res, {
+      kyc_status: 'approved',
+      account_status: 'active',
+      accountNumber: account.account_number,
+    }, 'KYC approved — account activated.');
+  } catch (err) {
+    logger.error(`KYC review error: ${err.message}`);
+    return error(res, 'Failed to process KYC review.');
+  }
+};
+
 // ─── Freeze / Unfreeze Account ────────────────────────────────────────────────
 exports.toggleFreezeAccount = async (req, res) => {
   try {

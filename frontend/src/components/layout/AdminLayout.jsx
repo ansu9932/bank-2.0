@@ -5,11 +5,13 @@ import {
   RiDashboardLine, RiGroupLine, RiExchangeLine,
   RiFileShield2Line, RiCustomerService2Line,
   RiLogoutBoxLine, RiBankLine, RiShieldLine,
+  RiShieldCheckLine,
 } from 'react-icons/ri';
 
 const navItems = [
   { to: '/admin', icon: RiDashboardLine, label: 'Dashboard', end: true },
   { to: '/admin/users', icon: RiGroupLine, label: 'Users & KYC' },
+  { to: '/admin/kyc-review', icon: RiShieldCheckLine, label: 'KYC Review' },
   { to: '/admin/transactions', icon: RiExchangeLine, label: 'Transactions' },
   { to: '/admin/tickets', icon: RiCustomerService2Line, label: 'Tickets' },
   { to: '/admin/audit', icon: RiFileShield2Line, label: 'Audit Logs' },

@@ -15,6 +15,11 @@ router.get('/users', adminController.getUsers);
 router.get('/users/:id', adminController.getUserDetails);
 router.post('/users/:id/approve-kyc', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.approveKYC);
 router.post('/users/:id/reject-kyc', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.rejectKYC);
+
+// Dedicated Video-KYC review dashboard
+router.get('/kyc-queue', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.getKYCQueue);
+router.post('/users/:id/kyc-review', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.reviewKYC);
+
 router.post('/users/:id/freeze', requireRole('super_admin', 'admin'), adminController.toggleFreezeAccount);
 router.post('/users/:id/manual-transaction', requireRole('super_admin', 'admin'), adminController.manualTransaction);
 

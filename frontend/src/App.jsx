@@ -33,6 +33,7 @@ import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
+import AdminKYCReviewPage from './pages/admin/AdminKYCReviewPage';
 import AdminTransactionsPage from './pages/admin/AdminTransactionsPage';
 import AdminAuditPage from './pages/admin/AdminAuditPage';
 import AdminTicketsPage from './pages/admin/AdminTicketsPage';
@@ -117,6 +118,7 @@ export default function App() {
           <Route index element={<AdminDashboardPage />} />
           <Route path="users" element={<AdminUsersPage />} />
           <Route path="users/:id" element={<AdminUserDetailPage />} />
+          <Route path="kyc-review" element={<AdminKYCReviewPage />} />
           <Route path="transactions" element={<AdminTransactionsPage />} />
           {/* audit — matches the /admin/audit path used in Sidebar and AdminLayout */}
           <Route path="audit" element={<AdminAuditPage />} />
