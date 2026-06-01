@@ -12,6 +12,7 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 // Account opening flow
 import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
 import VideoKYCPage from './pages/account-opening/VideoKYCPage';
+import CyberVideoKYC from './pages/account-opening/CyberVideoKYC';
 import AccountSetupPage from './pages/account-opening/AccountSetupPage';
 
 // Dashboard
@@ -94,6 +95,7 @@ export default function App() {
         {/* Account Opening */}
         <Route path="/open-account" element={<AccountOpeningPage />} />
         <Route path="/video-kyc" element={<VideoKYCPage />} />
+        <Route path="/cyber-kyc" element={<CyberVideoKYC />} />
         <Route path="/account-setup" element={<AccountSetupPage />} />
 
         {/* Dashboard */}
