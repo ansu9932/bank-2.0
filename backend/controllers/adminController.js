@@ -14,11 +14,27 @@ const { paginate } = require('../utils/helpers');
 // ─── Admin Login ──────────────────────────────────────────────────────────────
 exports.adminLogin = async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return badRequest(res, 'Username and password are required.');
+    // Defensively capture any common naming variations from the frontend request body payload
+    const identifier = req.body.username || req.body.email || req.body.usernameOrEmail || req.body.login;
+    const { password } = req.body;
 
-    const admin = await AdminUser.findOne({ where: { [Op.or]: [{ username }, { email: username }] } });
-    if (!admin || !admin.is_active) return unauthorized(res, 'Invalid credentials or account inactive.');
+    if (!identifier || !password) {
+      return badRequest(res, 'Username or Email and password are required.');
+    }
+
+    // Lookup using the extracted identifier against both the username and email columns
+    const admin = await AdminUser.findOne({ 
+      where: { 
+        [Op.or]: [
+          { username: identifier }, 
+          { email: identifier }
+        ] 
+      } 
+    });
+    
+    if (!admin || !admin.is_active) {
+      return unauthorized(res, 'Invalid credentials or account inactive.');
+    }
 
     const isMatch = await bcrypt.compare(password, admin.password_hash);
     if (!isMatch) return unauthorized(res, 'Invalid credentials.');
@@ -307,8 +323,6 @@ exports.rejectKYC = async (req, res) => {
 };
 
 // ─── KYC Review Queue (video_kyc_pending + under_review, with documents) ──────
-// Helper: convert an absolute multer disk path into a web path served by the
-// static /uploads route (e.g. /uploads/documents/<uuid>.png).
 const toWebPath = (p) => {
   if (!p) return null;
   const norm = String(p).replace(/\\/g, '/');
@@ -329,7 +343,6 @@ exports.getKYCQueue = async (req, res) => {
       limit: 100,
     });
 
-    // Attach a browser-loadable document_url to every KYC document.
     const queue = users.map((u) => {
       const json = u.toJSON();
       json.documents = (json.documents || []).map((d) => ({
@@ -357,7 +370,6 @@ exports.reviewKYC = async (req, res) => {
     const user = await User.findByPk(req.params.id, { include: [{ model: Account, as: 'account' }] });
     if (!user) return notFound(res, 'User not found.');
 
-    // ── Reject path ──────────────────────────────────────────────────────
     if (decision === 'reject') {
       await user.update({ kyc_status: 'rejected' });
       await KYCDocument.update(
@@ -367,7 +379,7 @@ exports.reviewKYC = async (req, res) => {
       await Notification.create({
         user_id: user.id,
         title: 'KYC Rejected',
-        message: `Your identity verification was rejected. Reason: ${reason || 'Biometric verification failed.'} Please contact support.`,
+        message: `Your identity verification was rejected. Reason: ${reason || 'Biometric verification failed.'} Please contact support Simon.`,
         type: 'kyc',
         priority: 'urgent',
       });
@@ -378,7 +390,6 @@ exports.reviewKYC = async (req, res) => {
       return success(res, { kyc_status: 'rejected' }, 'KYC submission rejected. User notified.');
     }
 
-    // ── Approve path: ensure account exists + activate ───────────────────
     let account = user.account || (await Account.findOne({ where: { user_id: user.id } }));
     if (!account) {
       account = await Account.create({
@@ -402,8 +413,6 @@ exports.reviewKYC = async (req, res) => {
       { where: { user_id: user.id } }
     );
 
-    // If the customer has not yet created login credentials, send a setup link
-    // so the now-active account is actually usable.
     if (!user.setup_completed) {
       const setupToken = generateSecureToken();
       await SecureLink.create({
@@ -574,7 +583,7 @@ exports.getAuditLogs = async (req, res) => {
     if (userId) where.user_id = userId;
     if (action) where.action = { [Op.like]: `%${action}%` };
 
-    const { limit: lim, offset } = paginate(page, limit);
+    const { limit: lim, offset = 0 } = paginate(page, limit);
     const { count, rows } = await AuditLog.findAndCountAll({
       where,
       order: [['created_at', 'DESC']],
