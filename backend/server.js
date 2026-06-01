@@ -22,9 +22,9 @@ app.use(securityHeaders);
 app.use(securityResponseHeaders);
 app.use(hpp());
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
+// ─── CORS (Updated Fallback to Hostinger Frontend) ────────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://bank-2-0-5ur5.vercel.app',
+  origin: process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -105,11 +105,28 @@ const start = async () => {
     logger.info('✅ Database connected successfully.');
     console.log('✅ Database connected successfully.');
 
-    // Force schema alignment + automatic table generation on Hostinger.
-    // alter:true keeps the live MySQL tables in sync with the models on every boot.
-    await sequelize.sync({ alter: true });
-    logger.info('✅ Database models synchronized.');
-    console.log('✅ Database models synchronized.');
+    // ─── SAFE SYNC FALLBACK MECHANISM ───
+    try {
+      // First attempt: Try to alter tables to match exact models
+      await sequelize.sync({ alter: true });
+      logger.info('✅ Database models synchronized (alter: true).');
+      console.log('✅ Database models synchronized (alter: true).');
+    } catch (syncErr) {
+      // Log the exact MySQL reason it failed
+      logger.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
+      console.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
+      if (syncErr.original) {
+        logger.error(`Raw MySQL Error: ${syncErr.original.message}`);
+        console.error(`Raw MySQL Error: ${syncErr.original.message}`);
+      }
+      
+      console.log('⚠️ Falling back to standard sync to prevent crash...');
+      
+      // Fallback attempt: Standard sync (Creates missing tables, leaves existing alone)
+      await sequelize.sync();
+      logger.info('✅ Database models synchronized using safe fallback.');
+      console.log('✅ Database models synchronized using safe fallback.');
+    }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
     // Wrapped so any background crash is piped explicitly to stdout for the
