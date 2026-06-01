@@ -15,6 +15,14 @@ router.post('/submit-video-kyc',
   accountController.submitVideoKYC
 );
 
+// Cyber Video KYC — still-image capture upload (accepts PNG/JPG snapshot).
+// Auth is resolved inside the controller via secure-link token OR Bearer JWT,
+// so it serves both the pre-login onboarding flow and logged-in users.
+router.post('/kyc/upload',
+  kycUpload.single('document'),
+  accountController.uploadKYCCapture
+);
+
 router.get('/verify-setup/:token', accountController.verifySetupLink);
 
 // Protected routes

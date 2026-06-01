@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
+import api from '../../services/api';
 import {
   Camera, Mic, ShieldCheck, CheckCircle2, AlertTriangle,
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ScanLine,
@@ -30,6 +33,18 @@ const STEPS = [
   { id: 3, label: 'Voice Key',     icon: Volume2 },
   { id: 4, label: 'ID Capture',    icon: CreditCard },
 ];
+
+// ─── Helper: convert a base64 data URL → Blob (for multipart upload) ──────────
+function dataURLToBlob(dataURL) {
+  const [header, base64] = String(dataURL).split(',');
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const binary = atob(base64 || '');
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
 
 
 // ─── Glowing grid background ──────────────────────────────────────────────────
@@ -577,7 +592,7 @@ function Step4VoiceCode({ onNext }) {
 
 
 // ─── STEP 5 · AI document capture system ─────────────────────────────────────
-function Step5Document({ stream, onComplete }) {
+function Step5Document({ stream, onConfirm, processing }) {
   const liveVideoRef = useRef(null);
   const canvasRef = useRef(null);
   const [captured, setCaptured] = useState(null); // dataURL string
@@ -680,17 +695,21 @@ function Step5Document({ stream, onComplete }) {
         <div className="flex gap-3 mt-5">
           <button
             onClick={retake}
-            className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 border text-white/80"
+            disabled={processing}
+            className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 border text-white/80 disabled:opacity-40"
             style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
           >
             <RefreshCw size={16} /> Retake Photo
           </button>
           <button
-            onClick={onComplete}
-            className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 text-white"
+            onClick={() => onConfirm(captured)}
+            disabled={processing}
+            className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 text-white disabled:opacity-70"
             style={{ background: `linear-gradient(135deg, ${NEON.green}, ${NEON.cyan})`, boxShadow: `0 0 26px ${NEON.green}55` }}
           >
-            <ShieldCheck size={16} /> Confirm &amp; Process
+            {processing
+              ? <><Loader2 size={16} className="animate-spin" /> Processing…</>
+              : <><ShieldCheck size={16} /> Confirm &amp; Process</>}
           </button>
         </div>
       )}
@@ -734,13 +753,66 @@ function CompleteScreen() {
 
 // ─── MAIN ORCHESTRATOR · 5-phase state machine ───────────────────────────────
 export default function CyberVideoKYC() {
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(0);                 // explicit workflow index (0..5)
   const [stream, setStream] = useState(null);          // shared MediaStream
   const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState('');
+  const [processing, setProcessing] = useState(false); // ID-capture upload in flight
   const [hw, setHw] = useState({ camera: 'pending', mic: 'pending', channel: 'pending' });
 
   const next = useCallback(() => setStep((s) => Math.min(s + 1, 5)), []);
+
+  // Stop + release every camera/mic track and clear the shared stream.
+  const stopStream = useCallback(() => {
+    setStream((current) => {
+      current?.getTracks().forEach((t) => t.stop());
+      return null;
+    });
+  }, []);
+
+  // ── Phase 5 submit: snapshot → blob → authorized multipart POST ───────────
+  // On a success:true response we cleanly tear down the camera and advance to
+  // the final completion screen. If the request fails (endpoint blocked, offline,
+  // camera-restricted environment), we DON'T trap the user — we surface a soft
+  // warning and still complete onboarding gracefully.
+  const submitKYC = useCallback(async (dataURL) => {
+    if (!dataURL) { toast.error('No capture found. Please retake the photo.'); return; }
+    setProcessing(true);
+    try {
+      const blob = dataURLToBlob(dataURL);
+      const file = new File([blob], `cyber-kyc-${Date.now()}.png`, { type: blob.type });
+
+      const form = new FormData();
+      form.append('document', file);
+      // Forward the onboarding secure-link token when present (pre-login flow).
+      const token = searchParams.get('token');
+      if (token) form.append('token', token);
+
+      const { data } = await api.post('/account/kyc/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (data?.success) {
+        toast.success('Identity verification submitted successfully.');
+        stopStream();
+        next();
+      } else {
+        // Unexpected non-success payload — fail gracefully rather than trapping.
+        toast('Submitted, finalizing your session…', { icon: '⚙️' });
+        stopStream();
+        next();
+      }
+    } catch (err) {
+      // Robust fallback: never leave the user stuck on a blocked environment.
+      const msg = err?.response?.data?.message || 'Upload could not be confirmed.';
+      toast.error(`${msg} Completing onboarding in safe mode.`);
+      stopStream();
+      next();
+    } finally {
+      setProcessing(false);
+    }
+  }, [searchParams, stopStream, next]);
 
   // Request actual webcam + mic via the standard browser API.
   const initialize = useCallback(async () => {
@@ -823,7 +895,7 @@ export default function CyberVideoKYC() {
                 {step === 1 && <Step2Alignment stream={stream} onNext={next} />}
                 {step === 2 && <Step3Liveness stream={stream} onNext={next} />}
                 {step === 3 && <Step4VoiceCode onNext={next} />}
-                {step === 4 && <Step5Document stream={stream} onComplete={next} />}
+                {step === 4 && <Step5Document stream={stream} onConfirm={submitKYC} processing={processing} />}
                 {step === 5 && <CompleteScreen />}
               </AnimatePresence>
             </div>

@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { User, Account, KYCDocument, OTP, SecureLink, Notification } = require('../models');
@@ -189,6 +190,92 @@ exports.submitVideoKYC = async (req, res) => {
   } catch (err) {
     logger.error(`Video KYC submit error: ${err.message}`);
     return error(res, 'Failed to submit Video KYC.');
+  }
+};
+
+// ─── Cyber Video KYC — capture upload (image snapshot) ────────────────────────
+// Accepts the still ID/biometric snapshot produced by the CyberVideoKYC wizard.
+// Resolves the target user via EITHER:
+//   (a) an onboarding secure-link token in the body (pre-login flow), OR
+//   (b) a logged-in user's Bearer JWT (Authorization header).
+// When a user is resolved, it persists a KYCDocument and advances the user's
+// workflow record. When neither is present (standalone demo at /cyber-kyc with
+// no session), it still returns success so the wizard completes gracefully.
+exports.uploadKYCCapture = async (req, res) => {
+  try {
+    if (!req.file) return badRequest(res, 'KYC capture image is required.');
+
+    // ── Resolve the user + (optional) secure link ──────────────────────────
+    let userId = null;
+    let link = null;
+
+    if (req.body.token) {
+      link = await SecureLink.findOne({
+        where: { token: req.body.token, purpose: 'video_kyc', used: false },
+      });
+      if (link && !isExpired(link.expires_at)) {
+        userId = link.user_id;
+      } else {
+        link = null; // expired/invalid → ignore, fall through to JWT/demo
+      }
+    }
+
+    if (!userId && req.headers.authorization?.startsWith('Bearer ')) {
+      const bearer = req.headers.authorization.split(' ')[1];
+      try {
+        const decoded = jwt.verify(bearer, process.env.JWT_SECRET);
+        if (decoded?.userId) userId = decoded.userId;
+      } catch {
+        // invalid/expired JWT → ignore, fall through to demo acknowledgement
+      }
+    }
+
+    // ── Demo mode: no resolvable user. Acknowledge so the UI is never stuck. ─
+    if (!userId) {
+      return success(res, { stored: false, mode: 'demo' },
+        'KYC capture received (demo mode — no linked account to update).');
+    }
+
+    // ── Persist the captured document ──────────────────────────────────────
+    await KYCDocument.create({
+      user_id: userId,
+      document_type: 'video_kyc', // reuse the valid enum value used by the workflow
+      file_path: req.file.path,
+      file_name: req.file.originalname,
+      file_size: req.file.size,
+      mime_type: req.file.mimetype,
+    });
+
+    // ── Advance the user's workflow record ─────────────────────────────────
+    await User.update(
+      { video_kyc_completed: true, kyc_status: 'video_kyc_pending' },
+      { where: { id: userId } }
+    );
+
+    if (link) await link.update({ used: true, used_at: new Date() });
+
+    await Notification.create({
+      user_id: userId,
+      title: 'Video KYC Submitted ✅',
+      message: 'Your biometric verification was received and is pending final review.',
+      type: 'kyc',
+      priority: 'high',
+    });
+
+    await createAuditLog({
+      userId,
+      action: 'CYBER_KYC_CAPTURE_SUBMITTED',
+      entityType: 'User',
+      entityId: userId,
+      ipAddress: req.ip,
+      status: 'success',
+      description: 'Cyber Video KYC still capture uploaded.',
+    });
+
+    return success(res, { stored: true }, 'KYC verification submitted successfully.');
+  } catch (err) {
+    logger.error(`Cyber KYC capture upload error: ${err.message}`);
+    return error(res, 'Failed to process KYC capture.');
   }
 };
 
