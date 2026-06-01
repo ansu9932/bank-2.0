@@ -33,12 +33,10 @@ const Transaction = sequelize.define('Transaction', {
   is_scheduled: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, {
   tableName: 'transactions',
-  indexes: [
-    { fields: ['reference_number'] },
-    { fields: ['account_id'] },
-    { fields: ['status'] },
-    { fields: ['created_at'] },
-  ],
+  // reference_number already has a unique index via field-level `unique: true`.
+  // The previous explicit indexes duplicated reference_number and added
+  // non-mandatory filter indexes (account_id / status / created_at) which were
+  // re-created on every alter sync and contributed to the 64-index overflow.
 });
 
 module.exports = Transaction;

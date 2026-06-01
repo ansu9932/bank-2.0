@@ -47,12 +47,12 @@ const User = sequelize.define('User', {
   referral_code: { type: DataTypes.STRING(20) },
 }, {
   tableName: 'users',
-  indexes: [
-    { fields: ['email'] },
-    { fields: ['customer_id'] },
-    { fields: ['phone'] },
-    { fields: ['kyc_status'] },
-  ],
+  // NOTE: No explicit `indexes` array.
+  // customer_id, email, phone and username already create unique indexes via
+  // their field-level `unique: true`. Re-declaring email/customer_id/phone here
+  // (plus a non-essential kyc_status filter index) produced duplicate indexes
+  // that, combined with sync({ alter: true }) on every boot, overflowed MySQL's
+  // 64-index-per-table limit.
 });
 
 module.exports = User;

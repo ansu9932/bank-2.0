@@ -27,7 +27,9 @@ const Account = sequelize.define('Account', {
   cheque_book_issued: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, {
   tableName: 'accounts',
-  indexes: [{ fields: ['account_number'] }, { fields: ['user_id'] }],
+  // account_number already has a unique index via field-level `unique: true`.
+  // The previous explicit indexes duplicated it (account_number) and added a
+  // non-mandatory user_id filter index — both removed to stay under the 64 cap.
 });
 
 module.exports = Account;

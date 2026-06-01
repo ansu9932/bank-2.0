@@ -105,27 +105,43 @@ const start = async () => {
     logger.info('✅ Database connected successfully.');
     console.log('✅ Database connected successfully.');
 
-    // ─── SAFE SYNC FALLBACK MECHANISM ───
-    try {
-      // First attempt: Try to alter tables to match exact models
-      await sequelize.sync({ alter: true });
-      logger.info('✅ Database models synchronized (alter: true).');
-      console.log('✅ Database models synchronized (alter: true).');
-    } catch (syncErr) {
-      // Log the exact MySQL reason it failed
-      logger.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
-      console.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
-      if (syncErr.original) {
-        logger.error(`Raw MySQL Error: ${syncErr.original.message}`);
-        console.error(`Raw MySQL Error: ${syncErr.original.message}`);
+    // ─── Schema sync (durable + safe-fallback) ─────────────────────────────────
+    // IMPORTANT: alter:true must NOT run on every boot. On MySQL, alter cannot
+    // reliably detect existing unique indexes, so it re-adds a new copy
+    // (email_2, email_3, …) on each restart until the table exceeds MySQL's hard
+    // limit of 64 indexes and sync() crashes with "Too many keys specified".
+    //
+    // Normal boots use plain sync() — it still auto-creates any MISSING tables
+    // (what Hostinger needs) but never re-adds indexes to existing tables.
+    //
+    // To intentionally realign the schema (e.g. after a model change), do a
+    // SINGLE deploy with DB_SYNC_ALTER=true, then remove the flag again. Even in
+    // that mode we keep a safe fallback so a failed alter degrades gracefully to
+    // a plain sync() instead of crashing the whole server.
+    const useAlter = process.env.DB_SYNC_ALTER === 'true';
+    if (useAlter) {
+      try {
+        await sequelize.sync({ alter: true });
+        logger.info('✅ Database models synchronized (alter mode).');
+        console.log('✅ Database models synchronized (alter mode).');
+      } catch (syncErr) {
+        // Surface the exact MySQL reason to the Hostinger live dashboard.
+        logger.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
+        console.error(`❌ CRITICAL SYNC ERROR: ${syncErr.message}`);
+        if (syncErr.original) {
+          logger.error(`Raw MySQL Error: ${syncErr.original.message}`);
+          console.error(`Raw MySQL Error: ${syncErr.original.message}`);
+        }
+        console.log('⚠️ Falling back to standard sync to prevent crash...');
+        // Plain sync: creates missing tables, leaves existing tables untouched.
+        await sequelize.sync();
+        logger.info('✅ Database models synchronized using safe fallback.');
+        console.log('✅ Database models synchronized using safe fallback.');
       }
-      
-      console.log('⚠️ Falling back to standard sync to prevent crash...');
-      
-      // Fallback attempt: Standard sync (Creates missing tables, leaves existing alone)
+    } else {
       await sequelize.sync();
-      logger.info('✅ Database models synchronized using safe fallback.');
-      console.log('✅ Database models synchronized using safe fallback.');
+      logger.info('✅ Database models synchronized.');
+      console.log('✅ Database models synchronized.');
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).

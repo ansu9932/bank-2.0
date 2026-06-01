@@ -12,7 +12,9 @@ const OTP = sequelize.define('OTP', {
   ip_address: { type: DataTypes.STRING(50) },
 }, {
   tableName: 'otps',
-  indexes: [{ fields: ['email', 'purpose'] }],
+  // Removed the non-essential { email, purpose } filter index. It is not a
+  // uniqueness constraint and was re-added on every alter sync, contributing to
+  // index bloat. OTP lookups remain correct without it.
 });
 
 module.exports = OTP;
