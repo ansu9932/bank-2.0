@@ -1,17 +1,22 @@
 import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { RiMenuLine, RiBankLine, RiCloseLine } from 'react-icons/ri';
+import { RiMenuLine, RiBankLine, RiCloseLine, RiShieldFlashLine } from 'react-icons/ri';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { fetchAccount } from '../../store/slices/accountSlice';
 import { fetchNotifications } from '../../store/slices/notificationSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
 import { toggleMobileSidebar, closeMobileSidebar } from '../../store/slices/uiSlice';
+import useSessionTimeout from '../../hooks/useSessionTimeout';
 
 export default function DashboardLayout() {
   const dispatch = useDispatch();
   const { sidebarMobileOpen } = useSelector((s) => s.ui);
+
+  // Customer-only session-security engine (5-min inactivity, 1-hr absolute cap,
+  // concurrent-login enforcement). Inert on admin routes/users by design.
+  const { concurrentKicked, resolveKick } = useSessionTimeout();
 
   // ── Initial data load + notification polling ──────────────────────────────
   useEffect(() => {
@@ -24,6 +29,35 @@ export default function DashboardLayout() {
 
   const openDrawer  = () => dispatch(toggleMobileSidebar());
   const closeDrawer = () => dispatch(closeMobileSidebar());
+
+  // ── CONCURRENT-LOGIN LOCKOUT ──────────────────────────────────────────────
+  // When the server reports this session was superseded on another device, we
+  // break the active layout entirely and render a single blocking dialog.
+  if (concurrentKicked) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+        style={{ background: 'rgba(5,5,8,0.92)', backdropFilter: 'blur(8px)' }}>
+        <div className="w-full max-w-md rounded-3xl border p-8 text-center"
+          style={{ background: '#15161c', borderColor: '#ef444455', boxShadow: '0 0 60px rgba(220,38,38,0.35)' }}>
+          <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-5 border"
+            style={{ borderColor: '#ef4444', background: 'rgba(239,68,68,0.12)' }}>
+            <RiShieldFlashLine className="text-3xl" style={{ color: '#ef4444' }} />
+          </div>
+          <h2 className="text-xl font-bold text-white tracking-tight mb-2">Session Ended</h2>
+          <p className="text-sm text-white/60 mb-6 leading-relaxed">
+            Account logged in another device. This session has been destroyed for your security.
+          </p>
+          <button
+            onClick={resolveKick}
+            className="w-full py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white"
+            style={{ background: 'linear-gradient(135deg, #ef4444, #991b1b)', boxShadow: '0 0 26px rgba(220,38,38,0.4)' }}
+          >
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
 
   return (

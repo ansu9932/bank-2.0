@@ -19,6 +19,10 @@ router.post('/login', authLimiter, [
 router.post('/logout', protect, authController.logout);
 router.get('/me', protect, authController.getMe);
 
+// Lightweight concurrent-login heartbeat for the customer dashboard.
+// Returns 200 { active, reason } (never a hard 401 for a superseded token).
+router.get('/session-status', authController.sessionStatus);
+
 router.post('/send-otp', otpLimiter, [
   body('email').isEmail().withMessage('Valid email is required'),
   body('purpose').notEmpty().withMessage('Purpose is required'),

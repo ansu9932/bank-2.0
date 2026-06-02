@@ -12,6 +12,9 @@ export const login = createAsyncThunk('auth/login', async (credentials, { reject
     const { data } = await api.post('/auth/login', credentials);
     localStorage.setItem('token', data.data.token);
     localStorage.setItem('user', JSON.stringify(data.data.user));
+    // Absolute-session marker: the precise ms the current session began. The
+    // customer-side session engine enforces a hard 1-hour lifespan from here.
+    localStorage.setItem('loginTime', String(Date.now()));
     return data.data;
   } catch (err) {
     return rejectWithValue(err.response?.data?.message || 'Login failed');
@@ -22,6 +25,7 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   try { await api.post('/auth/logout'); } catch {}
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  localStorage.removeItem('loginTime');
 });
 
 export const getMe = createAsyncThunk('auth/getMe', async (_, { rejectWithValue }) => {
