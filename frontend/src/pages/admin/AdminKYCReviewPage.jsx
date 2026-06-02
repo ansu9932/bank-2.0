@@ -129,6 +129,8 @@ export default function AdminKYCReviewPage() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false); // approve/reject in flight
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -153,13 +155,8 @@ export default function AdminKYCReviewPage() {
 
   useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
-  const review = useCallback(async (decision) => {
+  const review = useCallback(async (decision, reason = '') => {
     if (!selected) return;
-    let reason = '';
-    if (decision === 'reject') {
-      reason = window.prompt('Reason for rejection (the user will see this):', '') || '';
-      if (!reason.trim()) { toast.error('A rejection reason is required.'); return; }
-    }
     setActing(true);
     try {
       const { data } = await api.post(
@@ -188,6 +185,15 @@ export default function AdminKYCReviewPage() {
       setActing(false);
     }
   }, [selected]);
+
+  // Confirm rejection from the themed modal (replaces the native window.prompt).
+  const confirmReject = useCallback(() => {
+    if (!rejectReason.trim()) { toast.error('A rejection reason is required.'); return; }
+    const reason = rejectReason.trim();
+    setRejectOpen(false);
+    setRejectReason('');
+    review('reject', reason);
+  }, [rejectReason, review]);
 
   return (
     <div className="text-white">
@@ -289,7 +295,7 @@ export default function AdminKYCReviewPage() {
                 {/* Actions */}
                 <div className="flex flex-col sm:flex-row gap-3 mt-5">
                   <button
-                    onClick={() => review('reject')}
+                    onClick={() => setRejectOpen(true)}
                     disabled={acting}
                     className="flex-1 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 border disabled:opacity-50"
                     style={{ borderColor: `${NEON.red}66`, background: `${NEON.red}12`, color: NEON.red }}
@@ -321,6 +327,72 @@ export default function AdminKYCReviewPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* ── Reject reason modal (themed replacement for window.prompt) ─────── */}
+      <AnimatePresence>
+        {rejectOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ background: 'rgba(3,3,8,0.72)', backdropFilter: 'blur(4px)' }}
+            onClick={() => { if (!acting) { setRejectOpen(false); setRejectReason(''); } }}
+          >
+            <motion.div
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
+              className="w-full max-w-md rounded-3xl border bg-[#0d0d14] p-6"
+              style={{ borderColor: `${NEON.red}44`, boxShadow: `0 24px 70px rgba(0,0,0,0.6), 0 0 30px ${NEON.red}22` }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center border flex-shrink-0"
+                  style={{ borderColor: `${NEON.red}55`, background: `${NEON.red}14` }}>
+                  <RiCloseCircleLine size={20} style={{ color: NEON.red }} />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-base leading-tight">Reject Submission</h3>
+                  <p className="text-white/45 text-xs mt-0.5">
+                    {selected ? `${selected.first_name} ${selected.last_name} · ${selected.customer_id}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <label className="block text-[11px] uppercase tracking-widest text-white/40 mb-2">
+                Reason (visible to the user)
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="e.g. Captured document is blurred — please retake in better lighting."
+                className="w-full rounded-xl bg-[#06060c] border border-white/10 p-3 text-sm text-white placeholder-white/25 outline-none resize-none focus:border-white/25"
+              />
+
+              <div className="flex gap-3 mt-5">
+                <button
+                  onClick={() => { setRejectOpen(false); setRejectReason(''); }}
+                  disabled={acting}
+                  className="flex-1 py-3 rounded-2xl font-semibold text-sm tracking-wide uppercase border border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmReject}
+                  disabled={acting || !rejectReason.trim()}
+                  className="flex-1 py-3 rounded-2xl font-semibold text-sm tracking-wide uppercase flex items-center justify-center gap-2 text-white disabled:opacity-50"
+                  style={{ background: `linear-gradient(135deg, ${NEON.red}, #b91c1c)`, boxShadow: `0 0 22px ${NEON.red}44` }}
+                >
+                  {acting
+                    ? <><RiLoader4Line className="animate-spin" size={16} /> Rejecting…</>
+                    : <><RiCloseCircleLine size={16} /> Confirm Reject</>}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
