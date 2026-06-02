@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -719,7 +719,7 @@ function Step5Document({ stream, onConfirm, processing }) {
 
 
 // ─── Completion screen ───────────────────────────────────────────────────────
-function CompleteScreen() {
+function CompleteScreen({ production = false, onContinue }) {
   return (
     <motion.div
       key="done"
@@ -746,6 +746,24 @@ function CompleteScreen() {
           </div>
         ))}
       </div>
+
+      {/* Production: surface the post-KYC next step + clean redirect to sign-in.
+          (Demo / showcase mode simply rests on this screen.) */}
+      {production && (
+        <div className="mt-6">
+          <p className="text-xs text-white/45 mb-3 flex items-center justify-center gap-1.5">
+            <Loader2 size={13} className="animate-spin" style={{ color: NEON.cyan }} />
+            We'll email you once an officer approves your account. Redirecting to sign-in…
+          </p>
+          <button
+            onClick={onContinue}
+            className="w-full py-3 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2"
+            style={{ background: `linear-gradient(135deg, ${NEON.green}, ${NEON.cyan})`, boxShadow: `0 0 24px ${NEON.green}44` }}
+          >
+            <ArrowRight size={16} /> Continue to Sign-In
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -754,6 +772,13 @@ function CompleteScreen() {
 // ─── MAIN ORCHESTRATOR · 5-phase state machine ───────────────────────────────
 export default function CyberVideoKYC() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  // Production secure-link token (email links land on /video-kyc?token=XYZ).
+  // When present we are in the LIVE onboarding flow; when absent it's the
+  // public /cyber-kyc showcase (demo mode).
+  const token = searchParams.get('token');
+  const isProduction = Boolean(token);
+
   const [step, setStep] = useState(0);                 // explicit workflow index (0..5)
   const [stream, setStream] = useState(null);          // shared MediaStream
   const [initializing, setInitializing] = useState(false);
@@ -771,11 +796,23 @@ export default function CyberVideoKYC() {
     });
   }, []);
 
+  // Clean post-KYC redirect: once the verification session is sealed in the
+  // LIVE flow, send the user to the sign-in landing (their account moves to
+  // admin review; they'll receive the approval + setup email). The showcase
+  // demo (no token) simply rests on the completion screen.
+  const goToLanding = useCallback(() => navigate('/login', { replace: true }), [navigate]);
+
+  useEffect(() => {
+    if (step === 5 && isProduction) {
+      const t = setTimeout(goToLanding, 6000);
+      return () => clearTimeout(t);
+    }
+  }, [step, isProduction, goToLanding]);
+
   // ── Phase 5 submit: snapshot → blob → authorized multipart POST ───────────
-  // On a success:true response we cleanly tear down the camera and advance to
-  // the final completion screen. If the request fails (endpoint blocked, offline,
-  // camera-restricted environment), we DON'T trap the user — we surface a soft
-  // warning and still complete onboarding gracefully.
+  // Sends the extracted ?token= to POST /api/account/kyc/upload so the real
+  // user is moved out of demo mode and their record is advanced in MySQL to
+  // video_kyc_completed: true / kyc_status: 'video_kyc_pending'.
   const submitKYC = useCallback(async (dataURL) => {
     if (!dataURL) { toast.error('No capture found. Please retake the photo.'); return; }
     setProcessing(true);
@@ -786,21 +823,26 @@ export default function CyberVideoKYC() {
       const form = new FormData();
       form.append('document', file);
       // Forward the onboarding secure-link token when present (pre-login flow).
-      const token = searchParams.get('token');
       if (token) form.append('token', token);
 
       const { data } = await api.post('/account/kyc/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      if (data?.success) {
+      const stored = data?.data?.stored; // true → persisted against a real user
+
+      stopStream();
+
+      if (data?.success && (stored || !isProduction)) {
+        // Genuine DB write (production) OR acknowledged demo capture (no token).
         toast.success('Identity verification submitted successfully.');
-        stopStream();
         next();
+      } else if (isProduction && stored === false) {
+        // Token was supplied but did not resolve → expired / already-used link.
+        toast.error('Your verification link has expired. Please request a new one.');
+        goToLanding();
       } else {
-        // Unexpected non-success payload — fail gracefully rather than trapping.
         toast('Submitted, finalizing your session…', { icon: '⚙️' });
-        stopStream();
         next();
       }
     } catch (err) {
@@ -812,7 +854,7 @@ export default function CyberVideoKYC() {
     } finally {
       setProcessing(false);
     }
-  }, [searchParams, stopStream, next]);
+  }, [token, isProduction, stopStream, next, goToLanding]);
 
   // Request actual webcam + mic via the standard browser API.
   const initialize = useCallback(async () => {
@@ -896,7 +938,7 @@ export default function CyberVideoKYC() {
                 {step === 2 && <Step3Liveness stream={stream} onNext={next} />}
                 {step === 3 && <Step4VoiceCode onNext={next} />}
                 {step === 4 && <Step5Document stream={stream} onConfirm={submitKYC} processing={processing} />}
-                {step === 5 && <CompleteScreen />}
+                {step === 5 && <CompleteScreen production={isProduction} onContinue={goToLanding} />}
               </AnimatePresence>
             </div>
 
