@@ -6,7 +6,7 @@ import {
   RiDownloadLine, RiRefreshLine,
 } from 'react-icons/ri';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
-import { format } from 'date-fns';
+import { safeFormat, safeCurrency } from '../../utils/dateHelpers';
 
 const modeColor = { NEFT: 'badge-info', RTGS: 'badge-brand', IMPS: 'badge-warning', INTERNAL: 'badge-success', SALARY: 'badge-success', INTEREST: 'badge-info', SYSTEM: 'badge-info', CHARGE: 'badge-danger' };
 
@@ -106,7 +106,7 @@ export default function TransactionsPage() {
           <div className="p-8 text-center">
             <div className="spinner w-8 h-8 mx-auto" style={{ borderWidth: 3 }} />
           </div>
-        ) : transactions.length === 0 ? (
+        ) : !transactions || transactions.length === 0 ? (
           <div className="p-12 text-center">
             <RiArrowDownLine className="text-dark-400 text-5xl mx-auto mb-3" />
             <p className="text-dark-300 text-sm">No transactions found</p>
@@ -148,16 +148,16 @@ export default function TransactionsPage() {
                   </div>
                   {/* Date */}
                   <div className="hidden sm:block sm:col-span-2">
-                    <p className="text-dark-300 text-xs">{format(new Date(tx.created_at), 'dd MMM yyyy')}</p>
-                    <p className="text-dark-500 text-[10px]">{format(new Date(tx.created_at), 'HH:mm')}</p>
+                    <p className="text-slate-400 text-xs">{safeFormat(tx.created_at, 'dd MMM yyyy')}</p>
+                    <p className="text-slate-500 text-[10px]">{safeFormat(tx.created_at, 'HH:mm', '')}</p>
                   </div>
                   {/* Amount */}
                   <div className="sm:col-span-2 text-right flex-shrink-0">
                     <p className={`font-bold text-sm ${isCredit ? 'text-green-400' : 'text-red-400'}`}>
-                      {isCredit ? '+' : '-'}₹{parseFloat(tx.amount).toLocaleString('en-IN')}
+                      {isCredit ? '+' : '-'}₹{safeCurrency(tx.amount)}
                     </p>
-                    <p className="text-dark-400 text-[10px]">
-                      Bal: ₹{parseFloat(tx.balance_after || 0).toLocaleString('en-IN')}
+                    <p className="text-slate-500 text-[10px]">
+                      Bal: ₹{safeCurrency(tx.balance_after)}
                     </p>
                   </div>
                 </motion.div>
@@ -167,7 +167,7 @@ export default function TransactionsPage() {
         )}
 
         {/* Pagination */}
-        {pagination.totalPages > 1 && (
+        {pagination?.totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.05]">
             <p className="text-dark-400 text-xs">
               {pagination.total} transactions · Page {pagination.page}/{pagination.totalPages}

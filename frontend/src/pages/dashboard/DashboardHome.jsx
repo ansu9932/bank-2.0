@@ -11,7 +11,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import AccountCard from '../../components/dashboard/AccountCard';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 const QuickAction = ({ to, icon: Icon, label, color }) => (
   <Link to={to} className="glass-card-hover p-4 flex flex-col items-center gap-2.5 text-center">
@@ -40,7 +40,7 @@ const TxRow = ({ tx }) => {
         </p>
         <p className="text-dark-300 text-xs mt-0.5 flex items-center gap-1.5">
           <span className="badge badge-info py-0 px-1.5 text-[10px]">{tx.transfer_mode}</span>
-          {format(new Date(tx.created_at), 'dd MMM, HH:mm')}
+          {safeFormat(tx.created_at, 'dd MMM, HH:mm')}
         </p>
       </div>
       <p className={`text-sm font-bold flex-shrink-0 ${isCredit ? 'text-green-400' : 'text-red-400'}`}>
@@ -54,7 +54,7 @@ const TxRow = ({ tx }) => {
 const buildChartData = (transactions) => {
   const map = {};
   transactions.slice(0, 30).forEach(tx => {
-    const day = format(new Date(tx.created_at), 'dd MMM');
+    const day = safeFormat(tx.created_at, 'dd MMM', 'Unknown');
     if (!map[day]) map[day] = { day, credit: 0, debit: 0 };
     if (tx.transaction_type === 'credit') map[day].credit += parseFloat(tx.amount);
     else map[day].debit += parseFloat(tx.amount);
@@ -100,7 +100,7 @@ export default function DashboardHome() {
           <p className="text-dark-300 text-sm mt-0.5">Here's your financial overview</p>
         </div>
         <div className="hidden sm:block">
-          <p className="text-dark-300 text-xs text-right">{format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
+          <p className="text-dark-300 text-xs text-right">{safeFormat(new Date(), 'EEEE, dd MMMM yyyy')}</p>
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { RiCustomerService2Line, RiAddLine, RiCheckLine, RiTimeLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 const statusColor = { open: 'badge-warning', in_progress: 'badge-info', resolved: 'badge-success', closed: 'badge-info' };
 const priorityColor = { low: 'badge-info', medium: 'badge-warning', high: 'badge-danger', urgent: 'badge-danger' };
@@ -121,7 +121,7 @@ export default function SupportPage() {
                 <p className="text-white font-medium text-sm">{t.subject}</p>
                 <p className="text-dark-400 text-xs mt-0.5 truncate">{t.description}</p>
                 <p className="text-dark-500 text-[10px] mt-1.5 flex items-center gap-1">
-                  <RiTimeLine /> {format(new Date(t.created_at), 'dd MMM yyyy HH:mm')} · #{t.ticket_number}
+                  <RiTimeLine /> {safeFormat(t.created_at, 'dd MMM yyyy HH:mm')} · #{t.ticket_number}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1.5">

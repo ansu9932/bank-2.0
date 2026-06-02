@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 const COLORS = ['#c8102e','#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899'];
 
@@ -26,7 +26,7 @@ export default function AnalyticsPage() {
   const monthlyData = useMemo(() => {
     const map = {};
     transactions.forEach(tx => {
-      const m = format(new Date(tx.created_at), 'MMM yy');
+      const m = safeFormat(tx.created_at, 'MMM yy', 'Unknown');
       if (!map[m]) map[m] = { month: m, credit: 0, debit: 0, net: 0 };
       const amt = parseFloat(tx.amount);
       if (tx.transaction_type === 'credit') { map[m].credit += amt; map[m].net += amt; }

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { RiSearchLine, RiAlertLine, RiRefreshLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 export default function AdminTransactionsPage() {
   const [txns, setTxns] = useState([]);
@@ -64,7 +64,7 @@ export default function AdminTransactionsPage() {
 
         {loading ? (
           <div className="p-8 text-center"><div className="spinner w-8 h-8 mx-auto" style={{ borderWidth: 3 }} /></div>
-        ) : txns.map(tx => (
+        ) : (txns || []).map(tx => (
           <div key={tx.id} className={`flex sm:grid sm:grid-cols-12 gap-3 items-center px-5 py-3.5 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] ${tx.is_flagged ? 'bg-red-500/5' : ''}`}>
             <div className="sm:col-span-3">
               <p className="text-white font-mono text-xs">{tx.reference_number}</p>
@@ -82,7 +82,7 @@ export default function AdminTransactionsPage() {
               </p>
             </div>
             <div className="hidden sm:block sm:col-span-2">
-              <p className="text-dark-300 text-xs">{format(new Date(tx.created_at), 'dd MMM yy HH:mm')}</p>
+              <p className="text-slate-400 text-xs">{safeFormat(tx.created_at, 'dd MMM yy HH:mm')}</p>
             </div>
             <div className="sm:col-span-1 flex justify-end items-center gap-1">
               {tx.is_flagged && <RiAlertLine className="text-red-400 text-sm" />}
