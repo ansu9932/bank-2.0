@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { RiSearchLine, RiArrowRightLine, RiRefreshLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 const kycBadge = { pending: 'badge-warning', under_review: 'badge-info', video_kyc_pending: 'badge-brand', approved: 'badge-success', rejected: 'badge-danger' };
 const statusBadge = { active: 'badge-success', pending: 'badge-warning', frozen: 'badge-danger', closed: 'badge-info' };
@@ -89,7 +89,7 @@ export default function AdminUsersPage() {
               <span className={`badge ${kycBadge[u.kyc_status]} text-[10px]`}>{u.kyc_status?.replace(/_/g,' ')}</span>
             </div>
             <div className="hidden sm:block sm:col-span-2">
-              <p className="text-dark-300 text-xs">{format(new Date(u.created_at), 'dd MMM yyyy')}</p>
+              <p className="text-dark-300 text-xs">{safeFormat(u.created_at, 'dd MMM yyyy')}</p>
             </div>
             <div className="sm:col-span-1 flex justify-end">
               <Link to={`/admin/users/${u.id}`}

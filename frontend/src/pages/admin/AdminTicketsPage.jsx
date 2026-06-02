@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { RiCustomerService2Line, RiRefreshLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { safeFormat } from '../../utils/dateHelpers';
 
 const statusColor = { open: 'badge-warning', in_progress: 'badge-info', resolved: 'badge-success', closed: 'badge-info' };
 
@@ -68,7 +68,7 @@ export default function AdminTicketsPage() {
                 <div className="flex items-center gap-3 mt-1.5">
                   <p className="text-dark-500 text-[10px]">#{t.ticket_number}</p>
                   {t.user && <p className="text-dark-400 text-[10px]">{t.user.first_name} {t.user.last_name} · {t.user.email}</p>}
-                  <p className="text-dark-500 text-[10px]">{format(new Date(t.created_at), 'dd MMM yyyy')}</p>
+                  <p className="text-dark-500 text-[10px]">{safeFormat(t.created_at, 'dd MMM yyyy')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">

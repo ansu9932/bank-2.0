@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const { User, Account, OTP, Session, Notification } = require('../models');
 const { generateToken } = require('../middleware/auth');
@@ -63,6 +64,15 @@ exports.login = async (req, res) => {
 
     // Reset login attempts
     await user.update({ login_attempts: 0, locked_until: null, last_login: new Date() });
+
+    // ── SINGLE-DEVICE ENFORCEMENT ──────────────────────────────────────────
+    // Deactivate every prior active session for this user. Any other device
+    // still polling /auth/session-status will now receive { active:false } and
+    // be force-logged-out with the "logged in on another device" dialog.
+    await Session.update(
+      { is_active: false, logout_at: new Date() },
+      { where: { user_id: user.id, is_active: true } }
+    );
 
     // Create session
     const session = await Session.create({
@@ -134,6 +144,49 @@ exports.logout = async (req, res) => {
   } catch (err) {
     logger.error(`Logout error: ${err.message}`);
     return error(res, 'Logout failed.');
+  }
+};
+
+// ─── Session Status (concurrent-login heartbeat) ─────────────────────────────
+// Lightweight poll target for the customer dashboard's session-security engine.
+// Unlike `protect`, this NEVER returns 401 for a valid-but-superseded token —
+// it returns 200 { active:false, reason } so the client can show a clean
+// "logged in on another device" dialog before wiping local state. A missing or
+// malformed token is the only 401 case.
+exports.sessionStatus = async (req, res) => {
+  try {
+    let token;
+    if (req.headers.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
+    if (!token) return unauthorized(res, 'No session token provided.');
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      // Expired/invalid JWT → treat as a destroyed session (not a hard 401),
+      // so the client can react gracefully.
+      return success(res, { active: false, reason: 'expired' }, 'Session token invalid.');
+    }
+
+    const session = await Session.findOne({ where: { id: decoded.sessionId } });
+    if (!session || !session.is_active) {
+      return success(res, { active: false, reason: 'concurrent' }, 'Session is no longer active.');
+    }
+    if (session.expires_at && new Date() > new Date(session.expires_at)) {
+      return success(res, { active: false, reason: 'expired' }, 'Session expired.');
+    }
+
+    // Heartbeat: refresh last-activity so the server-side record stays warm.
+    await session.update({ last_activity: new Date() });
+    return success(res, { active: true }, 'Session active.');
+  } catch (err) {
+    logger.error(`Session status error: ${err.message}`);
+    // Fail-open to avoid nuisance logouts on a transient DB blip.
+    return success(res, { active: true, degraded: true }, 'Session status unavailable.');
   }
 };
 
