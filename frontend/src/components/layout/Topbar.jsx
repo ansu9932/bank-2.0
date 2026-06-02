@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  RiMenuLine, RiBellLine, RiSearchLine,
+  RiBellLine, RiSearchLine,
   RiCheckLine, RiAlertLine, RiArrowRightLine,
 } from 'react-icons/ri';
-import { toggleSidebar, toggleMobileSidebar } from '../../store/slices/uiSlice';
 import { markAllRead } from '../../store/slices/notificationSlice';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -33,13 +32,7 @@ export default function Topbar() {
     <header className="h-16 flex items-center justify-between px-4 lg:px-6 border-b border-white/[0.05] bg-dark-800/50 backdrop-blur-sm flex-shrink-0">
       {/* Left */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => { dispatch(toggleSidebar()); dispatch(toggleMobileSidebar()); }}
-          className="p-2 rounded-xl hover:bg-white/[0.05] text-dark-200 hover:text-white transition-colors"
-        >
-          <RiMenuLine className="text-xl" />
-        </button>
-        <div className="hidden md:flex items-center gap-2 bg-dark-700 rounded-xl px-3 py-2 border border-white/[0.06] min-w-[200px]">
+        <div className="flex items-center gap-2 bg-dark-700 rounded-xl px-3 py-2 border border-white/[0.06] min-w-[240px]">
           <RiSearchLine className="text-dark-300 text-base flex-shrink-0" />
           <input
             type="text" placeholder="Search transactions, features..."
