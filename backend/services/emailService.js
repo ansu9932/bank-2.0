@@ -5,15 +5,21 @@ let transporter;
 
 const createTransporter = () => {
   if (transporter) return transporter;
+  
+  const smtpPort = parseInt(process.env.SMTP_PORT) || 465;
+  const isSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
+
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 465,
-    secure: process.env.SMTP_SECURE === 'true',
+    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+    port: smtpPort,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    tls: { rejectUnauthorized: false },
+    tls: { 
+      rejectUnauthorized: false 
+    },
   });
   return transporter;
 };
@@ -21,10 +27,10 @@ const createTransporter = () => {
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
     const transport = createTransporter();
+    const senderEmail = process.env.SMTP_USER || 'info@divyamoolya.in';
+
     const info = await transport.sendMail({
-      // Hostinger's SMTP relay drops mail whose 'from' header does not match the
-      // authenticated SMTP username. This MUST stay aligned with the SMTP account.
-      from: '"Alister Bank" <info@divyamoolya.in>',
+      from: `"Alister Bank" <${senderEmail}>`,
       to,
       subject,
       html,
