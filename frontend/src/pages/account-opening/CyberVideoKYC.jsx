@@ -5,16 +5,16 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import {
   Camera, Mic, ShieldCheck, CheckCircle2, AlertTriangle,
-  ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ScanLine,
-  RefreshCw, Loader2, Fingerprint, Lock,
+  ArrowRight, ArrowUp, ScanLine, SwitchCamera,
+  RefreshCw, Loader2, Lock,
   Cpu, Wifi, Check, CreditCard, Zap, Power,
 } from 'lucide-react';
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CYBER VIDEO KYC
-   A 4-phase identity-verification wizard (state machine).
+   A 3-phase identity-verification wizard (state machine).
    Theme: deep-black #0d0e12, crimson-red accents, glassmorphism panels.
-   Flow: Secure Link → Face Align (auto-capture) → Liveness → ID Capture (rear cam)
+   Flow: Secure Link → Biometric Scan (auto multi-angle + capture) → ID Capture
    ────────────────────────────────────────────────────────────────────────── */
 
 // ─── Crimson / black brand palette ────────────────────────────────────────────
@@ -27,14 +27,13 @@ const RED = {
   panel: '#15161c',
 };
 
-// ─── Step metadata (Voice/Code-reading step removed) ──────────────────────────
+// ─── Step metadata (multi-angle scan absorbs the old manual liveness step) ────
 const STEPS = [
-  { id: 0, label: 'Secure Link', icon: Power },
-  { id: 1, label: 'Face Scan',   icon: ScanLine },
-  { id: 2, label: 'Liveness',    icon: Fingerprint },
-  { id: 3, label: 'ID Capture',  icon: CreditCard },
+  { id: 0, label: 'Secure Link',   icon: Power },
+  { id: 1, label: 'Biometric Scan', icon: ScanLine },
+  { id: 2, label: 'ID Capture',    icon: CreditCard },
 ];
-const TOTAL_PHASES = STEPS.length; // 4
+const TOTAL_PHASES = STEPS.length; // 3
 
 // ─── Helper: convert a base64 data URL → Blob (for multipart upload) ──────────
 function dataURLToBlob(dataURL) {
@@ -85,34 +84,6 @@ function GridBackground() {
   );
 }
 
-
-// ─── Reusable camera feed (attaches a shared MediaStream to a <video>) ────────
-const CameraFeed = React.forwardRef(function CameraFeed(
-  { stream, className = '', mirrored = true, style = {} }, externalRef
-) {
-  const internalRef = useRef(null);
-  const videoRef = externalRef || internalRef;
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (v && stream && v.srcObject !== stream) {
-      v.srcObject = stream;
-      const p = v.play();
-      if (p && p.catch) p.catch(() => {});
-    }
-  }, [stream, videoRef]);
-
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      muted
-      playsInline
-      className={className}
-      style={{ transform: mirrored ? 'scaleX(-1)' : 'none', ...style }}
-    />
-  );
-});
 
 // ─── Top step indicator (crimson nodes + connector) ──────────────────────────
 function StepIndicator({ current }) {
@@ -290,12 +261,14 @@ function analyzeFrame(video, canvas) {
 
   const centerDensity = centerCount ? centerEnergy / centerCount : 0;
   const borderDensity = borderCount ? borderEnergy / borderCount : 0;
-  // Centre-of-detail offset from frame centre, normalised 0..1
+  // Centre-of-detail offset from frame centre.
   const comX = momentMass ? momentX / momentMass : cx;
   const comY = momentMass ? momentY / momentMass : cy;
-  const offset = Math.sqrt((comX - cx) ** 2 + (comY - cy) ** 2) / (SIZE / 2);
+  const dxNorm = (comX - cx) / (SIZE / 2);   // signed: -1 left … +1 right
+  const dyNorm = (comY - cy) / (SIZE / 2);   // signed: -1 top  … +1 bottom
+  const offset = Math.sqrt(dxNorm ** 2 + dyNorm ** 2);
 
-  return { centerDensity, borderDensity, offset };
+  return { centerDensity, borderDensity, offset, dxNorm, dyNorm };
 }
 
 // Translate the raw metric into a human state for the face step.
@@ -310,86 +283,175 @@ function classifyFace(m) {
 }
 
 
-// ─── STEP 2 · Face scan — auto distance detection + auto-capture ─────────────
-function Step2FaceScan({ stream, onCaptured }) {
+// ─── STEP 2 · Biometric scan — multi-angle pose sequence + auto-capture ──────
+// Phase A: look centre · Phase B: turn head L/R · Phase C: tilt head up.
+// Fully automatic (no manual clicks). The analysis loop is a single
+// requestAnimationFrame throttled to ~12.5 FPS that re-uses one work canvas and
+// is cancelled on unmount — no leaks, no jitter, low mobile CPU.
+const POSES = [
+  { key: 'center', prompt: 'LOOK STRAIGHT AHEAD',     icon: ScanLine },
+  { key: 'turn',   prompt: 'SLOWLY TURN HEAD LEFT / RIGHT', icon: ArrowRight },
+  { key: 'tilt',   prompt: 'TILT YOUR HEAD UP',       icon: ArrowUp },
+];
+
+function Step2BiometricScan({ stream, onCaptured }) {
   const videoRef = useRef(null);
   const analyzeCanvasRef = useRef(null);
   const snapCanvasRef = useRef(null);
-  const lockedSinceRef = useRef(null);
-  const firedRef = useRef(false);
+  const rafRef = useRef(0);
+  const lastProcessRef = useRef(0);
+  // Mutable sequence state (kept in a ref so the rAF loop never goes stale).
+  const seqRef = useRef({ pose: 0, holdStart: 0, baseline: null, snapshot: null, fired: false, startedAt: 0 });
+  const lastHintRef = useRef('');
 
-  const [face, setFace] = useState({ state: 'searching', label: 'INITIALIZING SENSOR…' });
+  const [pose, setPose] = useState(0);
+  const [hint, setHint] = useState('INITIALIZING SENSOR…');
   const [holdPct, setHoldPct] = useState(0);
 
-  const HOLD_MS = 1200;     // must stay locked this long before auto-capture
-  const FALLBACK_MS = 15000; // anti-stuck: capture anyway if never locks
+  const FRAME_INTERVAL = 80;   // ms between processed frames ≈ 12.5 FPS
+  const HOLD_CENTER = 700;     // hold the centred lock this long
+  const HOLD_MOVE   = 350;     // confirm a pose movement this long
+  const TURN_THRESH = 0.22;    // horizontal shift from baseline
+  const TILT_THRESH = 0.16;    // upward shift from baseline
+  const FALLBACK_MS = 25000;   // anti-stuck: complete anyway after this
 
-  // Snap a still frame from the live (front) video → dataURL → bubble up.
-  const autoCapture = useCallback(() => {
-    if (firedRef.current) return;
-    const v = videoRef.current;
-    const c = snapCanvasRef.current;
-    if (!v || !c || !v.videoWidth) return;
-    firedRef.current = true;
-    c.width = v.videoWidth;
-    c.height = v.videoHeight;
+  // Throttled hint setter — avoids re-render churn when the label is unchanged.
+  const pushHint = useCallback((label) => {
+    if (lastHintRef.current !== label) { lastHintRef.current = label; setHint(label); }
+  }, []);
+
+  const snap = useCallback(() => {
+    const v = videoRef.current, c = snapCanvasRef.current;
+    if (!v || !c || !v.videoWidth) return null;
+    c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-    onCaptured(c.toDataURL('image/png'));
-  }, [onCaptured]);
+    return c.toDataURL('image/png');
+  }, []);
 
-  // Analysis loop — runs ~5×/sec, drives state + the locked-hold auto-capture.
+  const fire = useCallback(() => {
+    const seq = seqRef.current;
+    if (seq.fired) return;
+    seq.fired = true;
+    cancelAnimationFrame(rafRef.current);
+    onCaptured(seq.snapshot || snap());
+  }, [onCaptured, snap]);
+
   useEffect(() => {
     const v = videoRef.current;
     if (v && stream && v.srcObject !== stream) {
       v.srcObject = stream;
       const p = v.play(); if (p && p.catch) p.catch(() => {});
     }
-    const startedAt = Date.now();
-    const id = setInterval(() => {
-      const metric = analyzeFrame(videoRef.current, analyzeCanvasRef.current);
-      const result = classifyFace(metric);
-      setFace(result);
+    seqRef.current = { pose: 0, holdStart: 0, baseline: null, snapshot: null, fired: false, startedAt: Date.now() };
 
-      if (result.state === 'locked') {
-        if (!lockedSinceRef.current) lockedSinceRef.current = Date.now();
-        const held = Date.now() - lockedSinceRef.current;
-        setHoldPct(Math.min(100, (held / HOLD_MS) * 100));
-        if (held >= HOLD_MS) { clearInterval(id); autoCapture(); }
-      } else {
-        lockedSinceRef.current = null;
-        setHoldPct(0);
+    const process = () => {
+      const seq = seqRef.current;
+      if (seq.fired) return;
+      const now = Date.now();
+      const m = analyzeFrame(videoRef.current, analyzeCanvasRef.current);
+      if (!m) { pushHint('INITIALIZING SENSOR…'); return; }
+
+      // Phase A — centre + correct distance.
+      if (seq.pose === 0) {
+        const cls = classifyFace(m);
+        if (cls.state === 'locked') {
+          if (!seq.holdStart) seq.holdStart = now;
+          const held = now - seq.holdStart;
+          setHoldPct(Math.min(100, (held / HOLD_CENTER) * 100));
+          pushHint('HOLD STILL — LOCKING');
+          if (held >= HOLD_CENTER) {
+            seq.baseline = { dx: m.dxNorm, dy: m.dyNorm };
+            seq.snapshot = snap();
+            seq.pose = 1; seq.holdStart = 0;
+            setPose(1); setHoldPct(0);
+          }
+        } else { seq.holdStart = 0; setHoldPct(0); pushHint(cls.label); }
+        return;
       }
 
-      // Anti-stuck safety: never trap a user on an unusual camera/browser.
-      if (Date.now() - startedAt > FALLBACK_MS) { clearInterval(id); autoCapture(); }
-    }, 200);
-    return () => clearInterval(id);
-  }, [stream, autoCapture]);
+      // Phase B — turn head (either direction) relative to the centre baseline.
+      if (seq.pose === 1) {
+        const moved = Math.abs(m.dxNorm - (seq.baseline?.dx ?? 0));
+        if (moved > TURN_THRESH) {
+          if (!seq.holdStart) seq.holdStart = now;
+          const held = now - seq.holdStart;
+          setHoldPct(Math.min(100, (held / HOLD_MOVE) * 100));
+          pushHint('SIDE PROFILE DETECTED — HOLD');
+          if (held >= HOLD_MOVE) { seq.pose = 2; seq.holdStart = 0; setPose(2); setHoldPct(0); }
+        } else { seq.holdStart = 0; setHoldPct(0); pushHint('SLOWLY TURN HEAD LEFT / RIGHT'); }
+        return;
+      }
 
-  const locked = face.state === 'locked';
-  const ringColor = locked ? RED.bright : face.state === 'searching' ? '#6b6b75' : RED.deep;
+      // Phase C — tilt head up relative to baseline → finish + capture.
+      if (seq.pose === 2) {
+        const up = (seq.baseline?.dy ?? 0) - m.dyNorm; // positive = moved up
+        if (up > TILT_THRESH) {
+          if (!seq.holdStart) seq.holdStart = now;
+          const held = now - seq.holdStart;
+          setHoldPct(Math.min(100, (held / HOLD_MOVE) * 100));
+          pushHint('VERTICAL ANGLE CONFIRMED');
+          if (held >= HOLD_MOVE) { fire(); }
+        } else { seq.holdStart = 0; setHoldPct(0); pushHint('TILT YOUR HEAD UP'); }
+      }
+
+      // Anti-stuck safety — never trap a user on an unusual camera/browser.
+      if (now - seq.startedAt > FALLBACK_MS) fire();
+    };
+
+    const loop = (ts) => {
+      rafRef.current = requestAnimationFrame(loop);
+      if (ts - lastProcessRef.current < FRAME_INTERVAL) return; // throttle
+      lastProcessRef.current = ts;
+      process();
+    };
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [stream, pushHint, snap, fire]);
+
+  const activePose = POSES[pose] || POSES[0];
+  const ringColor = holdPct > 0 ? RED.bright : RED.deep;
 
   return (
     <motion.div key="step2"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }}
       className="w-full max-w-md mx-auto flex flex-col items-center">
-      <h2 className="text-xl font-bold text-white tracking-tight mb-1 text-center">Facial Scan</h2>
-      <p className="text-sm text-white/50 mb-6 text-center">
-        Align your face in the ring. Capture is fully automatic — no button needed.
+      <h2 className="text-xl font-bold text-white tracking-tight mb-1 text-center">Biometric Scan</h2>
+      <p className="text-sm text-white/50 mb-5 text-center">
+        Follow the on-screen poses. Detection &amp; capture are fully automatic — no buttons.
       </p>
+
+      {/* Pose progress tracker */}
+      <div className="flex items-center gap-2 mb-5">
+        {POSES.map((p, i) => (
+          <div key={p.key} className="flex items-center gap-2">
+            <motion.div
+              animate={{
+                backgroundColor: i < pose ? RED.bright : i === pose ? `${RED.bright}33` : 'rgba(255,255,255,0.06)',
+                borderColor: i <= pose ? RED.bright : 'rgba(255,255,255,0.12)',
+              }}
+              className="w-7 h-7 rounded-full border flex items-center justify-center">
+              {i < pose
+                ? <Check size={13} style={{ color: RED.bright }} />
+                : <span className="text-[10px] font-bold" style={{ color: i === pose ? RED.bright : '#5b5b66' }}>{i + 1}</span>}
+            </motion.div>
+            {i < POSES.length - 1 && <div className="w-5 h-px" style={{ background: i < pose ? RED.bright : 'rgba(255,255,255,0.12)' }} />}
+          </div>
+        ))}
+      </div>
 
       {/* Circular HUD */}
       <div className="relative w-72 h-72 sm:w-80 sm:h-80 mb-6">
         <motion.div className="absolute inset-0 rounded-full border-2 border-dashed"
           style={{ borderColor: `${ringColor}66` }}
           animate={{ rotate: 360 }}
-          transition={{ duration: locked ? 6 : 18, repeat: Infinity, ease: 'linear' }} />
+          transition={{ duration: holdPct > 0 ? 6 : 18, repeat: Infinity, ease: 'linear' }} />
         <motion.div className="absolute inset-2 rounded-full border-4 overflow-hidden"
           animate={{ boxShadow: `0 0 38px ${ringColor}aa, inset 0 0 30px ${ringColor}55` }}
           style={{ borderColor: ringColor }}>
           <video ref={videoRef} autoPlay muted playsInline
             className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-          {locked && (
+          {holdPct > 0 && (
             <div className="absolute inset-0 rounded-full"
               style={{ background: `conic-gradient(${RED.bright} ${holdPct}%, transparent ${holdPct}%)`, opacity: 0.30 }} />
           )}
@@ -402,33 +464,32 @@ function Step2FaceScan({ stream, onCaptured }) {
           </div>
         ))}
 
-        <AnimatePresence>
-          {locked && (
-            <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0 }}
-              className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full flex items-center gap-1.5"
-              style={{ background: `${RED.bright}22`, border: `1px solid ${RED.bright}`, boxShadow: `0 0 16px ${RED.bright}88` }}>
-              <motion.span animate={{ opacity: [1, 0.2, 1] }} transition={{ duration: 0.6, repeat: Infinity }}>
-                <CheckCircle2 size={14} style={{ color: RED.bright }} />
-              </motion.span>
-              <span className="text-[10px] font-bold tracking-widest" style={{ color: RED.bright }}>AUTO-CAPTURING</span>
+        {/* Animated pose icon */}
+        <AnimatePresence mode="wait">
+          <motion.div key={activePose.key}
+            initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 0.85, scale: 1 }} exit={{ opacity: 0, scale: 1.3 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <motion.div animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 1.6, repeat: Infinity }}>
+              <activePose.icon size={46} style={{ color: RED.bright, filter: `drop-shadow(0 0 12px ${RED.bright})` }} />
             </motion.div>
-          )}
+          </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* State banner (Move Closer / Step Back / Center / Locked) */}
+      {/* Live guidance banner */}
       <motion.div animate={{ borderColor: `${ringColor}66`, background: `${ringColor}12` }}
         className="w-full rounded-xl border px-4 py-3 flex items-center justify-center gap-2">
-        {locked
+        {holdPct > 0
           ? <CheckCircle2 size={16} style={{ color: RED.bright }} />
           : <AlertTriangle size={16} style={{ color: RED.soft }} />}
-        <span className="text-sm font-bold tracking-wide" style={{ color: locked ? RED.bright : RED.soft }}>
-          {face.label}
+        <span className="text-sm font-bold tracking-wide" style={{ color: holdPct > 0 ? RED.bright : RED.soft }}>
+          {hint}
         </span>
       </motion.div>
 
       <p className="text-[11px] font-mono text-white/35 mt-4 tracking-widest">
-        SMART DISTANCE TRACKING ACTIVE
+        MULTI-ANGLE LIVENESS · POSE {Math.min(pose + 1, POSES.length)}/{POSES.length}
       </p>
 
       {/* Hidden work canvases */}
@@ -439,161 +500,91 @@ function Step2FaceScan({ stream, onCaptured }) {
 }
 
 
-// ─── STEP 3 · Liveness head-movement check ───────────────────────────────────
-const MOVES = [
-  { key: 'left',  label: 'Rotate Head Left',    icon: ArrowLeft,  prompt: 'ROTATE HEAD LEFT' },
-  { key: 'right', label: 'Look Directly Right',  icon: ArrowRight, prompt: 'LOOK DIRECTLY RIGHT' },
-  { key: 'up',    label: 'Tilt Head Upward',     icon: ArrowUp,    prompt: 'TILT HEAD UPWARD' },
-  { key: 'down',  label: 'Tilt Head Downward',   icon: ArrowDown,  prompt: 'TILT HEAD DOWNWARD' },
-];
-const ARCS = {
-  up:    'M 100 8  A 92 92 0 0 1 192 100',
-  right: 'M 192 100 A 92 92 0 0 1 100 192',
-  down:  'M 100 192 A 92 92 0 0 1 8 100',
-  left:  'M 8 100  A 92 92 0 0 1 100 8',
-};
-
-function Step3Liveness({ stream, onNext }) {
-  const [done, setDone] = useState({ left: false, right: false, up: false, down: false });
-  const activeMove = MOVES.find((m) => !done[m.key]) || MOVES[0];
-
-  useEffect(() => {
-    if (Object.values(done).every(Boolean)) {
-      const t = setTimeout(onNext, 700);
-      return () => clearTimeout(t);
-    }
-  }, [done, onNext]);
-
-  const validate = (key) => setDone((d) => ({ ...d, [key]: true }));
-  const completedCount = Object.values(done).filter(Boolean).length;
-
-  return (
-    <motion.div key="step3"
-      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }}
-      className="w-full max-w-md mx-auto flex flex-col items-center">
-      <h2 className="text-xl font-bold text-white tracking-tight mb-1 text-center">Liveness Detection</h2>
-      <p className="text-sm text-white/50 mb-5 text-center">Perform each movement so the AI can confirm a live subject.</p>
-
-      <div className="relative w-64 h-64 mb-5">
-        <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full">
-          {Object.entries(ARCS).map(([key, d]) => (
-            <path key={key} d={d} fill="none" strokeWidth="6" strokeLinecap="round"
-              stroke={done[key] ? RED.bright : 'rgba(255,255,255,0.12)'}
-              style={done[key] ? { filter: `drop-shadow(0 0 6px ${RED.bright})` } : {}} />
-          ))}
-        </svg>
-        <div className="absolute inset-5 rounded-full overflow-hidden border border-white/15">
-          <CameraFeed stream={stream} className="w-full h-full object-cover" />
-        </div>
-        <AnimatePresence mode="wait">
-          <motion.div key={activeMove.key}
-            initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.2 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div animate={{ y: [0, -6, 0], opacity: [0.7, 1, 0.7] }} transition={{ duration: 1.6, repeat: Infinity }}>
-              <activeMove.icon size={52} style={{ color: RED.bright, filter: `drop-shadow(0 0 12px ${RED.bright})` }} />
-            </motion.div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      <div className="h-7 mb-4">
-        <AnimatePresence mode="wait">
-          {completedCount < 4 && (
-            <motion.p key={activeMove.key}
-              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-              className="text-sm font-bold tracking-[0.2em] uppercase"
-              style={{ color: RED.bright, textShadow: `0 0 12px ${RED.bright}99` }}>
-              ▸ {activeMove.prompt}
-            </motion.p>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 w-full">
-        {MOVES.map((m) => {
-          const complete = done[m.key];
-          const Icon = m.icon;
-          return (
-            <button key={m.key} onClick={() => validate(m.key)} disabled={complete}
-              className="flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium transition-all"
-              style={{
-                borderColor: complete ? RED.bright : 'rgba(255,255,255,0.12)',
-                background: complete ? `${RED.bright}14` : 'rgba(255,255,255,0.03)',
-                color: complete ? RED.soft : '#cfcfd6',
-                boxShadow: complete ? `0 0 16px ${RED.bright}44` : 'none',
-              }}>
-              {complete ? <CheckCircle2 size={16} /> : <Icon size={16} style={{ color: RED.bright }} />}
-              <span>{m.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-[11px] font-mono text-white/35 mt-4 tracking-widest">
-        {completedCount}/4 GESTURES VALIDATED
-      </p>
-    </motion.div>
-  );
-}
-
-
 // ─── STEP 4 · ID document capture — forced REAR camera ───────────────────────
 function Step4Document({ onConfirm, processing }) {
   const liveVideoRef = useRef(null);
   const canvasRef = useRef(null);
-  const rearStreamRef = useRef(null);
+  const streamRef = useRef(null);
   const autoTimer = useRef(null);
+  const mountedRef = useRef(true);
 
   const [captured, setCaptured] = useState(null);
   const [camError, setCamError] = useState('');
   const [camReady, setCamReady] = useState(false);
+  const [facing, setFacing] = useState('environment'); // 'environment' (rear) | 'user' (front)
+  const [switching, setSwitching] = useState(false);
 
-  // Acquire the phone's BACK camera. Try the strict `exact` constraint first
-  // (real phones), then gracefully fall back so laptops/webcams still work.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const attempts = [
-        { video: { facingMode: { exact: 'environment' } }, audio: false },
-        { video: { facingMode: 'environment' }, audio: false },
-        { video: true, audio: false },
-      ];
-      for (const constraints of attempts) {
-        try {
-          const s = await navigator.mediaDevices.getUserMedia(constraints);
-          if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
-          rearStreamRef.current = s;
-          if (liveVideoRef.current) {
-            liveVideoRef.current.srcObject = s;
-            const p = liveVideoRef.current.play(); if (p && p.catch) p.catch(() => {});
-          }
-          setCamReady(true);
-          return;
-        } catch {
-          // try the next, looser constraint
-        }
-      }
-      if (!cancelled) setCamError('Unable to access the rear camera. Please allow camera access.');
-    })();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(autoTimer.current);
-      rearStreamRef.current?.getTracks().forEach((t) => t.stop());
-    };
+  // Stop ALL active tracks before opening a new stream → prevents the browser
+  // camera lock / black-frame glitch when switching devices.
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
   }, []);
 
+  // Acquire a camera for the requested facing mode (exact → loose → any).
+  const acquire = useCallback(async (mode) => {
+    stopStream();
+    setCamReady(false);
+    setCamError('');
+    const attempts = [
+      { video: { facingMode: { exact: mode } }, audio: false },
+      { video: { facingMode: mode }, audio: false },
+      { video: true, audio: false },
+    ];
+    for (const constraints of attempts) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!mountedRef.current) { s.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = s;
+        if (liveVideoRef.current) {
+          liveVideoRef.current.srcObject = s;
+          const p = liveVideoRef.current.play(); if (p && p.catch) p.catch(() => {});
+        }
+        setCamReady(true);
+        return;
+      } catch {
+        // try the next, looser constraint
+      }
+    }
+    if (mountedRef.current) setCamError('Unable to access the camera. Please allow camera access.');
+  }, [stopStream]);
+
+  // Initial acquire (rear) + release everything on unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    acquire('environment');
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(autoTimer.current);
+      stopStream();
+    };
+  }, [acquire, stopStream]);
+
+  // Flip front ⇄ rear — stops the old track first, then opens the new one.
+  const flipCamera = useCallback(async () => {
+    if (switching || captured) return;
+    setSwitching(true);
+    clearTimeout(autoTimer.current);          // re-arm auto-capture for the new view
+    const nextFacing = facing === 'environment' ? 'user' : 'environment';
+    setFacing(nextFacing);
+    await acquire(nextFacing);
+    setSwitching(false);
+  }, [switching, captured, facing, acquire]);
+
   const capture = useCallback(() => {
-    const v = liveVideoRef.current;
-    const c = canvasRef.current;
+    const v = liveVideoRef.current, c = canvasRef.current;
     if (!v || !c || !v.videoWidth) return;
     c.width = v.videoWidth;
     c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    const ctx = c.getContext('2d');
+    // Un-mirror front-camera captures so the saved still reads correctly.
+    if (facing === 'user') { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, 0, 0, c.width, c.height);
     setCaptured(c.toDataURL('image/png'));
-    // Release the rear camera once we have the still.
-    rearStreamRef.current?.getTracks().forEach((t) => t.stop());
-  }, []);
+    stopStream();
+  }, [facing, stopStream]);
 
   // Auto-capture once the feed has stabilised (~4s after the camera is ready).
   useEffect(() => {
@@ -604,16 +595,7 @@ function Step4Document({ onConfirm, processing }) {
 
   const retake = () => {
     setCaptured(null);
-    setCamReady(false);
-    // Re-acquire the rear camera by forcing the effect to run again.
-    (async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        rearStreamRef.current = s;
-        if (liveVideoRef.current) { liveVideoRef.current.srcObject = s; liveVideoRef.current.play?.(); }
-        setCamReady(true);
-      } catch { setCamError('Unable to re-acquire the rear camera.'); }
-    })();
+    acquire(facing);
   };
 
   return (
@@ -629,8 +611,10 @@ function Step4Document({ onConfirm, processing }) {
         style={{ aspectRatio: '1.586 / 1', borderColor: `${RED.bright}55`, boxShadow: `0 0 30px ${RED.base}33` }}>
         {!captured ? (
           <>
-            {/* Rear camera is NOT mirrored */}
-            <video ref={liveVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+            {/* Front cam is mirrored; rear cam is not */}
+            <video ref={liveVideoRef} autoPlay muted playsInline
+              className="w-full h-full object-cover"
+              style={{ transform: facing === 'user' ? 'scaleX(-1)' : 'none' }} />
             <motion.div className="absolute left-0 right-0 h-[3px]"
               style={{ background: `linear-gradient(90deg, transparent, ${RED.bright}, transparent)`, boxShadow: `0 0 16px ${RED.bright}` }}
               animate={{ top: ['4%', '96%', '4%'] }}
@@ -639,11 +623,23 @@ function Step4Document({ onConfirm, processing }) {
               'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((c, i) => (
               <div key={i} className={`absolute w-7 h-7 ${c}`} style={{ borderColor: RED.bright }} />
             ))}
+
+            {/* Flip-camera toggle (crimson, overlaid top-right) */}
+            <button onClick={flipCamera} disabled={switching || !camReady}
+              aria-label="Flip camera"
+              className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold tracking-wide uppercase transition-all disabled:opacity-50"
+              style={{ background: `${RED.base}cc`, border: `1px solid ${RED.bright}`, color: '#fff', boxShadow: `0 0 16px ${RED.base}88`, backdropFilter: 'blur(4px)' }}>
+              {switching
+                ? <Loader2 size={13} className="animate-spin" />
+                : <SwitchCamera size={13} />}
+              Flip
+            </button>
+
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1 rounded-full"
               style={{ background: `${RED.bright}1c`, border: `1px solid ${RED.bright}66` }}>
               <ScanLine size={13} style={{ color: RED.bright }} />
               <span className="text-[10px] font-mono tracking-widest" style={{ color: RED.bright }}>
-                {camReady ? 'REAR CAM · SCANNING…' : 'ENGAGING REAR CAMERA…'}
+                {!camReady ? 'ENGAGING CAMERA…' : facing === 'environment' ? 'REAR CAM · SCANNING…' : 'FRONT CAM · SCANNING…'}
               </span>
             </div>
           </>
@@ -709,7 +705,7 @@ function CompleteScreen({ production = false, onContinue }) {
         All biometric phases passed. Your identity has been cryptographically sealed and queued for final review.
       </p>
       <div className="grid grid-cols-2 gap-2.5 text-left">
-        {['Secure Link', 'Face Scan', 'Liveness', 'ID Capture', 'Encryption', 'Sealed'].map((label) => (
+        {['Secure Link', 'Multi-Angle Scan', 'Liveness', 'ID Capture', 'Encryption', 'Sealed'].map((label) => (
           <div key={label} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/[0.03]">
             <CheckCircle2 size={14} style={{ color: RED.bright }} />
             <span className="text-xs text-white/70">{label}</span>
@@ -735,16 +731,16 @@ function CompleteScreen({ production = false, onContinue }) {
 }
 
 
-// ─── MAIN ORCHESTRATOR · 4-phase state machine ───────────────────────────────
+// ─── MAIN ORCHESTRATOR · 3-phase state machine ───────────────────────────────
 export default function CyberVideoKYC() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
   const isProduction = Boolean(token);
-  const DONE_STEP = TOTAL_PHASES; // index 4 = completion screen
+  const DONE_STEP = TOTAL_PHASES; // index 3 = completion screen
 
   const [step, setStep] = useState(0);
-  const [stream, setStream] = useState(null);          // shared FRONT stream (face + liveness)
+  const [stream, setStream] = useState(null);          // shared FRONT stream (biometric scan)
   const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -868,9 +864,8 @@ export default function CyberVideoKYC() {
                   <Step1Setup stream={stream} hw={hw} initializing={initializing} error={error}
                     onInitialize={initialize} onNext={next} />
                 )}
-                {step === 1 && <Step2FaceScan stream={stream} onCaptured={next} />}
-                {step === 2 && <Step3Liveness stream={stream} onNext={next} />}
-                {step === 3 && <Step4Document onConfirm={submitKYC} processing={processing} />}
+                {step === 1 && <Step2BiometricScan stream={stream} onCaptured={next} />}
+                {step === 2 && <Step4Document onConfirm={submitKYC} processing={processing} />}
                 {step === DONE_STEP && <CompleteScreen production={isProduction} onContinue={goToLanding} />}
               </AnimatePresence>
             </div>
