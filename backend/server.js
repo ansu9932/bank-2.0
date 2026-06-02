@@ -121,7 +121,7 @@ const start = async () => {
     const useAlter = process.env.DB_SYNC_ALTER === 'true';
     if (useAlter) {
       try {
-        await sequelize.sync({ alter: true });
+        await sequelize.sync({ alter: false });
         logger.info('✅ Database models synchronized (alter mode).');
         console.log('✅ Database models synchronized (alter mode).');
       } catch (syncErr) {
