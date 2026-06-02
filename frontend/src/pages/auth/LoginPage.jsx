@@ -151,21 +151,6 @@ export default function LoginPage() {
               </button>
             </form>
 
-            {/* Demo credentials */}
-            <div className="mt-5 p-3.5 rounded-xl bg-dark-700 border border-white/[0.05]">
-              <p className="text-dark-300 text-xs mb-2 font-medium flex items-center gap-1.5">
-                <RiShieldCheckLine className="text-brand-500" /> Demo Credentials
-              </p>
-              <div className="space-y-1.5">
-                <p className="text-dark-200 text-xs">
-                  <span className="text-white font-medium">User:</span> arjun_sharma / Demo@1234
-                </p>
-                <p className="text-dark-200 text-xs">
-                  <span className="text-white font-medium">Admin:</span> admin@alisterbank.com / Admin@1234
-                </p>
-              </div>
-            </div>
-
             <div className="mt-5 text-center">
               <p className="text-dark-300 text-sm">
                 Don't have an account?{' '}

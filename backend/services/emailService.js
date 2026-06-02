@@ -24,24 +24,54 @@ const createTransporter = () => {
   return transporter;
 };
 
-const sendEmail = async ({ to, subject, html, text }) => {
-  try {
-    const transport = createTransporter();
-    const senderEmail = process.env.SMTP_USER || 'info@divyamoolya.in';
+// Sleep helper for the retry backoff.
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const info = await transport.sendMail({
-      from: `"Alister Bank" <${senderEmail}>`,
-      to,
-      subject,
-      html,
-      text: text || subject,
-    });
-    logger.info(`Email sent to ${to}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
-  } catch (err) {
-    logger.error(`Email send failed to ${to}: ${err.message}`);
-    return { success: false, error: err.message };
+/**
+ * Fault-tolerant email dispatch.
+ *
+ * Every onboarding email (KYC link, account-setup link, OTP, alerts) flows
+ * through here, so the retry/backoff hardening protects the entire pipeline.
+ * - Up to 3 attempts with a 1-second delay between tries.
+ * - Each failure logs the EXACT error via both the file logger and console.error
+ *   (so drops are visible live on the Hostinger dashboard).
+ * - NEVER throws: returns a { success } result object so a mail outage can never
+ *   crash or short-circuit the surrounding backend execution flow.
+ */
+const MAX_EMAIL_ATTEMPTS = 3;
+const EMAIL_RETRY_DELAY_MS = 1000;
+
+const sendEmail = async ({ to, subject, html, text }) => {
+  const senderEmail = process.env.SMTP_USER || 'info@divyamoolya.in';
+  const mailOptions = {
+    from: `"Alister Bank" <${senderEmail}>`,
+    to,
+    subject,
+    html,
+    text: text || subject,
+  };
+
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_EMAIL_ATTEMPTS; attempt += 1) {
+    try {
+      const transport = createTransporter();
+      const info = await transport.sendMail(mailOptions);
+      logger.info(`Email sent to ${to} (attempt ${attempt}/${MAX_EMAIL_ATTEMPTS}): ${info.messageId}`);
+      return { success: true, messageId: info.messageId, attempts: attempt };
+    } catch (err) {
+      lastError = err;
+      logger.error(`Email attempt ${attempt}/${MAX_EMAIL_ATTEMPTS} to ${to} failed: ${err.message}`);
+      console.error(`[EMAIL] Attempt ${attempt}/${MAX_EMAIL_ATTEMPTS} to ${to} (subject: "${subject}") failed:`, err);
+      if (attempt < MAX_EMAIL_ATTEMPTS) {
+        await delay(EMAIL_RETRY_DELAY_MS);
+      }
+    }
   }
+
+  // All attempts exhausted — log loudly but keep the backend flow alive.
+  logger.error(`Email PERMANENTLY failed to ${to} after ${MAX_EMAIL_ATTEMPTS} attempts: ${lastError?.message}`);
+  console.error(`[EMAIL] PERMANENT FAILURE to ${to} after ${MAX_EMAIL_ATTEMPTS} attempts:`, lastError);
+  return { success: false, error: lastError?.message, attempts: MAX_EMAIL_ATTEMPTS };
 };
 
 // ─── Email Templates ──────────────────────────────────────────────────────────
