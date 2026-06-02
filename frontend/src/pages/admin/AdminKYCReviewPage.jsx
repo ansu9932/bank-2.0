@@ -5,6 +5,7 @@ import {
   RiRefreshLine, RiUserLine, RiTimeLine, RiAlertLine,
   RiFileShield2Line, RiImageLine, RiMailLine, RiPhoneLine,
   RiMapPinLine, RiIdCardLine, RiLoader4Line,
+  RiSearchLine, RiZoomInLine, RiCloseLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -27,18 +28,44 @@ const safeDate = (value, pattern = 'dd MMM yyyy, HH:mm', fallback = 'Recent') =>
 
 const adminHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('adminToken')}` });
 
+// Resolve the best snapshot document for a queue entry (shared by the inline
+// viewer and the full-size lightbox). Prefers the Phase-5 video_kyc capture.
+const resolveSnapshot = (documents) => {
+  if (!documents || documents.length === 0) return null;
+  return (
+    documents.find((d) => d.document_type === 'video_kyc') ||
+    documents.find((d) => ['selfie', 'passport', 'aadhaar'].includes(d.document_type)) ||
+    documents[0]
+  );
+};
+
+// Quick-filter definitions for the queue.
+const FILTERS = [
+  { key: 'all',      label: 'All Pending' },
+  { key: 'awaiting', label: 'Awaiting Capture' },
+  { key: 'received', label: 'Capture Received' },
+];
+
+const matchesFilter = (user, key) => {
+  if (key === 'awaiting') return !user.video_kyc_completed;
+  if (key === 'received') return !!user.video_kyc_completed;
+  return true; // 'all'
+};
+
+const matchesSearch = (user, term) => {
+  if (!term) return true;
+  const t = term.toLowerCase();
+  return [
+    user.first_name, user.last_name, user.email, user.customer_id, user.phone,
+    `${user.first_name || ''} ${user.last_name || ''}`,
+  ].some((v) => String(v || '').toLowerCase().includes(t));
+};
+
 
 // ─── Snapshot viewer (Phase-5 captured ID image) ─────────────────────────────
-function SnapshotViewer({ documents }) {
+function SnapshotViewer({ documents, onExpand }) {
   // Prefer the cyber video-KYC capture; fall back to any available document.
-  const snapshot = useMemo(() => {
-    if (!documents || documents.length === 0) return null;
-    return (
-      documents.find((d) => d.document_type === 'video_kyc') ||
-      documents.find((d) => ['selfie', 'passport', 'aadhaar'].includes(d.document_type)) ||
-      documents[0]
-    );
-  }, [documents]);
+  const snapshot = useMemo(() => resolveSnapshot(documents), [documents]);
 
   if (!snapshot || !snapshot.document_url) {
     return (
@@ -53,8 +80,13 @@ function SnapshotViewer({ documents }) {
   const src = `${IMG_ORIGIN}${snapshot.document_url}`;
 
   return (
-    <div className="relative rounded-2xl border overflow-hidden bg-black"
-      style={{ borderColor: `${NEON.cyan}55`, boxShadow: `0 0 26px ${NEON.cyan}22` }}>
+    <button
+      type="button"
+      onClick={onExpand}
+      title="Click to inspect full-size"
+      className="group relative w-full rounded-2xl border overflow-hidden bg-black cursor-zoom-in"
+      style={{ borderColor: `${NEON.cyan}55`, boxShadow: `0 0 26px ${NEON.cyan}22` }}
+    >
       <img src={src} alt="Captured KYC snapshot" className="w-full h-full object-contain max-h-80" />
       {/* HUD corner brackets */}
       {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2',
@@ -68,7 +100,78 @@ function SnapshotViewer({ documents }) {
           {snapshot.document_type?.toUpperCase().replace('_', ' ')}
         </span>
       </div>
-    </div>
+      {/* Hover "View Full-Size" overlay */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ background: 'rgba(3,3,8,0.45)' }}>
+        <span className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold tracking-wide uppercase"
+          style={{ background: `${NEON.cyan}1c`, border: `1px solid ${NEON.cyan}`, color: NEON.cyan, boxShadow: `0 0 18px ${NEON.cyan}55` }}>
+          <RiZoomInLine size={15} /> View Full-Size
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ─── Full-size snapshot lightbox ──────────────────────────────────────────────
+function SnapshotLightbox({ open, src, label, applicant, onClose }) {
+  // Close on Escape for fast keyboard-driven review.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  return (
+    <AnimatePresence>
+      {open && src && (
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-8"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          style={{ background: 'rgba(2,2,6,0.88)', backdropFilter: 'blur(6px)' }}
+          onClick={onClose}
+        >
+          {/* Top bar */}
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-5 py-4">
+            <div className="flex items-center gap-2">
+              <RiFileShield2Line size={16} style={{ color: NEON.cyan }} />
+              <span className="text-[11px] font-mono tracking-widest uppercase" style={{ color: NEON.cyan }}>
+                {label || 'KYC Snapshot'}
+              </span>
+              {applicant && <span className="text-white/40 text-xs">· {applicant}</span>}
+            </div>
+            <button
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl flex items-center justify-center border text-white/70 hover:text-white transition-colors"
+              style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
+              aria-label="Close full-size view"
+            >
+              <RiCloseLine size={18} />
+            </button>
+          </div>
+
+          {/* Framed image */}
+          <motion.div
+            onClick={(e) => e.stopPropagation()}
+            initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            className="relative rounded-2xl border overflow-hidden"
+            style={{ borderColor: `${NEON.cyan}`, boxShadow: `0 0 50px ${NEON.cyan}55`, maxWidth: '92vw', maxHeight: '82vh' }}
+          >
+            <img src={src} alt="Full-size KYC snapshot" className="block max-w-full" style={{ maxHeight: '82vh' }} />
+            {/* HUD corner brackets */}
+            {['top-3 left-3 border-t-2 border-l-2', 'top-3 right-3 border-t-2 border-r-2',
+              'bottom-3 left-3 border-b-2 border-l-2', 'bottom-3 right-3 border-b-2 border-r-2'].map((c, i) => (
+              <div key={i} className={`absolute w-8 h-8 ${c} pointer-events-none`} style={{ borderColor: NEON.cyan }} />
+            ))}
+          </motion.div>
+
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/35 text-[11px] tracking-widest uppercase">
+            Click anywhere or press Esc to close
+          </p>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -131,6 +234,9 @@ export default function AdminKYCReviewPage() {
   const [acting, setActing] = useState(false); // approve/reject in flight
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterMode, setFilterMode] = useState('all');
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -157,6 +263,7 @@ export default function AdminKYCReviewPage() {
 
   const review = useCallback(async (decision, reason = '') => {
     if (!selected) return;
+    setLightboxOpen(false);
     setActing(true);
     try {
       const { data } = await api.post(
@@ -194,6 +301,19 @@ export default function AdminKYCReviewPage() {
     setRejectReason('');
     review('reject', reason);
   }, [rejectReason, review]);
+
+  // Live-filtered queue (search term + quick filter), recomputed reactively.
+  const filteredQueue = useMemo(
+    () => queue.filter((u) => matchesFilter(u, filterMode) && matchesSearch(u, searchTerm)),
+    [queue, filterMode, searchTerm]
+  );
+
+  // Resolve the currently-selected snapshot for the full-size lightbox.
+  const selectedSnapshot = useMemo(
+    () => (selected ? resolveSnapshot(selected.documents) : null),
+    [selected]
+  );
+  const lightboxSrc = selectedSnapshot?.document_url ? `${IMG_ORIGIN}${selectedSnapshot.document_url}` : null;
 
   return (
     <div className="text-white">
@@ -234,6 +354,52 @@ export default function AdminKYCReviewPage() {
         {/* Queue list */}
         <div className="lg:col-span-1 space-y-3">
           <p className="text-[11px] uppercase tracking-widest text-white/35 px-1">Submission Queue</p>
+
+          {/* Search bar */}
+          <div className="relative">
+            <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={15} />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search name, email, ID, phone…"
+              className="w-full rounded-xl bg-[#0d0d14] border border-white/10 pl-9 pr-9 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-white/25 transition-colors"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
+                aria-label="Clear search"
+              >
+                <RiCloseLine size={16} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick-toggle filters */}
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => {
+              const active = filterMode === f.key;
+              const count = queue.filter((u) => matchesFilter(u, f.key)).length;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setFilterMode(f.key)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-semibold tracking-wide transition-all border"
+                  style={{
+                    borderColor: active ? NEON.cyan : 'rgba(255,255,255,0.08)',
+                    background: active ? `${NEON.cyan}1a` : 'rgba(255,255,255,0.02)',
+                    color: active ? NEON.cyan : 'rgba(255,255,255,0.55)',
+                    boxShadow: active ? `0 0 14px ${NEON.cyan}33` : 'none',
+                  }}
+                >
+                  {f.label}
+                  <span className="ml-1.5 opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <RiLoader4Line className="animate-spin text-3xl" style={{ color: NEON.cyan }} />
@@ -244,8 +410,14 @@ export default function AdminKYCReviewPage() {
               <p className="text-white/60 text-sm">Queue is clear</p>
               <p className="text-white/30 text-xs mt-1">No pending KYC submissions.</p>
             </div>
+          ) : filteredQueue.length === 0 ? (
+            <div className="rounded-2xl border border-white/[0.06] bg-[#111118] p-8 text-center">
+              <RiSearchLine className="text-3xl mx-auto mb-2 text-white/20" />
+              <p className="text-white/55 text-sm">No matches</p>
+              <p className="text-white/30 text-xs mt-1">Try a different search or filter.</p>
+            </div>
           ) : (
-            queue.map((u) => (
+            filteredQueue.map((u) => (
               <QueueCard key={u.id} user={u} active={selected?.id === u.id} onSelect={setSelected} />
             ))
           )}
@@ -265,7 +437,7 @@ export default function AdminKYCReviewPage() {
                   {/* Snapshot */}
                   <div>
                     <p className="text-[11px] uppercase tracking-widest text-white/35 mb-2">Phase 5 · Captured Snapshot</p>
-                    <SnapshotViewer documents={selected.documents} />
+                    <SnapshotViewer documents={selected.documents} onExpand={() => setLightboxOpen(true)} />
                   </div>
 
                   {/* Profile */}
@@ -393,6 +565,15 @@ export default function AdminKYCReviewPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Full-size snapshot lightbox ───────────────────────────────────── */}
+      <SnapshotLightbox
+        open={lightboxOpen}
+        src={lightboxSrc}
+        label={selectedSnapshot?.document_type?.toUpperCase().replace('_', ' ')}
+        applicant={selected ? `${selected.first_name} ${selected.last_name}` : ''}
+        onClose={() => setLightboxOpen(false)}
+      />
     </div>
   );
 }
