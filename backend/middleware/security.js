@@ -25,6 +25,24 @@ const authLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter — LOGIN brute-force defense (strict).
+ * Window: exactly 15 minutes. Threshold: max 5 attempts per IP.
+ * On breach, rejects with HTTP 429 BEFORE the request reaches the controller
+ * (and therefore before any database lookup), using the exact JSON contract
+ * expected by the client: { status: false, message: "..." }.
+ */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,                    // 5 attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({
+    status: false,
+    message: 'Too many login attempts from this device. Please try again after 15 minutes.',
+  }),
+});
+
+/**
  * Rate limiter — OTP endpoints
  */
 const otpLimiter = rateLimit({
@@ -52,8 +70,11 @@ const securityHeaders = helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'"],
+      // Allow the Cloudflare Turnstile widget script.
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      connectSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      // Turnstile renders its challenge inside an iframe from this origin.
+      frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
       mediaSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: [],
@@ -101,6 +122,7 @@ const securityResponseHeaders = (req, res, next) => {
 module.exports = {
   apiLimiter,
   authLimiter,
+  loginLimiter,
   otpLimiter,
   transferLimiter,
   securityHeaders,

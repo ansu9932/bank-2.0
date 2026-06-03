@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
-const { authLimiter, otpLimiter } = require('../middleware/security');
+const { authLimiter, loginLimiter, otpLimiter } = require('../middleware/security');
 const { badRequest } = require('../utils/apiResponse');
 
 const validate = (req, res, next) => {
@@ -11,7 +11,7 @@ const validate = (req, res, next) => {
   next();
 };
 
-router.post('/login', authLimiter, [
+router.post('/login', loginLimiter, [
   body('username').notEmpty().withMessage('Username/email is required'),
   body('password').notEmpty().withMessage('Password is required'),
 ], validate, authController.login);
