@@ -743,7 +743,7 @@ export default function CyberVideoKYC() {
 
   // ── Interceptor render gates ───────────────────────────────────────────────
   if (linkState === 'checking') return <VerifyingSplash />;
-  if (linkState === 'expired') return <ExpiredLinkPage />;
+  if (linkState === 'expired') return <ExpiredLinkPage type="video-kyc" />;
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden text-white" style={{ background: RED.black }}>
