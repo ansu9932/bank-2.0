@@ -53,7 +53,7 @@ export default function AccountSetupPage() {
 
   // Expired / invalid setup link → halt onboarding and show the professional
   // secure-link error terminal (interceptor validation on the token route).
-  if (!validLink) return <ExpiredLinkPage />;
+  if (!validLink) return <ExpiredLinkPage type="account-setup" />;
 
   if (done) return (
     <div className="min-h-screen bg-dark-900 flex items-center justify-center p-6">

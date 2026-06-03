@@ -3,13 +3,13 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const { User, Account, OTP, Session, Notification } = require('../models');
 const { generateToken } = require('../middleware/auth');
-const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const {
   generateOTP, hashValue, getOTPExpiry, generateSecureToken,
-  getSecureLinkExpiry, detectDevice, isExpired,
+  getSecureLinkExpiry, getOnboardingLinkExpiry, detectDevice, isExpired,
 } = require('../utils/helpers');
-const { success, error, badRequest, unauthorized, notFound } = require('../utils/apiResponse');
+const { success, error, badRequest, unauthorized, notFound, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { SecureLink } = require('../models');
 const { verifyTurnstileToken } = require('../utils/turnstile');
@@ -378,10 +378,10 @@ exports.verifySetup = async (req, res) => {
       where: { token, purpose: 'account_setup', used: false } 
     });
 
-    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This setup link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'Setup link has expired.');
+      return linkError(res, 'EXPIRED_LINK', 'This setup link has expired. You can request a fresh one below.');
     }
 
     const user = await User.findByPk(link.user_id, {
@@ -401,6 +401,86 @@ exports.verifySetup = async (req, res) => {
   } catch (err) {
     logger.error(`Verify setup error: ${err.message}`);
     return error(res, 'Verification process failed.');
+  }
+};
+
+// ─── Regenerate Onboarding Link (self-service) ────────────────────────────────
+// Lets a user whose Video KYC / Account Setup link expired safely request a
+// fresh one by proving identity with BOTH their registered email AND Customer
+// ID. Anti-enumeration: a non-match returns a single generic error.
+exports.regenerateOnboardingLink = async (req, res) => {
+  try {
+    const { email, customerId, type } = req.body;
+    const normalizedType = String(type || '').toLowerCase();
+
+    if (!email || !customerId || !['account-setup', 'video-kyc'].includes(normalizedType)) {
+      return badRequest(res, 'Email, Customer ID, and a valid link type are required.');
+    }
+
+    const purpose = normalizedType === 'video-kyc' ? 'video_kyc' : 'account_setup';
+
+    // Match BOTH fields. MySQL's default collation makes this case-insensitive.
+    const user = await User.findOne({
+      where: { email: String(email).trim(), customer_id: String(customerId).trim() },
+    });
+
+    // Generic response on no-match → never reveal which field was wrong.
+    if (!user) {
+      return badRequest(res, 'We could not verify those details. Please check your registered email and Customer ID, then try again.');
+    }
+
+    // Already fully completed → informative, no link issued.
+    if (purpose === 'account_setup' && (user.setup_completed || user.account_status === 'active')) {
+      return success(res, { alreadyDone: true }, 'Your account is already set up. Please log in with your credentials.');
+    }
+    if (purpose === 'video_kyc' && (user.video_kyc_completed || user.kyc_status === 'approved')) {
+      return success(res, { alreadyDone: true }, 'Your Video KYC is already complete — no new link is required.');
+    }
+
+    // Invalidate any prior active links of this purpose, then mint a fresh 24h token.
+    await SecureLink.update(
+      { used: true, used_at: new Date() },
+      { where: { user_id: user.id, purpose, used: false } }
+    );
+
+    const token = generateSecureToken();
+    await SecureLink.create({
+      user_id: user.id,
+      token,
+      purpose,
+      expires_at: getOnboardingLinkExpiry(),
+      ip_address: req.ip,
+    });
+
+    // Build the fresh onboarding URL + dispatch via the existing mail service.
+    if (purpose === 'video_kyc') {
+      const kycLink = `${process.env.FRONTEND_URL}/video-kyc?token=${token}`;
+      await sendVideoKYCEmail(user.email, user.first_name, kycLink);
+    } else {
+      const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${token}`;
+      const account = await Account.findOne({ where: { user_id: user.id } });
+      await sendAccountApprovedEmail(
+        user.email,
+        user.first_name,
+        setupLink,
+        account?.account_number || user.customer_id
+      );
+    }
+
+    await createAuditLog({
+      userId: user.id,
+      action: 'ONBOARDING_LINK_REGENERATED',
+      entityType: 'SecureLink',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      status: 'success',
+      description: `Regenerated ${purpose} onboarding link (24h).`,
+    });
+
+    return success(res, { type: normalizedType }, 'A fresh secure link has been sent to your registered email.');
+  } catch (err) {
+    logger.error(`Regenerate onboarding link error: ${err.message}`);
+    return error(res, 'Could not process your request right now. Please try again shortly.');
   }
 };
 

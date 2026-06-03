@@ -11,7 +11,7 @@ const {
   sendKYCUnderReviewEmail, sendVideoKYCEmail, sendAccountApprovedEmail,
 } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
-const { success, error, badRequest, notFound, created } = require('../utils/apiResponse');
+const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 
 // ─── Submit Account Opening Application ───────────────────────────────────────
@@ -133,10 +133,10 @@ exports.verifyVideoKYCLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'video_kyc', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired Video KYC link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This Video KYC link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'This Video KYC link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This Video KYC link has expired. You can request a fresh one below.');
     }
 
     const user = await User.findByPk(link.user_id, {
@@ -285,10 +285,10 @@ exports.verifySetupLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'account_setup', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This setup link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'Setup link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This setup link has expired. You can request a fresh one below.');
     }
 
     return success(res, { valid: true }, 'Link is valid. Complete your account setup.');
