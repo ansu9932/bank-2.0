@@ -9,6 +9,6 @@ router.post('/webhook', paymentController.webhook);
 
 // ─── Authenticated user endpoints ──────────────────────────────────────────────
 router.post('/create-qr', protect, paymentController.createQR);
-router.get('/status/:ref', protect, paymentController.getStatus);
+router.get('/status/:orderRef', protect, paymentController.getStatus);
 
 module.exports = router;
