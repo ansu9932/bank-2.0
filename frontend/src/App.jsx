@@ -19,6 +19,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import TransactionsPage from './pages/dashboard/TransactionsPage';
 import TransferPage from './pages/dashboard/TransferPage';
+import DepositFunds from './pages/dashboard/DepositFunds';
 import BeneficiariesPage from './pages/dashboard/BeneficiariesPage';
 import StatementPage from './pages/dashboard/StatementPage';
 import ProfilePage from './pages/dashboard/ProfilePage';
@@ -105,6 +106,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="transfer" element={<TransferPage />} />
+          <Route path="deposit" element={<DepositFunds />} />
           <Route path="beneficiaries" element={<BeneficiariesPage />} />
           <Route path="statement" element={<StatementPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
