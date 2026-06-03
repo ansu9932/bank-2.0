@@ -9,6 +9,9 @@ import LoginPage from './pages/auth/LoginPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 
+// Public landing
+import HomePage from './pages/public/HomePage';
+
 // Account opening flow
 import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
 import CyberVideoKYC from './pages/account-opening/CyberVideoKYC';
@@ -84,8 +87,8 @@ export default function App() {
       />
 
       <Routes>
-        {/* Root redirect */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {/* Public landing page */}
+        <Route path="/" element={<HomePage />} />
 
         {/* Auth */}
         <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
