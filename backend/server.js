@@ -31,7 +31,13 @@ app.use(cors({
 }));
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// `verify` captures the EXACT raw bytes of every JSON request into req.rawBody.
+// This is required to cryptographically validate the Razorpay webhook signature,
+// which must be computed over the unmodified request body.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
@@ -56,6 +62,7 @@ app.use('/api/', apiLimiter);
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/account', require('./routes/account'));
 app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/payments', require('./routes/payment'));
 app.use('/api/admin', require('./routes/admin'));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────

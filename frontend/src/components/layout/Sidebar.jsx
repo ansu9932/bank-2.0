@@ -5,7 +5,7 @@ import {
   RiDashboardLine, RiExchangeLine, RiSendPlaneLine, RiGroupLine,
   RiFileTextLine, RiBarChartLine, RiUserLine, RiShieldLine,
   RiCustomerService2Line, RiLogoutBoxLine, RiBankLine,
-  RiShieldCheckLine, RiFileShield2Line,
+  RiShieldCheckLine, RiFileShield2Line, RiSecurePaymentLine,
 } from 'react-icons/ri';
 import { logout } from '../../store/slices/authSlice';
 
@@ -21,6 +21,7 @@ const ADMIN_NAV_ITEMS = [
 const CUSTOMER_NAV_ITEMS = [
   { to: '/dashboard',              icon: RiDashboardLine, label: 'Dashboard',      end: true  },
   { to: '/dashboard/transactions', icon: RiExchangeLine,  label: 'Transactions',   end: false },
+  { to: '/dashboard/deposit',      icon: RiSecurePaymentLine, label: 'Add Money',  end: false },
   { to: '/dashboard/transfer',     icon: RiSendPlaneLine, label: 'Transfer Money', end: false },
   { to: '/dashboard/beneficiaries',icon: RiGroupLine,     label: 'Beneficiaries',  end: false },
   { to: '/dashboard/statement',    icon: RiFileTextLine,  label: 'Statement',      end: false },
