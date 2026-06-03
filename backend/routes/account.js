@@ -18,8 +18,14 @@ router.post('/submit-video-kyc',
 // Cyber Video KYC — still-image capture upload (accepts PNG/JPG snapshot).
 // Auth is resolved inside the controller via secure-link token OR Bearer JWT,
 // so it serves both the pre-login onboarding flow and logged-in users.
+// Use `.fields()` so the optional accompanying `selfie` file (and any text
+// fields like `token`) are accepted gracefully instead of triggering a Multer
+// "Unexpected field" error.
 router.post('/kyc/upload',
-  kycUpload.single('document'),
+  kycUpload.fields([
+    { name: 'document', maxCount: 1 },
+    { name: 'selfie', maxCount: 1 },
+  ]),
   accountController.uploadKYCCapture
 );
 

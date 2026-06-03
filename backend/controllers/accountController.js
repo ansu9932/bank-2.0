@@ -203,7 +203,12 @@ exports.submitVideoKYC = async (req, res) => {
 // no session), it still returns success so the wizard completes gracefully.
 exports.uploadKYCCapture = async (req, res) => {
   try {
-    if (!req.file) return badRequest(res, 'KYC capture image is required.');
+    // `.fields()` populates req.files; fall back to req.file for compatibility.
+    // The primary capture is the `document`; if only a `selfie` was sent, use it.
+    const captureFile = req.file
+      || req.files?.document?.[0]
+      || req.files?.selfie?.[0];
+    if (!captureFile) return badRequest(res, 'KYC capture image is required.');
 
     // ── Resolve the user + (optional) secure link ──────────────────────────
     let userId = null;
@@ -240,10 +245,10 @@ exports.uploadKYCCapture = async (req, res) => {
     await KYCDocument.create({
       user_id: userId,
       document_type: 'video_kyc', // reuse the valid enum value used by the workflow
-      file_path: req.file.path,
-      file_name: req.file.originalname,
-      file_size: req.file.size,
-      mime_type: req.file.mimetype,
+      file_path: captureFile.path,
+      file_name: captureFile.originalname,
+      file_size: captureFile.size,
+      mime_type: captureFile.mimetype,
     });
 
     // ── Advance the user's workflow record ─────────────────────────────────

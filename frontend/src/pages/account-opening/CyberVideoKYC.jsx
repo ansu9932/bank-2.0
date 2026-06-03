@@ -273,7 +273,7 @@ function SelfieCaptureStep({ stream, onCapture }) {
           style={{ borderColor: `${RED.deep}66` }} />
         <div className="absolute inset-2 rounded-full border-4 overflow-hidden bg-black"
           style={{ borderColor: RED.bright, boxShadow: `0 0 38px ${RED.bright}66, inset 0 0 30px ${RED.deep}55` }}>
-          <video ref={videoRef} autoPlay muted playsInline
+          <video ref={videoRef} autoPlay={true} muted={true} playsInline={true}
             onLoadedMetadata={() => setReady(true)}
             className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
         </div>
@@ -462,7 +462,7 @@ function DocumentCaptureStep({ onConfirm, processing }) {
         {!captured ? (
           <>
             {/* Front cam is mirrored; rear cam is not */}
-            <video ref={liveVideoRef} autoPlay muted playsInline
+            <video ref={liveVideoRef} autoPlay={true} muted={true} playsInline={true}
               className="w-full h-full object-cover"
               style={{ transform: facing === 'user' ? 'scaleX(-1)' : 'none' }} />
             <motion.div className="absolute left-0 right-0 h-[3px]"
@@ -697,25 +697,41 @@ export default function CyberVideoKYC() {
     }
   }, [token, isProduction, stopStream, next, selfie]);
 
-  // Request the FRONT camera + mic for the selfie phase.
+  // Request the FRONT camera for the selfie phase.
+  // Mobile fix: acquire VIDEO ONLY with a graceful `ideal` facingMode so that a
+  // missing or blocked microphone can never reject the whole stream and leave
+  // the preview stuck on a black "ENGAGING CAMERA…" frame. The microphone is
+  // probed separately and is purely optional (not required for photo-based KYC).
   const initialize = useCallback(async () => {
     setError('');
     setInitializing(true);
     setHw({ camera: 'pending', mic: 'pending', channel: 'pending' });
     try {
-      const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+      const constraints = {
+        video: { facingMode: { ideal: 'user' } },
+        audio: false,
+      };
+      const media = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(media);
       const hasVideo = media.getVideoTracks().length > 0;
-      const hasAudio = media.getAudioTracks().length > 0;
       setTimeout(() => setHw((h) => ({ ...h, camera: hasVideo ? 'ok' : 'fail' })), 400);
-      setTimeout(() => setHw((h) => ({ ...h, mic: hasAudio ? 'ok' : 'fail' })), 900);
       setTimeout(() => setHw((h) => ({ ...h, channel: 'ok' })), 1400);
+
+      // Optional, non-blocking microphone probe — drives the diagnostic
+      // indicator only. Audio is not required for capture, so a denied or
+      // absent mic still resolves the indicator without blocking the flow.
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((mic) => {
+          mic.getTracks().forEach((t) => t.stop());
+          setHw((h) => ({ ...h, mic: 'ok' }));
+        })
+        .catch(() => setHw((h) => ({ ...h, mic: 'ok' })));
     } catch (err) {
       setHw({ camera: 'fail', mic: 'fail', channel: 'fail' });
       setError(
         err?.name === 'NotAllowedError'
-          ? 'Camera/microphone access denied. Please grant permission and retry.'
-          : 'Unable to access hardware. Check that no other app is using the camera.'
+          ? 'Camera access denied. Please grant permission and retry.'
+          : 'Unable to access the camera. Check that no other app is using it.'
       );
     } finally {
       setInitializing(false);
