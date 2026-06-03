@@ -24,18 +24,6 @@ const QUICK_ADD = [500, 1000, 5000];
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
 
-/* ── QR CROP TUNING ─────────────────────────────────────────────────────────
-   Razorpay's hosted image_url wraps the QR in a branded blue frame + business
-   text. We render it inside a fixed, overflow-hidden square and zoom into the
-   centre so ONLY the black-and-white QR grid is visible.
-   • QR_DISPLAY_SIZE — the visible cropped square (px).
-   • QR_ZOOM         — >1 zooms in, trimming the outer frame/branding.
-   • QR_OFFSET_Y     — nudge up/down (px) if the grid isn't perfectly centred.
-   Adjust these two knobs if a specific Razorpay template needs finer framing. */
-const QR_DISPLAY_SIZE = 240;
-const QR_ZOOM = 1.62;
-const QR_OFFSET_Y = 0;
-
 // View phases: 'form' → 'qr' (awaiting payment) → 'success'
 export default function DepositFunds() {
   const dispatch = useDispatch();
@@ -251,21 +239,36 @@ export default function DepositFunds() {
                   className="relative rounded-3xl bg-white p-4"
                   style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
 
-                  {/* Crop window — isolates ONLY the central B/W QR grid */}
+                  {/* Aggressive crop — only the central B/W QR grid is visible.
+                      The image is absolutely positioned: the flex container's
+                      justify-content:center sets its horizontal static position
+                      (centering the 420px image in the 200px window), while
+                      top:-75px lifts it to align the grid vertically. */}
                   <div
-                    className="relative overflow-hidden bg-white"
-                    style={{ width: QR_DISPLAY_SIZE, height: QR_DISPLAY_SIZE, borderRadius: 14 }}>
+                    style={{
+                      width: '200px',
+                      height: '200px',
+                      overflow: 'hidden',
+                      position: 'relative',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      background: '#ffffff',
+                      borderRadius: '12px',
+                      margin: 0,
+                      padding: 0,
+                    }}>
                     <img
                       src={order.image_url}
                       alt="UPI payment QR code"
                       draggable={false}
                       style={{
                         position: 'absolute',
-                        top: '50%',
-                        left: '50%',
-                        width: `${QR_DISPLAY_SIZE * QR_ZOOM}px`,
+                        width: '420px',
                         height: 'auto',
-                        transform: `translate(-50%, calc(-50% + ${QR_OFFSET_Y}px))`,
+                        top: '-75px',
+                        margin: 0,
+                        padding: 0,
                         imageRendering: 'crisp-edges',
                       }}
                     />
