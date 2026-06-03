@@ -102,6 +102,16 @@ const getSecureLinkExpiry = (minutes = 5) => {
 };
 
 /**
+ * Strict 24-hour expiry for onboarding secure links (Video KYC + Account Setup).
+ * Returns the absolute timestamp written into SecureLink.expires_at so an
+ * onboarding invitation is valid for exactly 24 hours from issuance.
+ */
+const ONBOARDING_LINK_EXPIRY_HOURS = 24;
+const getOnboardingLinkExpiry = () => {
+  return new Date(Date.now() + ONBOARDING_LINK_EXPIRY_HOURS * 60 * 60 * 1000);
+};
+
+/**
  * Check if value is expired
  */
 const isExpired = (expiryDate) => {
@@ -155,6 +165,7 @@ module.exports = {
   formatCurrency,
   getOTPExpiry,
   getSecureLinkExpiry,
+  getOnboardingLinkExpiry,
   isExpired,
   sanitizeInput,
   generateReferralCode,

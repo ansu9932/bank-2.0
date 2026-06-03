@@ -146,7 +146,10 @@ const start = async () => {
         console.log('✅ Database models synchronized using safe fallback.');
       }
     } else {
-      await sequelize.sync();
+      // Guardrail: schema sync is explicitly LOCKED to alter:false so existing
+      // table schemas are fully protected. Plain sync still auto-creates any
+      // MISSING tables, but never alters/re-indexes existing ones.
+      await sequelize.sync({ alter: false });
       logger.info('✅ Database models synchronized.');
       console.log('✅ Database models synchronized.');
     }

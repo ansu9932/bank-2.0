@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink } = require('../models');
 const { generateAdminToken } = require('../middleware/auth');
 const {
-  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry,
+  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
 } = require('../utils/helpers');
 const { sendAccountApprovedEmail, sendVideoKYCEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
@@ -193,9 +193,9 @@ exports.approveKYC = async (req, res) => {
     if (user.kyc_status === 'approved') return badRequest(res, 'KYC already approved.');
 
     if (!user.video_kyc_completed) {
-      // Send Video KYC link
+      // Send Video KYC link — strict 24-hour onboarding expiry written to DB.
       const token = generateSecureToken();
-      const expiresAt = getSecureLinkExpiry(5);
+      const expiresAt = getOnboardingLinkExpiry();
 
       await SecureLink.create({
         user_id: user.id,
@@ -244,7 +244,7 @@ exports.approveKYC = async (req, res) => {
       user_id: user.id,
       token: setupToken,
       purpose: 'account_setup',
-      expires_at: getSecureLinkExpiry(5),
+      expires_at: getOnboardingLinkExpiry(),
     });
 
     const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
@@ -416,7 +416,7 @@ exports.reviewKYC = async (req, res) => {
     if (!user.setup_completed) {
       const setupToken = generateSecureToken();
       await SecureLink.create({
-        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getSecureLinkExpiry(5),
+        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getOnboardingLinkExpiry(),
       });
       const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
       try {

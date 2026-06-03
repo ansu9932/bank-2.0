@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { RiBankLine, RiUserLine, RiLockLine, RiEyeLine, RiEyeOffLine, RiShieldKeyholeLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+import ExpiredLinkPage from '../../components/ExpiredLinkPage';
 
 export default function AccountSetupPage() {
   const [params] = useSearchParams();
@@ -50,15 +51,9 @@ export default function AccountSetupPage() {
 
   if (loading) return <div className="min-h-screen bg-dark-900 flex items-center justify-center"><div className="spinner w-8 h-8" /></div>;
 
-  if (!validLink) return (
-    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-6">
-      <div className="glass-card p-8 text-center max-w-md">
-        <span className="text-5xl">⏱️</span>
-        <h2 className="text-white font-bold text-xl mt-4 mb-2">Link Expired</h2>
-        <p className="text-dark-200 text-sm">This setup link has expired. Please contact Alister Bank support to get a new link.</p>
-      </div>
-    </div>
-  );
+  // Expired / invalid setup link → halt onboarding and show the professional
+  // secure-link error terminal (interceptor validation on the token route).
+  if (!validLink) return <ExpiredLinkPage />;
 
   if (done) return (
     <div className="min-h-screen bg-dark-900 flex items-center justify-center p-6">

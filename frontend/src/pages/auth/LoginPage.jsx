@@ -5,6 +5,10 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RiEyeLine, RiEyeOffLine, RiBankLine, RiLockLine, RiUserLine, RiShieldCheckLine } from 'react-icons/ri';
 import { login, clearError } from '../../store/slices/authSlice';
 import toast from 'react-hot-toast';
+import Turnstile from '../../components/Turnstile';
+
+// Cloudflare Turnstile public site key (env-driven, with a safe public fallback).
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '0x4AAAAAADeCiQG8uA27CtkY';
 
 export default function LoginPage() {
   const dispatch = useDispatch();
@@ -12,6 +16,7 @@ export default function LoginPage() {
   const { loading, error } = useSelector(s => s.auth);
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPwd, setShowPwd] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   useEffect(() => {
     if (error) { toast.error(error); dispatch(clearError()); }
@@ -20,7 +25,9 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.username || !form.password) { toast.error('Please fill all fields'); return; }
-    const result = await dispatch(login(form));
+    // Block submission entirely until the Turnstile bot challenge is solved.
+    if (!turnstileToken) { toast.error('Please complete the security verification.'); return; }
+    const result = await dispatch(login({ ...form, turnstileToken }));
     if (login.fulfilled.match(result)) {
       toast.success('Welcome back!');
       navigate('/dashboard');
@@ -137,16 +144,24 @@ export default function LoginPage() {
               </div>
 
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 rounded accent-brand-500" />
-                  <span className="text-dark-200 text-sm">Remember me</span>
-                </label>
+                
                 <Link to="/forgot-password" className="text-brand-400 hover:text-brand-300 text-sm transition-colors">
                   Forgot password?
                 </Link>
               </div>
 
-              <button type="submit" disabled={loading} className="btn-primary w-full py-3.5 mt-2">
+              {/* Cloudflare Turnstile bot challenge — must pass before login */}
+              <div className="flex justify-center pt-1">
+                <Turnstile
+                  siteKey={TURNSTILE_SITE_KEY}
+                  theme="dark"
+                  onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken('')}
+                  onError={() => setTurnstileToken('')}
+                />
+              </div>
+
+              <button type="submit" disabled={loading || !turnstileToken} className="btn-primary w-full py-3.5 mt-2">
                 {loading ? <><div className="spinner w-4 h-4" /> Signing in...</> : 'Sign In'}
               </button>
             </form>
