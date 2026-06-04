@@ -188,6 +188,9 @@ export default function DepositFunds() {
       const { data } = await api.post('/payments/create-deposit-order', {
         amount: numericAmount,
         paymentMethod: method,
+        // Forward the chosen Net Banking partner code so the backend can validate
+        // it and echo it back for direct-to-bank routing (null for card).
+        ...(method === 'netbanking' && bankCode ? { bank: bankCode } : {}),
       });
       const cfg = data?.data;
       if (!cfg?.orderId || !cfg?.keyId) throw new Error('Malformed order response');
@@ -195,11 +198,13 @@ export default function DepositFunds() {
       const Razorpay = await loadRazorpayCheckout();
 
       // Clone the server-supplied prefill so we can attach the bank routing
-      // hints for Net Banking without mutating the response object.
+      // hints for Net Banking without mutating the response object. Prefer the
+      // backend-validated bank code, falling back to the user's selection.
       const prefill = { ...(cfg.prefill || {}) };
-      if (method === 'netbanking' && bankCode) {
+      const routedBank = cfg.bank || (method === 'netbanking' ? bankCode : null);
+      if (method === 'netbanking' && routedBank) {
         prefill.method = 'netbanking';
-        prefill.bank = bankCode; // e.g. 'HDFC', 'SBIN', 'ICIC' → skips bank picker
+        prefill.bank = routedBank; // e.g. 'HDFC', 'SBIN', 'ICIC' → skips bank picker
       }
 
       const options = {

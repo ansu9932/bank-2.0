@@ -13,7 +13,7 @@ router.post('/webhook', paymentController.webhook);
 // ─── Authenticated deposit endpoints (UPI QR top-up) ──────────────────────────
 router.post('/create-qr', protect, paymentController.createQR);
 router.get('/status/:orderRef', protect, paymentController.getStatus);
-// High-value Checkout deposit (Card / Net Banking) for amounts > ₹2L.
+// High-value Checkout deposit (Card / Net Banking) for amounts > ₹1L.
 router.post('/create-deposit-order', protect, depositController.createDepositOrder);
 
 // ─── Outgoing payouts (Opfin / RazorpayX Payroll unified API) ─────────────────
