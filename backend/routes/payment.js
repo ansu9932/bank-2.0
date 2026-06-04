@@ -11,7 +11,7 @@ router.post('/webhook', paymentController.webhook);
 
 // ─── Authenticated deposit endpoints (UPI QR top-up) ──────────────────────────
 router.post('/create-qr', protect, paymentController.createQR);
-router.get('/status/:ref', protect, paymentController.getStatus);
+router.get('/status/:orderRef', protect, paymentController.getStatus);
 
 // ─── Outgoing payouts (Opfin / RazorpayX Payroll unified API) ─────────────────
 // Real-time UPI provider lookup (debounced from the client).
