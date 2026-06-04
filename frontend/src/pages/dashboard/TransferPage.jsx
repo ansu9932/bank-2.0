@@ -13,15 +13,13 @@ import { fetchBeneficiaries } from '../../store/slices/transactionSlice';
 import toast from 'react-hot-toast';
 
 const CRIMSON = '#c8102e';
-// Alister Bank's internal IFSC — locked in for on-us "Alister Transfer".
-const INTERNAL_IFSC = 'ALST0000001';
 
-// RTGS removed per product spec. UPI + internal "Alister Transfer" added.
+// RTGS removed per product spec. UPI + internal "Alister Internal" added.
 const MODES = [
   { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to ₹2L', kind: 'bank', icon: RiBankLine },
   { value: 'NEFT', label: 'NEFT', desc: 'Batch settled · Any amount', kind: 'bank', icon: RiBankLine },
   { value: 'UPI', label: 'UPI Transfer', desc: 'Instant · Pay to any UPI ID', kind: 'upi', icon: RiSmartphoneLine },
-  { value: 'ALISTER', label: 'Alister Transfer', desc: 'Instant · Account to account', kind: 'internal', icon: RiExchangeLine },
+  { value: 'ALISTER', label: 'Alister Internal', desc: 'Instant · Alister to Alister', kind: 'internal', icon: RiExchangeLine },
 ];
 
 // Structural VPA check used to gate the debounced lookup.
@@ -51,6 +49,11 @@ export default function TransferPage() {
   const [vpaProvider, setVpaProvider] = useState('');
   const vpaDebounceRef = useRef(null);
 
+  // ── Real-time IFSC branch verification state ──────────────────────────────
+  const [ifscStatus, setIfscStatus] = useState('idle'); // idle | checking | verified | invalid
+  const [ifscInfo, setIfscInfo] = useState(null); // { bank, branch, city }
+  const ifscDebounceRef = useRef(null);
+
   const isUpi = mode === 'UPI';
   const isInternal = mode === 'ALISTER';
 
@@ -63,7 +66,10 @@ export default function TransferPage() {
       if (account?.daily_transfer_limit != null) {
         const limit = parseFloat(account.daily_transfer_limit);
         const used = parseFloat(account.daily_transferred || 0);
-        setLimitInfo({ dailyTransferLimit: limit, usedDailyLimit: used, remaining: Math.max(limit - used, 0) });
+        const remaining = account.remaining_limit_today != null
+          ? parseFloat(account.remaining_limit_today)
+          : Math.max(limit - used, 0);
+        setLimitInfo({ dailyTransferLimit: limit, usedDailyLimit: used, remaining });
       }
     }
   }, [account]);
@@ -77,22 +83,71 @@ export default function TransferPage() {
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // ── Real-time IFSC branch verification (debounced 400ms; fires at 11 chars) ─
+  // Reusable: called from the IFSC input handler AND when a saved beneficiary is
+  // selected (so the branch lookup is triggered automatically per Step 2).
+  const runIfscLookup = useCallback(async (rawCode) => {
+    const code = String(rawCode || '').trim().toUpperCase();
+    if (code.length !== 11) {
+      setIfscStatus(code.length === 0 ? 'idle' : 'invalid');
+      setIfscInfo(null);
+      return;
+    }
+    setIfscStatus('checking');
+    setIfscInfo(null);
+    try {
+      const { data } = await api.get(`/payments/verify-ifsc/${code}`);
+      if (data?.data?.bank) {
+        setIfscStatus('verified');
+        setIfscInfo({ bank: data.data.bank, branch: data.data.branch, city: data.data.city });
+      } else {
+        setIfscStatus('invalid');
+        setIfscInfo(null);
+      }
+    } catch {
+      setIfscStatus('invalid');
+      setIfscInfo(null);
+    }
+  }, []);
+
+  const onIfscChange = (e) => {
+    const value = e.target.value.toUpperCase();
+    setForm((f) => ({ ...f, ifsc: value }));
+    setIfscInfo(null);
+
+    if (ifscDebounceRef.current) clearTimeout(ifscDebounceRef.current);
+
+    if (value.length === 0) { setIfscStatus('idle'); return; }
+    if (value.length < 11) { setIfscStatus('idle'); return; }
+    // 11 chars reached → debounce the verification call.
+    setIfscStatus('checking');
+    ifscDebounceRef.current = setTimeout(() => runIfscLookup(value), 400);
+  };
+
   // ── Saved-beneficiary quick-select ────────────────────────────────────────
-  // Selecting a saved contact auto-fills name / account / confirm / IFSC.
+  // Selecting a saved contact auto-fills name / account / confirm / IFSC, and
+  // automatically triggers the Step-1 branch lookup for the populated IFSC.
   const onSelectBeneficiary = (e) => {
     const id = e.target.value;
     setSelectedBeneficiary(id);
     if (!id) return;
     const b = beneficiaries.find((x) => String(x.id) === String(id));
     if (!b) return;
+    const savedIfsc = isInternal ? '' : (b.ifsc_code || '');
     setForm((f) => ({
       ...f,
       beneficiaryName: b.account_name || b.nickname || '',
       accountNumber: b.account_number || '',
       confirmAccountNumber: b.account_number || '',
-      // Internal mode keeps the locked internal IFSC; external rails use saved IFSC.
-      ifsc: isInternal ? INTERNAL_IFSC : (b.ifsc_code || ''),
+      ifsc: savedIfsc,
     }));
+    // Internal transfers don't use a routing IFSC; external rails verify it.
+    if (!isInternal && savedIfsc) {
+      runIfscLookup(savedIfsc);
+    } else {
+      setIfscStatus('idle');
+      setIfscInfo(null);
+    }
   };
 
   // ── Debounced UPI provider lookup (400ms) ─────────────────────────────────
@@ -123,16 +178,21 @@ export default function TransferPage() {
     }, 400);
   };
 
-  // Clean up the debounce timer on unmount.
-  useEffect(() => () => { if (vpaDebounceRef.current) clearTimeout(vpaDebounceRef.current); }, []);
+  // Clean up the debounce timers on unmount.
+  useEffect(() => () => {
+    if (vpaDebounceRef.current) clearTimeout(vpaDebounceRef.current);
+    if (ifscDebounceRef.current) clearTimeout(ifscDebounceRef.current);
+  }, []);
 
   const switchMode = (m) => {
     setMode(m);
     setVpaStatus('idle');
     setVpaProvider('');
     setSelectedBeneficiary('');
-    // When switching to Alister Transfer, pin the internal IFSC immediately.
-    setForm((f) => ({ ...f, ifsc: m === 'ALISTER' ? INTERNAL_IFSC : (m === 'UPI' ? '' : f.ifsc) }));
+    setIfscStatus('idle');
+    setIfscInfo(null);
+    // Internal transfers carry no routing IFSC; external rails clear it for entry.
+    setForm((f) => ({ ...f, ifsc: m === 'ALISTER' ? '' : (m === 'UPI' ? '' : f.ifsc) }));
   };
 
   const validateForm = () => {
@@ -229,6 +289,8 @@ export default function TransferPage() {
     setResult(null);
     setVpaStatus('idle');
     setVpaProvider('');
+    setIfscStatus('idle');
+    setIfscInfo(null);
     setMode('IMPS');
     setStep('form');
   };
@@ -291,7 +353,7 @@ export default function TransferPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="page-title">Transfer Money</h1>
-          <p className="text-dark-300 text-sm mt-0.5">Send money via IMPS, NEFT, UPI, or Alister Transfer</p>
+          <p className="text-dark-300 text-sm mt-0.5">Send money via IMPS, NEFT, UPI, or Alister Internal</p>
         </div>
         {dailyLimit != null && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -404,7 +466,9 @@ export default function TransferPage() {
                         {isInternal ? 'Alister Account Number' : 'Bank Account Number'}
                       </label>
                       <input type="text" value={form.accountNumber} onChange={set('accountNumber')}
-                        placeholder={isInternal ? 'Recipient Alister account' : 'Recipient account number'}
+                        placeholder={isInternal
+                          ? "Enter recipient's Alister Account Number (e.g., ALBXXXX)"
+                          : 'Recipient account number'}
                         className="input-field" autoComplete="off" />
                     </div>
                     <div>
@@ -417,27 +481,42 @@ export default function TransferPage() {
                       )}
                     </div>
 
-                    {/* IFSC: editable for IMPS/NEFT; locked to internal prefix for Alister */}
-                    {isInternal ? (
+                    {/* IFSC field — fully hidden for internal Alister transfers
+                        (no routing code needed); shown with real-time branch
+                        verification for IMPS / NEFT. */}
+                    {!isInternal && (
                       <div className="sm:col-span-2">
                         <label className="form-label">IFSC Code</label>
-                        <div className="relative">
-                          <input type="text" value={INTERNAL_IFSC} readOnly disabled
-                            className="input-field uppercase opacity-80 cursor-not-allowed pr-28" />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                            style={{ background: 'rgba(200,16,46,0.15)', color: '#ff6b81' }}>
-                            ALISTER BANK
-                          </span>
+                        <input type="text" value={form.ifsc} onChange={onIfscChange}
+                          placeholder="HDFC0001234" maxLength={11}
+                          className="input-field uppercase" autoComplete="off" />
+                        {/* Real-time IFSC verification sub-badge */}
+                        <div className="min-h-[20px] mt-1.5">
+                          {ifscStatus === 'checking' && (
+                            <p className="text-dark-300 text-xs flex items-center gap-1.5">
+                              <RiLoader4Line className="animate-spin" /> Verifying IFSC…
+                            </p>
+                          )}
+                          {ifscStatus === 'verified' && ifscInfo && (
+                            <p className="text-xs font-medium" style={{ color: '#22c55e' }}>
+                              ✔ Verified: {ifscInfo.bank} — {ifscInfo.branch} Branch
+                              {ifscInfo.city ? `, ${ifscInfo.city}` : ''}
+                            </p>
+                          )}
+                          {ifscStatus === 'invalid' && (
+                            <p className="text-xs font-medium" style={{ color: '#ff6b81' }}>
+                              ⚠ Invalid IFSC Code structure
+                            </p>
+                          )}
                         </div>
-                        <p className="text-dark-400 text-[11px] mt-1 flex items-center gap-1">
-                          <RiInformationLine /> Internal transfers stay within Alister Bank — IFSC is fixed.
-                        </p>
                       </div>
-                    ) : (
+                    )}
+
+                    {isInternal && (
                       <div className="sm:col-span-2">
-                        <label className="form-label">IFSC Code</label>
-                        <input type="text" value={form.ifsc} onChange={set('ifsc')}
-                          placeholder="HDFC0001234" className="input-field uppercase" />
+                        <p className="text-dark-400 text-[11px] flex items-center gap-1">
+                          <RiInformationLine /> Internal Alister transfers route by account number — no IFSC needed.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -483,8 +562,9 @@ export default function TransferPage() {
                   : [
                     { label: 'Beneficiary', value: form.beneficiaryName },
                     { label: isInternal ? 'Alister Account' : 'Account', value: form.accountNumber },
-                    { label: 'IFSC', value: isInternal ? INTERNAL_IFSC : form.ifsc.toUpperCase() },
-                    { label: 'Mode', value: isInternal ? 'Alister Transfer' : mode },
+                    ...(isInternal ? [] : [{ label: 'IFSC', value: form.ifsc.toUpperCase() }]),
+                    ...(isInternal || !ifscInfo ? [] : [{ label: 'Bank', value: `${ifscInfo.bank} — ${ifscInfo.branch}` }]),
+                    { label: 'Mode', value: isInternal ? 'Alister Internal' : mode },
                     { label: 'Description', value: form.description || 'Transfer' },
                   ]
                 ).map(({ label, value }) => (
