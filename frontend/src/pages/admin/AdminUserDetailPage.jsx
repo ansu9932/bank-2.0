@@ -11,12 +11,17 @@ export default function AdminUserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [manualTx, setManualTx] = useState({ type: 'credit', amount: '', description: '', reason: '' });
   const [txLoading, setTxLoading] = useState(false);
+  const [ceiling, setCeiling] = useState('');
+  const [ceilingLoading, setCeilingLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
   const fetch = async () => {
     try {
       const { data } = await api.get(`/admin/users/${id}`, { headers });
       setUser(data.data.user);
+      if (data.data.user?.account?.daily_transfer_limit != null) {
+        setCeiling(String(parseFloat(data.data.user.account.daily_transfer_limit)));
+      }
     } catch { toast.error('Failed to load user'); }
     finally { setLoading(false); }
   };
@@ -61,6 +66,19 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setTxLoading(false); }
+  };
+
+  const applyCeiling = async () => {
+    const parsed = parseFloat(ceiling);
+    if (Number.isNaN(parsed) || parsed < 0) { toast.error('Enter a valid ceiling amount'); return; }
+    setCeilingLoading(true);
+    try {
+      const { data } = await api.post(`/admin/modify-user-ceiling/${id}`,
+        { dailyTransferLimit: parsed }, { headers });
+      toast.success(data.message || 'Transfer ceiling updated');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update ceiling'); }
+    finally { setCeilingLoading(false); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="spinner w-8 h-8" style={{ borderWidth: 3 }} /></div>;
@@ -112,6 +130,7 @@ export default function AdminUserDetailPage() {
                   ['IFSC Code', user.account.ifsc_code],
                   ['Account Type', user.account.account_type?.toUpperCase()],
                   ['Status', user.account.status],
+                  ['Daily Transfer Limit', `₹${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}`],
                 ].map(([k,v]) => (
                   <div key={k}>
                     <p className="text-dark-400 text-xs">{k}</p>
@@ -212,6 +231,28 @@ export default function AdminUserDetailPage() {
                   className="input-field text-sm py-2" />
                 <button onClick={submitManualTx} disabled={txLoading} className="btn-primary w-full justify-center py-2.5 text-sm">
                   {txLoading ? <><div className="spinner w-3 h-3" /> Processing...</> : `Apply ${manualTx.type}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Adjust User Transfer Ceiling */}
+          {user.account && (
+            <div className="glass-card p-4">
+              <p className="text-white font-semibold mb-1 text-sm">Adjust User Transfer Ceiling</p>
+              <p className="text-dark-400 text-xs mb-3">
+                Current daily limit: ₹{parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}
+              </p>
+              <div className="space-y-2">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-300 text-sm">₹</span>
+                  <input type="number" min="0" step="1000" placeholder="New daily ceiling (₹)"
+                    value={ceiling} onChange={(e) => setCeiling(e.target.value)}
+                    className="input-field text-sm py-2 pl-7" />
+                </div>
+                <button onClick={applyCeiling} disabled={ceilingLoading}
+                  className="btn-primary w-full justify-center py-2.5 text-sm">
+                  {ceilingLoading ? <><div className="spinner w-3 h-3" /> Applying...</> : 'Apply New Limits'}
                 </button>
               </div>
             </div>

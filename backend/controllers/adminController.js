@@ -639,6 +639,56 @@ exports.updateTicket = async (req, res) => {
   }
 };
 
+// ─── Modify User Transfer Ceiling ─────────────────────────────────────────────
+// POST /api/admin/modify-user-ceiling/:userId   (admin only)
+// Overwrites the target user's daily transfer limit instantly. Reuses the
+// existing accounts.daily_transfer_limit column (schema-safe, no migration).
+exports.modifyUserCeiling = async (req, res) => {
+  try {
+    const newCeiling = parseFloat(req.body.dailyTransferLimit ?? req.body.ceiling ?? req.body.limit);
+
+    if (Number.isNaN(newCeiling) || newCeiling < 0) {
+      return badRequest(res, 'Please provide a valid transfer ceiling (₹0 or greater).');
+    }
+    if (newCeiling > 100000000) {
+      return badRequest(res, 'Transfer ceiling cannot exceed ₹10,00,00,000.');
+    }
+
+    const account = await Account.findOne({ where: { user_id: req.params.userId } });
+    if (!account) return notFound(res, 'Account not found for this user.');
+
+    const previousCeiling = parseFloat(account.daily_transfer_limit);
+    await account.update({ daily_transfer_limit: newCeiling });
+
+    await Notification.create({
+      user_id: req.params.userId,
+      title: 'Daily Transfer Ceiling Updated',
+      message: `Your daily transfer limit is now ₹${newCeiling.toLocaleString('en-IN')}.`,
+      type: 'security',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: req.params.userId,
+      action: 'TRANSFER_CEILING_MODIFIED',
+      entityType: 'Account',
+      entityId: account.id,
+      oldValues: { daily_transfer_limit: previousCeiling },
+      newValues: { daily_transfer_limit: newCeiling },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(res, {
+      dailyTransferLimit: newCeiling,
+    }, `Transfer ceiling updated to ₹${newCeiling.toLocaleString('en-IN')}.`);
+  } catch (err) {
+    logger.error(`Modify user ceiling error: ${err.message}`);
+    return error(res, 'Failed to update the transfer ceiling.');
+  }
+};
+
 // ─── Flag Transaction ─────────────────────────────────────────────────────────
 exports.flagTransaction = async (req, res) => {
   try {
