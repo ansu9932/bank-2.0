@@ -5,18 +5,23 @@ import {
   RiSendPlaneLine, RiCheckDoubleLine, RiArrowLeftLine, RiInformationLine,
   RiBankLine, RiSmartphoneLine, RiShieldCheckLine, RiLoader4Line,
   RiTimer2Line, RiCheckLine, RiErrorWarningLine, RiWallet3Line,
+  RiExchangeLine, RiGroupLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
 import { fetchAccount } from '../../store/slices/accountSlice';
+import { fetchBeneficiaries } from '../../store/slices/transactionSlice';
 import toast from 'react-hot-toast';
 
 const CRIMSON = '#c8102e';
+// Alister Bank's internal IFSC — locked in for on-us "Alister Transfer".
+const INTERNAL_IFSC = 'ALST0000001';
 
-// RTGS removed per product spec. UPI added as a first-class rail.
+// RTGS removed per product spec. UPI + internal "Alister Transfer" added.
 const MODES = [
   { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to ₹2L', kind: 'bank', icon: RiBankLine },
   { value: 'NEFT', label: 'NEFT', desc: 'Batch settled · Any amount', kind: 'bank', icon: RiBankLine },
   { value: 'UPI', label: 'UPI Transfer', desc: 'Instant · Pay to any UPI ID', kind: 'upi', icon: RiSmartphoneLine },
+  { value: 'ALISTER', label: 'Alister Transfer', desc: 'Instant · Account to account', kind: 'internal', icon: RiExchangeLine },
 ];
 
 // Structural VPA check used to gate the debounced lookup.
@@ -26,6 +31,7 @@ const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFrac
 export default function TransferPage() {
   const dispatch = useDispatch();
   const { account } = useSelector((s) => s.account);
+  const { beneficiaries = [] } = useSelector((s) => s.transaction);
 
   const [step, setStep] = useState('form'); // form | confirm | success
   const [mode, setMode] = useState('IMPS');
@@ -33,6 +39,7 @@ export default function TransferPage() {
     beneficiaryName: '', accountNumber: '', confirmAccountNumber: '',
     ifsc: '', vpa: '', amount: '', description: '', securityPin: '',
   });
+  const [selectedBeneficiary, setSelectedBeneficiary] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -45,6 +52,7 @@ export default function TransferPage() {
   const vpaDebounceRef = useRef(null);
 
   const isUpi = mode === 'UPI';
+  const isInternal = mode === 'ALISTER';
 
   const loadLimit = useCallback(async () => {
     try {
@@ -62,11 +70,30 @@ export default function TransferPage() {
 
   useEffect(() => {
     dispatch(fetchAccount());
+    dispatch(fetchBeneficiaries());
     loadLimit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // ── Saved-beneficiary quick-select ────────────────────────────────────────
+  // Selecting a saved contact auto-fills name / account / confirm / IFSC.
+  const onSelectBeneficiary = (e) => {
+    const id = e.target.value;
+    setSelectedBeneficiary(id);
+    if (!id) return;
+    const b = beneficiaries.find((x) => String(x.id) === String(id));
+    if (!b) return;
+    setForm((f) => ({
+      ...f,
+      beneficiaryName: b.account_name || b.nickname || '',
+      accountNumber: b.account_number || '',
+      confirmAccountNumber: b.account_number || '',
+      // Internal mode keeps the locked internal IFSC; external rails use saved IFSC.
+      ifsc: isInternal ? INTERNAL_IFSC : (b.ifsc_code || ''),
+    }));
+  };
 
   // ── Debounced UPI provider lookup (400ms) ─────────────────────────────────
   const onVpaChange = (e) => {
@@ -103,6 +130,9 @@ export default function TransferPage() {
     setMode(m);
     setVpaStatus('idle');
     setVpaProvider('');
+    setSelectedBeneficiary('');
+    // When switching to Alister Transfer, pin the internal IFSC immediately.
+    setForm((f) => ({ ...f, ifsc: m === 'ALISTER' ? INTERNAL_IFSC : (m === 'UPI' ? '' : f.ifsc) }));
   };
 
   const validateForm = () => {
@@ -120,7 +150,14 @@ export default function TransferPage() {
       if (!form.beneficiaryName) { toast.error('Beneficiary name is required'); return false; }
       if (!form.accountNumber) { toast.error('Account number is required'); return false; }
       if (form.accountNumber !== form.confirmAccountNumber) { toast.error('Account numbers do not match'); return false; }
-      if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(form.ifsc.trim())) { toast.error('Enter a valid IFSC code'); return false; }
+      if (isInternal) {
+        // Internal transfers route on the account number; IFSC is auto-pinned.
+        if (account && String(form.accountNumber) === String(account.account_number)) {
+          toast.error('You cannot transfer to your own account'); return false;
+        }
+      } else if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(form.ifsc.trim())) {
+        toast.error('Enter a valid IFSC code'); return false;
+      }
     }
     return true;
   };
@@ -136,21 +173,40 @@ export default function TransferPage() {
     }
     setSubmitting(true);
     try {
-      const payload = {
-        mode,
-        amount: parseFloat(form.amount),
-        description: form.description,
-        securityPin: form.securityPin,
-        ...(isUpi
-          ? { vpa: form.vpa.trim(), beneficiaryName: form.beneficiaryName || 'UPI Beneficiary' }
-          : {
-            beneficiaryName: form.beneficiaryName,
-            accountNumber: form.accountNumber,
-            confirmAccountNumber: form.confirmAccountNumber,
-            ifsc: form.ifsc.trim().toUpperCase(),
-          }),
-      };
-      const { data } = await api.post('/payments/disburse-payout', payload);
+      let endpoint;
+      let payload;
+
+      if (isInternal) {
+        // On-us Alister transfer → dedicated internal route (no external gateway).
+        endpoint = '/payments/internal-transfer';
+        payload = {
+          mode: 'ALISTER',
+          amount: parseFloat(form.amount),
+          accountNumber: form.accountNumber,
+          confirmAccountNumber: form.confirmAccountNumber,
+          beneficiaryName: form.beneficiaryName,
+          description: form.description,
+          securityPin: form.securityPin,
+        };
+      } else {
+        endpoint = '/payments/disburse-payout';
+        payload = {
+          mode,
+          amount: parseFloat(form.amount),
+          description: form.description,
+          securityPin: form.securityPin,
+          ...(isUpi
+            ? { vpa: form.vpa.trim(), beneficiaryName: form.beneficiaryName || 'UPI Beneficiary' }
+            : {
+              beneficiaryName: form.beneficiaryName,
+              accountNumber: form.accountNumber,
+              confirmAccountNumber: form.confirmAccountNumber,
+              ifsc: form.ifsc.trim().toUpperCase(),
+            }),
+        };
+      }
+
+      const { data } = await api.post(endpoint, payload);
       setResult(data.data);
       setStep('success');
       dispatch(fetchAccount());
@@ -169,6 +225,7 @@ export default function TransferPage() {
       beneficiaryName: '', accountNumber: '', confirmAccountNumber: '',
       ifsc: '', vpa: '', amount: '', description: '', securityPin: '',
     });
+    setSelectedBeneficiary('');
     setResult(null);
     setVpaStatus('idle');
     setVpaProvider('');
@@ -196,6 +253,7 @@ export default function TransferPage() {
           </h2>
           <p className="text-dark-200 text-sm mb-4">
             {fmtINR(result.amount)} {isPending ? 'is processing and will settle shortly.' : 'sent successfully.'}
+            {result.recipientName ? ` to ${result.recipientName}` : ''}
           </p>
           <div className="bg-dark-700/50 rounded-xl p-4 mb-5 space-y-2">
             <div className="flex justify-between text-sm">
@@ -225,6 +283,7 @@ export default function TransferPage() {
 
   const remaining = limitInfo?.remaining ?? null;
   const dailyLimit = limitInfo?.dailyTransferLimit ?? (account ? parseFloat(account.daily_transfer_limit || 0) : null);
+  const usedToday = limitInfo?.usedDailyLimit ?? (account ? parseFloat(account.daily_transferred || 0) : null);
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -232,7 +291,7 @@ export default function TransferPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="page-title">Transfer Money</h1>
-          <p className="text-dark-300 text-sm mt-0.5">Send money via IMPS, NEFT, or UPI</p>
+          <p className="text-dark-300 text-sm mt-0.5">Send money via IMPS, NEFT, UPI, or Alister Transfer</p>
         </div>
         {dailyLimit != null && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -244,13 +303,11 @@ export default function TransferPage() {
                 <p className="text-[10px] uppercase tracking-widest text-dark-300">Daily Transfer Limit</p>
                 <p className="text-white font-bold text-sm tabular-nums">
                   {fmtINR(dailyLimit)}
-                  <span className="text-dark-400 font-normal">
-                    {limitInfo?.usedDailyLimit != null ? '' : ' (Default)'}
-                  </span>
+                  {usedToday == null && <span className="text-dark-400 font-normal"> (Default)</span>}
                 </p>
                 {remaining != null && (
                   <p className="text-[11px] mt-0.5" style={{ color: '#ff6b81' }}>
-                    {fmtINR(remaining)} remaining today
+                    {usedToday != null ? `${fmtINR(usedToday)} used · ` : ''}{fmtINR(remaining)} remaining today
                   </p>
                 )}
               </div>
@@ -266,7 +323,7 @@ export default function TransferPage() {
               {/* Mode tabs */}
               <div className="mb-5">
                 <label className="form-label">Transfer Mode</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {MODES.map((m) => {
                     const Icon = m.icon;
                     const active = mode === m.value;
@@ -315,31 +372,74 @@ export default function TransferPage() {
                   </div>
                 </div>
               ) : (
-                /* Bank tabs (IMPS / NEFT) */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                  <div className="sm:col-span-2">
-                    <label className="form-label">Beneficiary Name</label>
-                    <input type="text" value={form.beneficiaryName} onChange={set('beneficiaryName')}
-                      placeholder="Full name as per bank" className="input-field" />
-                  </div>
+                /* Bank (IMPS / NEFT) + Alister Transfer share the account layout */
+                <div className="space-y-4 mb-4">
+                  {/* Saved-beneficiary quick-select */}
                   <div>
-                    <label className="form-label">Bank Account Number</label>
-                    <input type="text" value={form.accountNumber} onChange={set('accountNumber')}
-                      placeholder="Recipient account number" className="input-field" autoComplete="off" />
-                  </div>
-                  <div>
-                    <label className="form-label">Confirm Account Number</label>
-                    <input type="text" value={form.confirmAccountNumber} onChange={set('confirmAccountNumber')}
-                      placeholder="Re-enter account number" className="input-field" autoComplete="off"
-                      onPaste={(e) => e.preventDefault()} />
-                    {form.confirmAccountNumber && form.accountNumber !== form.confirmAccountNumber && (
-                      <p className="text-xs mt-1" style={{ color: '#ff6b81' }}>Account numbers do not match</p>
+                    <label className="form-label flex items-center gap-1.5">
+                      <RiGroupLine /> Select From Saved Beneficiaries
+                    </label>
+                    <select value={selectedBeneficiary} onChange={onSelectBeneficiary}
+                      className="input-field cursor-pointer">
+                      <option value="">— Choose a saved beneficiary —</option>
+                      {beneficiaries.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {(b.nickname || b.account_name)} · ••••{String(b.account_number).slice(-4)}
+                        </option>
+                      ))}
+                    </select>
+                    {beneficiaries.length === 0 && (
+                      <p className="text-dark-400 text-[11px] mt-1">No saved beneficiaries yet — enter details below.</p>
                     )}
                   </div>
-                  <div className="sm:col-span-2">
-                    <label className="form-label">IFSC Code</label>
-                    <input type="text" value={form.ifsc} onChange={set('ifsc')}
-                      placeholder="HDFC0001234" className="input-field uppercase" />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="form-label">Beneficiary Name</label>
+                      <input type="text" value={form.beneficiaryName} onChange={set('beneficiaryName')}
+                        placeholder="Full name as per bank" className="input-field" />
+                    </div>
+                    <div>
+                      <label className="form-label">
+                        {isInternal ? 'Alister Account Number' : 'Bank Account Number'}
+                      </label>
+                      <input type="text" value={form.accountNumber} onChange={set('accountNumber')}
+                        placeholder={isInternal ? 'Recipient Alister account' : 'Recipient account number'}
+                        className="input-field" autoComplete="off" />
+                    </div>
+                    <div>
+                      <label className="form-label">Confirm Account Number</label>
+                      <input type="text" value={form.confirmAccountNumber} onChange={set('confirmAccountNumber')}
+                        placeholder="Re-enter account number" className="input-field" autoComplete="off"
+                        onPaste={(e) => e.preventDefault()} />
+                      {form.confirmAccountNumber && form.accountNumber !== form.confirmAccountNumber && (
+                        <p className="text-xs mt-1" style={{ color: '#ff6b81' }}>Account numbers do not match</p>
+                      )}
+                    </div>
+
+                    {/* IFSC: editable for IMPS/NEFT; locked to internal prefix for Alister */}
+                    {isInternal ? (
+                      <div className="sm:col-span-2">
+                        <label className="form-label">IFSC Code</label>
+                        <div className="relative">
+                          <input type="text" value={INTERNAL_IFSC} readOnly disabled
+                            className="input-field uppercase opacity-80 cursor-not-allowed pr-28" />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(200,16,46,0.15)', color: '#ff6b81' }}>
+                            ALISTER BANK
+                          </span>
+                        </div>
+                        <p className="text-dark-400 text-[11px] mt-1 flex items-center gap-1">
+                          <RiInformationLine /> Internal transfers stay within Alister Bank — IFSC is fixed.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="sm:col-span-2">
+                        <label className="form-label">IFSC Code</label>
+                        <input type="text" value={form.ifsc} onChange={set('ifsc')}
+                          placeholder="HDFC0001234" className="input-field uppercase" />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -382,9 +482,9 @@ export default function TransferPage() {
                   ]
                   : [
                     { label: 'Beneficiary', value: form.beneficiaryName },
-                    { label: 'Account', value: form.accountNumber },
-                    { label: 'IFSC', value: form.ifsc.toUpperCase() },
-                    { label: 'Mode', value: mode },
+                    { label: isInternal ? 'Alister Account' : 'Account', value: form.accountNumber },
+                    { label: 'IFSC', value: isInternal ? INTERNAL_IFSC : form.ifsc.toUpperCase() },
+                    { label: 'Mode', value: isInternal ? 'Alister Transfer' : mode },
                     { label: 'Description', value: form.description || 'Transfer' },
                   ]
                 ).map(({ label, value }) => (
