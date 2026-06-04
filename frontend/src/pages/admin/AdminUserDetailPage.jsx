@@ -11,12 +11,17 @@ export default function AdminUserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [manualTx, setManualTx] = useState({ type: 'credit', amount: '', description: '', reason: '' });
   const [txLoading, setTxLoading] = useState(false);
+  const [limitValue, setLimitValue] = useState('');
+  const [limitLoading, setLimitLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
   const fetch = async () => {
     try {
       const { data } = await api.get(`/admin/users/${id}`, { headers });
       setUser(data.data.user);
+      if (data.data.user?.account?.daily_transfer_limit != null) {
+        setLimitValue(String(parseFloat(data.data.user.account.daily_transfer_limit)));
+      }
     } catch { toast.error('Failed to load user'); }
     finally { setLoading(false); }
   };
@@ -61,6 +66,19 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setTxLoading(false); }
+  };
+
+  const updateLimit = async () => {
+    const parsed = parseFloat(limitValue);
+    if (Number.isNaN(parsed) || parsed < 0) { toast.error('Enter a valid limit amount'); return; }
+    setLimitLoading(true);
+    try {
+      const { data } = await api.patch(`/admin/users/${id}/update-limit`,
+        { dailyTransferLimit: parsed }, { headers });
+      toast.success(data.message || 'Daily transfer limit updated');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update limit'); }
+    finally { setLimitLoading(false); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="spinner w-8 h-8" style={{ borderWidth: 3 }} /></div>;
@@ -112,6 +130,7 @@ export default function AdminUserDetailPage() {
                   ['IFSC Code', user.account.ifsc_code],
                   ['Account Type', user.account.account_type?.toUpperCase()],
                   ['Status', user.account.status],
+                  ['Daily Transfer Limit', `₹${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}`],
                 ].map(([k,v]) => (
                   <div key={k}>
                     <p className="text-dark-400 text-xs">{k}</p>
@@ -212,6 +231,31 @@ export default function AdminUserDetailPage() {
                   className="input-field text-sm py-2" />
                 <button onClick={submitManualTx} disabled={txLoading} className="btn-primary w-full justify-center py-2.5 text-sm">
                   {txLoading ? <><div className="spinner w-3 h-3" /> Processing...</> : `Apply ${manualTx.type}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Daily Transfer Limit */}
+          {user.account && (
+            <div className="glass-card p-4">
+              <p className="text-white font-semibold mb-1 text-sm">Modify Daily Transfer Limit</p>
+              <p className="text-dark-400 text-xs mb-3">
+                Current: ₹{parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}
+                {user.account.custom_daily_limit_set
+                  ? <span className="text-brand-400"> · custom</span>
+                  : <span className="text-dark-400"> · default</span>}
+              </p>
+              <div className="space-y-2">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-300 text-sm">₹</span>
+                  <input type="number" min="0" step="1000" placeholder="Daily limit (₹)"
+                    value={limitValue} onChange={(e) => setLimitValue(e.target.value)}
+                    className="input-field text-sm py-2 pl-7" />
+                </div>
+                <button onClick={updateLimit} disabled={limitLoading}
+                  className="btn-primary w-full justify-center py-2.5 text-sm">
+                  {limitLoading ? <><div className="spinner w-3 h-3" /> Updating...</> : 'Update Limits'}
                 </button>
               </div>
             </div>

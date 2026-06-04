@@ -14,6 +14,10 @@ const Account = sequelize.define('Account', {
   currency: { type: DataTypes.STRING(5), defaultValue: 'INR' },
   status: { type: DataTypes.ENUM('active', 'frozen', 'dormant', 'closed'), defaultValue: 'active' },
   daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 500000.00 },
+  // Tracks whether an admin explicitly overrode this user's daily limit. When
+  // false the limit follows the platform default (₹5,00,000); when true it is
+  // an administratively pinned value that the default reset must not clobber.
+  custom_daily_limit_set: { type: DataTypes.BOOLEAN, defaultValue: false },
   daily_transferred: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   last_limit_reset: { type: DataTypes.DATE },
   interest_rate: { type: DataTypes.DECIMAL(5, 2), defaultValue: 4.00 },

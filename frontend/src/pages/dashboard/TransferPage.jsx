@@ -1,218 +1,362 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   RiSendPlaneLine, RiCheckDoubleLine, RiArrowLeftLine,
-  RiBankLine, RiGroupLine, RiInformationLine,
+  RiBankLine, RiSmartphoneLine, RiShieldCheckLine,
+  RiLoader4Line, RiTimer2Line, RiCheckLine, RiErrorWarningLine,
 } from 'react-icons/ri';
-import { initiateTransfer, clearTransferState, fetchBeneficiaries } from '../../store/slices/transactionSlice';
+import api from '../../services/api';
 import { fetchAccount } from '../../store/slices/accountSlice';
+import { clearTransferState } from '../../store/slices/transactionSlice';
 import toast from 'react-hot-toast';
 
+// RTGS removed per product spec. UPI added as a first-class rail.
 const MODES = [
-  { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to ₹2L' },
-  { value: 'NEFT', label: 'NEFT', desc: 'Batch · 30 min · Any amount' },
-  { value: 'RTGS', label: 'RTGS', desc: 'Real-time · Min ₹2L' },
-  { value: 'INTERNAL', label: 'Own Bank', desc: 'Instant · Alister Bank' },
+  { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to ₹2L', kind: 'bank', icon: RiBankLine },
+  { value: 'NEFT', label: 'NEFT', desc: 'Batch settled · Any amount', kind: 'bank', icon: RiBankLine },
+  { value: 'UPI', label: 'UPI Transfer', desc: 'Instant · Pay to any UPI ID', kind: 'upi', icon: RiSmartphoneLine },
 ];
+
+const VPA_REGEX = /^[\w.\-]{2,}@[\w.\-]{2,}$/;
+const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 export default function TransferPage() {
   const dispatch = useDispatch();
-  const { beneficiaries, transferLoading, lastTransfer, error } = useSelector(s => s.transaction);
-  const { account } = useSelector(s => s.account);
+  const { account } = useSelector((s) => s.account);
+
   const [step, setStep] = useState('form'); // form | confirm | success
+  const [mode, setMode] = useState('IMPS');
   const [form, setForm] = useState({
-    toAccountNumber: '', toAccountName: '', toBankName: '',
-    toIfsc: '', amount: '', transferMode: 'IMPS',
-    description: '', securityPin: '', scheduledAt: '',
+    beneficiaryName: '', accountNumber: '', confirmAccountNumber: '',
+    ifsc: '', vpa: '', amount: '', description: '', securityPin: '',
   });
-  const [showBeneficiaries, setShowBeneficiaries] = useState(false);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  // ── Daily transfer-limit state (chip card) ────────────────────────────────
+  const [limitInfo, setLimitInfo] = useState(null); // { dailyTransferLimit, spentToday, remaining }
+
+  // ── Real-time VPA verification state ──────────────────────────────────────
+  const [vpaStatus, setVpaStatus] = useState('idle'); // idle | checking | valid | invalid
+  const [vpaInfo, setVpaInfo] = useState(null); // { customerName, provider }
+  const vpaDebounceRef = useRef(null);
+
+  const isUpi = mode === 'UPI';
+
+  const loadLimit = useCallback(async () => {
+    try {
+      const { data } = await api.get('/payments/transfer-limit');
+      setLimitInfo(data.data);
+    } catch {
+      // Fallback to the account slice value if the endpoint is unavailable.
+      if (account?.daily_transfer_limit != null) {
+        setLimitInfo({
+          dailyTransferLimit: parseFloat(account.daily_transfer_limit),
+          spentToday: parseFloat(account.daily_transferred || 0),
+          remaining: Math.max(parseFloat(account.daily_transfer_limit) - parseFloat(account.daily_transferred || 0), 0),
+        });
+      }
+    }
+  }, [account]);
 
   useEffect(() => {
-    dispatch(fetchBeneficiaries());
+    dispatch(fetchAccount());
+    loadLimit();
     return () => dispatch(clearTransferState());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (lastTransfer) setStep('success');
-  }, [lastTransfer]);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  // ── Debounced VPA lookup (500ms) ──────────────────────────────────────────
+  const onVpaChange = (e) => {
+    const value = e.target.value.trim();
+    setForm((f) => ({ ...f, vpa: value }));
+    setVpaInfo(null);
 
-  const handleConfirm = () => {
-    if (!form.toAccountNumber) { toast.error('Recipient account number is required'); return; }
-    if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
-    if (!form.securityPin || form.securityPin.length !== 4) { toast.error('Enter your 4-digit security PIN'); return; }
-    if (parseFloat(form.amount) > parseFloat(account?.available_balance || 0)) {
-      toast.error('Insufficient balance'); return;
+    if (vpaDebounceRef.current) clearTimeout(vpaDebounceRef.current);
+
+    if (!VPA_REGEX.test(value)) {
+      setVpaStatus('idle');
+      return;
     }
+    setVpaStatus('checking');
+    vpaDebounceRef.current = setTimeout(async () => {
+      try {
+        const { data } = await api.post('/payments/validate-vpa', { vpa: value });
+        if (data?.data?.valid) {
+          setVpaStatus('valid');
+          setVpaInfo({ customerName: data.data.customerName, provider: data.data.provider });
+        } else {
+          setVpaStatus('invalid');
+          setVpaInfo(null);
+        }
+      } catch {
+        setVpaStatus('invalid');
+        setVpaInfo(null);
+      }
+    }, 500);
+  };
+
+  // Clean up the debounce timer on unmount.
+  useEffect(() => () => { if (vpaDebounceRef.current) clearTimeout(vpaDebounceRef.current); }, []);
+
+  const switchMode = (m) => {
+    setMode(m);
+    setVpaStatus('idle');
+    setVpaInfo(null);
+  };
+
+  const validateForm = () => {
+    const amount = parseFloat(form.amount);
+    if (!amount || amount <= 0) { toast.error('Enter a valid amount'); return false; }
+    if (account && amount > parseFloat(account.available_balance || 0)) {
+      toast.error('Insufficient balance'); return false;
+    }
+    if (limitInfo && amount > limitInfo.remaining) {
+      toast.error(`Exceeds remaining daily limit (${fmtINR(limitInfo.remaining)})`); return false;
+    }
+    if (isUpi) {
+      if (!VPA_REGEX.test(form.vpa)) { toast.error('Enter a valid UPI ID (e.g. username@okaxis)'); return false; }
+    } else {
+      if (!form.beneficiaryName) { toast.error('Beneficiary name is required'); return false; }
+      if (!form.accountNumber) { toast.error('Account number is required'); return false; }
+      if (form.accountNumber !== form.confirmAccountNumber) { toast.error('Account numbers do not match'); return false; }
+      if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(form.ifsc.trim())) { toast.error('Enter a valid IFSC code'); return false; }
+    }
+    return true;
+  };
+
+  const handleReview = () => {
+    if (!validateForm()) return;
     setStep('confirm');
   };
 
-  const handleTransfer = async () => {
-    const result = await dispatch(initiateTransfer(form));
-    if (initiateTransfer.rejected.match(result)) {
-      toast.error(result.payload || 'Transfer failed');
-      setStep('form');
-    } else {
+  const handleSubmit = async () => {
+    if (!form.securityPin || form.securityPin.length !== 4) {
+      toast.error('Enter your 4-digit security PIN'); return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = {
+        mode,
+        amount: parseFloat(form.amount),
+        description: form.description,
+        securityPin: form.securityPin,
+        ...(isUpi
+          ? { vpa: form.vpa.trim(), beneficiaryName: vpaInfo?.customerName || 'UPI Beneficiary' }
+          : {
+            beneficiaryName: form.beneficiaryName,
+            accountNumber: form.accountNumber,
+            ifsc: form.ifsc.trim().toUpperCase(),
+          }),
+      };
+      const { data } = await api.post('/payments/payout', payload);
+      setResult(data.data);
+      setStep('success');
       dispatch(fetchAccount());
+      loadLimit();
+      toast.success(data.message || 'Transfer submitted');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Transfer failed. Please try again.');
+      setStep('form');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const selectBeneficiary = (b) => {
-    setForm(f => ({
-      ...f,
-      toAccountNumber: b.account_number,
-      toAccountName: b.account_name,
-      toBankName: b.bank_name || '',
-      toIfsc: b.ifsc_code || '',
-    }));
-    setShowBeneficiaries(false);
+  const resetAll = () => {
+    setForm({
+      beneficiaryName: '', accountNumber: '', confirmAccountNumber: '',
+      ifsc: '', vpa: '', amount: '', description: '', securityPin: '',
+    });
+    setResult(null);
+    setVpaStatus('idle');
+    setVpaInfo(null);
+    setStep('form');
   };
 
-  if (step === 'success') return (
-    <div className="max-w-md mx-auto">
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="glass-card p-10 text-center">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.2 }}>
-          <div className="w-20 h-20 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center mx-auto mb-5">
-            <RiCheckDoubleLine className="text-green-400 text-4xl" />
+  // ── Success screen ────────────────────────────────────────────────────────
+  if (step === 'success' && result) {
+    const isPending = result.status === 'pending_settlement';
+    return (
+      <div className="max-w-md mx-auto">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+          className="glass-card p-10 text-center">
+          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.2 }}>
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5 border-2 ${
+              isPending ? 'bg-amber-500/10 border-amber-500/30' : 'bg-green-500/10 border-green-500/30'}`}>
+              {isPending
+                ? <RiTimer2Line className="text-amber-400 text-4xl" />
+                : <RiCheckDoubleLine className="text-green-400 text-4xl" />}
+            </div>
+          </motion.div>
+          <h2 className="font-display text-2xl font-700 text-white mb-2">
+            {isPending ? 'NEFT Transfer Initiated' : 'Transfer Successful!'}
+          </h2>
+          <p className="text-dark-200 text-sm mb-4">
+            {fmtINR(result.amount)} {isPending ? 'is processing and will settle shortly.' : 'sent successfully.'}
+          </p>
+          <div className="bg-dark-700/50 rounded-xl p-4 mb-5 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-dark-300">Reference</span>
+              <span className="text-white font-mono text-xs">{result.referenceNumber}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-dark-300">Mode</span>
+              <span className="text-white font-medium">{result.mode}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-dark-300">Status</span>
+              <span className={isPending ? 'text-amber-400 font-medium' : 'text-green-400 font-medium'}>
+                {isPending ? 'Pending Settlement' : 'Completed'}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-dark-300">New Balance</span>
+              <span className="text-white font-bold">{fmtINR(result.balance)}</span>
+            </div>
           </div>
+          <button onClick={resetAll} className="btn-primary w-full justify-center">New Transfer</button>
         </motion.div>
-        <h2 className="font-display text-2xl font-700 text-white mb-2">Transfer Successful!</h2>
-        <p className="text-dark-200 text-sm mb-4">
-          ₹{parseFloat(form.amount).toLocaleString('en-IN')} transferred to {form.toAccountName || form.toAccountNumber}
-        </p>
-        <div className="bg-dark-700/50 rounded-xl p-4 mb-5 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-dark-300">Reference</span>
-            <span className="text-white font-mono text-xs">{lastTransfer?.referenceNumber}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-dark-300">New Balance</span>
-            <span className="text-white font-bold">₹{parseFloat(lastTransfer?.balanceAfter || 0).toLocaleString('en-IN')}</span>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => { setStep('form'); setForm(f => ({...f, amount:'', toAccountNumber:'', toAccountName:'', securityPin:''})); dispatch(clearTransferState()); }} className="btn-secondary flex-1 justify-center">New Transfer</button>
-          <button onClick={() => window.open('/api/transactions/download-statement', '_blank')} className="btn-primary flex-1 justify-center">Download Receipt</button>
-        </div>
-      </motion.div>
-    </div>
-  );
+      </div>
+    );
+  }
+
+  const remaining = limitInfo?.remaining ?? null;
+  const dailyLimit = limitInfo?.dailyTransferLimit ?? (account ? parseFloat(account.daily_transfer_limit || 0) : null);
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
-      <div>
-        <h1 className="page-title">Transfer Money</h1>
-        <p className="text-dark-300 text-sm mt-0.5">Send money via NEFT, RTGS, or IMPS</p>
+      {/* Header + daily-limit chip */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="page-title">Transfer Money</h1>
+          <p className="text-dark-300 text-sm mt-0.5">Send money via IMPS, NEFT, or UPI</p>
+        </div>
+        {dailyLimit != null && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl px-4 py-2.5 border text-right"
+            style={{ background: 'rgba(200,16,46,0.08)', borderColor: 'rgba(200,16,46,0.3)' }}>
+            <p className="text-[10px] uppercase tracking-widest text-dark-300">Daily Transfer Limit</p>
+            <p className="text-white font-bold text-sm tabular-nums">{fmtINR(dailyLimit)}</p>
+            {remaining != null && (
+              <p className="text-[11px] mt-0.5" style={{ color: '#ff6b81' }}>
+                {fmtINR(remaining)} remaining today
+              </p>
+            )}
+          </motion.div>
+        )}
       </div>
 
       <div className="glass-card p-6">
         <AnimatePresence mode="wait">
           {step === 'form' && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {/* Transfer mode */}
+              {/* Mode tabs */}
               <div className="mb-5">
                 <label className="form-label">Transfer Mode</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {MODES.map(m => (
-                    <button key={m.value} type="button" onClick={() => setForm(f => ({ ...f, transferMode: m.value }))}
-                      className={`p-3 rounded-xl border transition-all text-left ${form.transferMode === m.value ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'}`}>
-                      <p className={`text-sm font-bold ${form.transferMode === m.value ? 'text-brand-400' : 'text-white'}`}>{m.label}</p>
-                      <p className="text-dark-400 text-[10px] mt-0.5">{m.desc}</p>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-3 gap-2">
+                  {MODES.map((m) => {
+                    const Icon = m.icon;
+                    const active = mode === m.value;
+                    return (
+                      <button key={m.value} type="button" onClick={() => switchMode(m.value)}
+                        className={`p-3 rounded-xl border transition-all text-left ${active ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'}`}>
+                        <Icon className={active ? 'text-brand-400' : 'text-dark-300'} />
+                        <p className={`text-sm font-bold mt-1 ${active ? 'text-brand-400' : 'text-white'}`}>{m.label}</p>
+                        <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">{m.desc}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Recipient */}
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="form-label mb-0">Recipient Account Number</label>
-                  <button onClick={() => setShowBeneficiaries(!showBeneficiaries)}
-                    className="text-brand-400 text-xs flex items-center gap-1 hover:text-brand-300">
-                    <RiGroupLine /> From Beneficiaries
-                  </button>
+              {/* UPI tab */}
+              {isUpi ? (
+                <div className="mb-4">
+                  <label className="form-label">Enter UPI ID / VPA</label>
+                  <input type="text" value={form.vpa} onChange={onVpaChange}
+                    placeholder="e.g. username@okaxis" className="input-field" autoComplete="off" />
+                  {/* Real-time verification feedback */}
+                  <div className="min-h-[22px] mt-1.5">
+                    {vpaStatus === 'checking' && (
+                      <p className="text-dark-300 text-xs flex items-center gap-1.5">
+                        <RiLoader4Line className="animate-spin" /> Verifying UPI ID…
+                      </p>
+                    )}
+                    {vpaStatus === 'valid' && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold flex items-center gap-1" style={{ color: '#22c55e' }}>
+                          <RiCheckLine /> Verified User: {vpaInfo?.customerName || 'Confirmed'}
+                        </span>
+                        {vpaInfo?.provider && (
+                          <span className="badge text-[10px]"
+                            style={{ background: 'rgba(200,16,46,0.15)', color: '#ff6b81' }}>
+                            {vpaInfo.provider}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {vpaStatus === 'invalid' && (
+                      <p className="text-xs flex items-center gap-1.5" style={{ color: '#ff6b81' }}>
+                        <RiErrorWarningLine /> This UPI ID could not be verified.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <input type="text" value={form.toAccountNumber} onChange={set('toAccountNumber')}
-                  placeholder="Enter 13-digit account number" className="input-field" />
+              ) : (
+                /* Bank tabs (IMPS / NEFT) */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                  <div className="sm:col-span-2">
+                    <label className="form-label">Beneficiary Name</label>
+                    <input type="text" value={form.beneficiaryName} onChange={set('beneficiaryName')}
+                      placeholder="Full name as per bank" className="input-field" />
+                  </div>
+                  <div>
+                    <label className="form-label">Account Number</label>
+                    <input type="text" value={form.accountNumber} onChange={set('accountNumber')}
+                      placeholder="Recipient account number" className="input-field" autoComplete="off" />
+                  </div>
+                  <div>
+                    <label className="form-label">Confirm Account Number</label>
+                    <input type="text" value={form.confirmAccountNumber} onChange={set('confirmAccountNumber')}
+                      placeholder="Re-enter account number" className="input-field" autoComplete="off"
+                      onPaste={(e) => e.preventDefault()} />
+                    {form.confirmAccountNumber && form.accountNumber !== form.confirmAccountNumber && (
+                      <p className="text-xs mt-1" style={{ color: '#ff6b81' }}>Account numbers do not match</p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="form-label">IFSC Code</label>
+                    <input type="text" value={form.ifsc} onChange={set('ifsc')}
+                      placeholder="HDFC0001234" className="input-field uppercase" />
+                  </div>
+                </div>
+              )}
 
-                {/* Beneficiary dropdown */}
-                <AnimatePresence>
-                  {showBeneficiaries && beneficiaries.length > 0 && (
-                    <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
-                      className="bg-dark-700 border border-white/[0.08] rounded-xl mt-1 overflow-hidden max-h-48 overflow-y-auto">
-                      {beneficiaries.map(b => (
-                        <button key={b.id} onClick={() => selectBeneficiary(b)}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] border-b border-white/[0.04] last:border-0 text-left">
-                          <div className="w-8 h-8 rounded-full bg-brand-500/15 flex items-center justify-center flex-shrink-0">
-                            <span className="text-brand-400 text-xs font-bold">{b.nickname?.[0]}</span>
-                          </div>
-                          <div>
-                            <p className="text-white text-sm">{b.nickname}</p>
-                            <p className="text-dark-300 text-xs">{b.account_number} · {b.bank_name}</p>
-                          </div>
-                          {b.is_verified && <span className="badge badge-success ml-auto text-[10px]">Verified</span>}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="form-label">Account Holder Name</label>
-                  <input type="text" value={form.toAccountName} onChange={set('toAccountName')}
-                    placeholder="Recipient name" className="input-field" />
-                </div>
-                <div>
-                  <label className="form-label">Bank Name</label>
-                  <input type="text" value={form.toBankName} onChange={set('toBankName')}
-                    placeholder="e.g. HDFC Bank" className="input-field" />
-                </div>
-                <div>
-                  <label className="form-label">IFSC Code</label>
-                  <input type="text" value={form.toIfsc} onChange={set('toIfsc')}
-                    placeholder="HDFC0001234" className="input-field uppercase" />
-                </div>
+              {/* Amount + description */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
                   <label className="form-label">Amount (₹)</label>
                   <input type="number" value={form.amount} onChange={set('amount')}
                     placeholder="0.00" min="1" className="input-field" />
                   {account && (
                     <p className="text-dark-400 text-xs mt-1">
-                      Available: ₹{parseFloat(account.available_balance || 0).toLocaleString('en-IN')}
+                      Available: {fmtINR(account.available_balance)}
                     </p>
                   )}
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
                   <label className="form-label">Description / Narration</label>
                   <input type="text" value={form.description} onChange={set('description')}
-                    placeholder="Optional note" className="input-field" />
-                </div>
-                <div>
-                  <label className="form-label">Schedule Transfer (Optional)</label>
-                  <input type="datetime-local" value={form.scheduledAt} onChange={set('scheduledAt')}
-                    min={new Date().toISOString().slice(0, 16)} className="input-field" />
+                    placeholder="Optional note" className="input-field" maxLength={30} />
                 </div>
               </div>
 
-              {/* PIN */}
-              <div className="bg-dark-700/50 rounded-xl p-4 mb-5">
-                <label className="form-label">Security PIN</label>
-                <input type="password" inputMode="numeric" maxLength={4} value={form.securityPin} onChange={set('securityPin')}
-                  placeholder="Enter 4-digit PIN" className="input-field" pattern="\d{4}" />
-                <p className="text-dark-400 text-xs mt-1.5 flex items-center gap-1">
-                  <RiInformationLine /> Your PIN is required to authorize transfers
-                </p>
-              </div>
-
-              <button onClick={handleConfirm} className="btn-primary w-full py-3.5">
+              <button onClick={handleReview} className="btn-primary w-full py-3.5">
                 <RiSendPlaneLine /> Review Transfer
               </button>
             </motion.div>
@@ -222,32 +366,51 @@ export default function TransferPage() {
             <motion.div key="confirm" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
               <h3 className="text-white font-semibold text-lg mb-5">Confirm Transfer</h3>
               <div className="space-y-0 rounded-2xl overflow-hidden border border-white/[0.06]">
-                {[
-                  { label: 'To Account', value: form.toAccountNumber },
-                  { label: 'Account Name', value: form.toAccountName || 'Not specified' },
-                  { label: 'Bank', value: form.toBankName || 'External Bank' },
-                  { label: 'IFSC', value: form.toIfsc || 'N/A' },
-                  { label: 'Mode', value: form.transferMode },
-                  { label: 'Description', value: form.description || 'Transfer' },
-                ].map(({ label, value }) => (
+                {(isUpi
+                  ? [
+                    { label: 'UPI ID', value: form.vpa },
+                    { label: 'Verified Name', value: vpaInfo?.customerName || 'Unverified' },
+                    { label: 'Mode', value: 'UPI' },
+                    { label: 'Description', value: form.description || 'Transfer' },
+                  ]
+                  : [
+                    { label: 'Beneficiary', value: form.beneficiaryName },
+                    { label: 'Account', value: form.accountNumber },
+                    { label: 'IFSC', value: form.ifsc.toUpperCase() },
+                    { label: 'Mode', value: mode },
+                    { label: 'Description', value: form.description || 'Transfer' },
+                  ]
+                ).map(({ label, value }) => (
                   <div key={label} className="flex justify-between px-4 py-3.5 border-b border-white/[0.05] last:border-0">
                     <span className="text-dark-300 text-sm">{label}</span>
-                    <span className="text-white text-sm font-medium">{value}</span>
+                    <span className="text-white text-sm font-medium text-right break-all ml-3">{value}</span>
                   </div>
                 ))}
                 <div className="flex justify-between px-4 py-4 bg-brand-500/10">
                   <span className="text-white font-bold">Amount</span>
-                  <span className="text-brand-400 font-bold text-xl">
-                    ₹{parseFloat(form.amount).toLocaleString('en-IN')}
+                  <span className="font-bold text-xl" style={{ color: '#ff4060' }}>
+                    {fmtINR(form.amount)}
                   </span>
                 </div>
               </div>
-              <div className="flex gap-3 mt-5">
-                <button onClick={() => setStep('form')} className="btn-secondary flex-1 justify-center">
+
+              {/* Security PIN */}
+              <div className="bg-dark-700/50 rounded-xl p-4 my-5">
+                <label className="form-label">Security PIN</label>
+                <input type="password" inputMode="numeric" maxLength={4} value={form.securityPin}
+                  onChange={set('securityPin')} placeholder="Enter 4-digit PIN" className="input-field" />
+                <p className="text-dark-400 text-xs mt-1.5 flex items-center gap-1">
+                  <RiShieldCheckLine /> Your PIN authorizes this transfer
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setStep('form')} disabled={submitting}
+                  className="btn-secondary flex-1 justify-center">
                   <RiArrowLeftLine /> Edit
                 </button>
-                <button onClick={handleTransfer} disabled={transferLoading} className="btn-primary flex-1 justify-center">
-                  {transferLoading ? <><div className="spinner w-4 h-4" /> Processing...</> : <><RiSendPlaneLine /> Confirm Transfer</>}
+                <button onClick={handleSubmit} disabled={submitting} className="btn-primary flex-1 justify-center">
+                  {submitting ? <><RiLoader4Line className="animate-spin" /> Processing…</> : <><RiSendPlaneLine /> Confirm Transfer</>}
                 </button>
               </div>
             </motion.div>

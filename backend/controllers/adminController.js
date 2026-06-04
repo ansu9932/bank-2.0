@@ -639,6 +639,63 @@ exports.updateTicket = async (req, res) => {
   }
 };
 
+// ─── Update User Daily Transfer Limit ─────────────────────────────────────────
+// PATCH /api/admin/users/:id/update-limit   (admin only)
+// Overwrites the user's daily transfer limit and flags it as an explicit
+// administrative override (custom_daily_limit_set = true) so the nightly reset
+// preserves the pinned value rather than reverting to the platform default.
+exports.updateTransferLimit = async (req, res) => {
+  try {
+    const { dailyTransferLimit } = req.body;
+    const parsedLimit = parseFloat(dailyTransferLimit);
+
+    if (Number.isNaN(parsedLimit) || parsedLimit < 0) {
+      return badRequest(res, 'Please provide a valid daily transfer limit (₹0 or greater).');
+    }
+    if (parsedLimit > 100000000) {
+      return badRequest(res, 'Daily transfer limit cannot exceed ₹10,00,00,000.');
+    }
+
+    const account = await Account.findOne({ where: { user_id: req.params.id } });
+    if (!account) return notFound(res, 'Account not found for this user.');
+
+    const previousLimit = parseFloat(account.daily_transfer_limit);
+
+    await account.update({
+      daily_transfer_limit: parsedLimit,
+      custom_daily_limit_set: true,
+    });
+
+    await Notification.create({
+      user_id: req.params.id,
+      title: 'Daily Transfer Limit Updated',
+      message: `Your daily transfer limit has been updated to ₹${parsedLimit.toLocaleString('en-IN')}.`,
+      type: 'security',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: req.params.id,
+      action: 'DAILY_LIMIT_UPDATED',
+      entityType: 'Account',
+      entityId: account.id,
+      oldValues: { daily_transfer_limit: previousLimit },
+      newValues: { daily_transfer_limit: parsedLimit },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(res, {
+      dailyTransferLimit: parsedLimit,
+      customDailyLimitSet: true,
+    }, `Daily transfer limit updated to ₹${parsedLimit.toLocaleString('en-IN')}.`);
+  } catch (err) {
+    logger.error(`Update transfer limit error: ${err.message}`);
+    return error(res, 'Failed to update transfer limit.');
+  }
+};
+
 // ─── Flag Transaction ─────────────────────────────────────────────────────────
 exports.flagTransaction = async (req, res) => {
   try {

@@ -149,7 +149,63 @@ const runKYCWorkflow = () => {
     }
   });
 
+  // NEFT settlement engine: flip 'pending_settlement' (status:'processing')
+  // payouts to 'success' after a simulated batch-clearing window, mirroring
+  // real-world NEFT half-hourly settlement cycles.
+  runNeftSettlementLoop();
+
   logger.info('KYC workflow cron jobs initialized.');
+};
+
+/**
+ * NEFT settlement loop.
+ * NEFT payouts are written as status:'processing' (our "pending_settlement")
+ * with tags.settlement = 'pending_settlement'. Every minute we promote any such
+ * payout older than NEFT_SETTLEMENT_MINUTES to 'success', stamp processed_at,
+ * and notify the user — simulating batch clearing without external callbacks.
+ */
+const NEFT_SETTLEMENT_MINUTES = parseInt(process.env.NEFT_SETTLEMENT_MINUTES, 10) || 3;
+
+const runNeftSettlementLoop = () => {
+  cron.schedule('* * * * *', async () => {
+    try {
+      const { Transaction, Notification, Account } = require('../models');
+      const cutoff = new Date(Date.now() - NEFT_SETTLEMENT_MINUTES * 60 * 1000);
+
+      const pending = await Transaction.findAll({
+        where: {
+          transfer_mode: 'NEFT',
+          transaction_type: 'debit',
+          category: 'payout',
+          status: 'processing',
+          created_at: { [Op.lte]: cutoff },
+        },
+        limit: 25,
+      });
+
+      for (const txn of pending) {
+        await txn.update({
+          status: 'success',
+          processed_at: new Date(),
+          tags: { ...(txn.tags || {}), settlement: 'settled' },
+        });
+
+        const account = await Account.findByPk(txn.account_id);
+        if (account) {
+          await Notification.create({
+            user_id: account.user_id,
+            title: `NEFT transfer of ₹${parseFloat(txn.amount).toLocaleString('en-IN')} settled`,
+            message: `Your NEFT transfer (Ref: ${txn.reference_number}) has cleared successfully.`,
+            type: 'transaction',
+            priority: 'medium',
+          });
+        }
+        logger.info(`NEFT payout settled: ${txn.reference_number}`);
+      }
+    } catch (err) {
+      logger.error(`NEFT settlement loop error: ${err.message}`);
+    }
+  });
 };
 
 module.exports = { runKYCWorkflow };
