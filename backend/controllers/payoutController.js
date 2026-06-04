@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const sequelize = require('../config/database');
 const { Account, Transaction, User, Notification } = require('../models');
 const opfin = require('../utils/opfin');
@@ -8,6 +9,10 @@ const { sendTransferAlertEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
+
+// Razorpay's public IFSC repository (no auth required).
+const IFSC_LOOKUP_BASE = 'https://ifsc.razorpay.com';
+const IFSC_REGEX = /^[A-Za-z]{4}0[A-Za-z0-9]{6}$/;
 
 // Supported outgoing rails. RTGS intentionally excluded per product spec.
 const ALLOWED_MODES = ['IMPS', 'NEFT', 'UPI'];
@@ -104,6 +109,53 @@ exports.lookupUpiProvider = async (req, res) => {
   } catch (err) {
     logger.error(`lookup-upi-provider error: ${err.message}`);
     return error(res, 'Could not resolve the UPI provider right now.');
+  }
+};
+
+// ─── Real-time IFSC branch verification ───────────────────────────────────────
+// GET /api/payments/verify-ifsc/:ifscCode   (protected)
+// Looks up the bank/branch from Razorpay's public IFSC repository so the client
+// can confirm the routing destination in real time.
+exports.verifyIfsc = async (req, res) => {
+  try {
+    const ifscCode = String(req.params.ifscCode || '').trim().toUpperCase();
+
+    // Structural guard before hitting the external service.
+    if (!IFSC_REGEX.test(ifscCode)) {
+      return badRequest(res, 'Invalid IFSC Code structure.');
+    }
+
+    try {
+      const { data } = await axios.get(`${IFSC_LOOKUP_BASE}/${ifscCode}`, {
+        timeout: 8000,
+        // The repo returns 404 (sometimes with an empty body) for unknown codes;
+        // treat any non-2xx as "not found" rather than throwing.
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+
+      // Razorpay returns the literal string "Not Found" / 404 for invalid codes.
+      if (!data || typeof data !== 'object' || !data.BANK) {
+        return res.status(404).json({
+          success: false,
+          message: 'Invalid IFSC Code. No matching bank branch found.',
+        });
+      }
+
+      return success(res, {
+        ifsc: ifscCode,
+        bank: data.BANK,
+        branch: data.BRANCH,
+        city: data.CITY,
+        state: data.STATE,
+      }, 'IFSC verified.');
+    } catch (lookupErr) {
+      // Network/timeout against the public repo.
+      logger.error(`IFSC lookup network error (${ifscCode}): ${lookupErr.message}`);
+      return error(res, 'Could not verify the IFSC code right now. Please try again.', 502);
+    }
+  } catch (err) {
+    logger.error(`verify-ifsc error: ${err.message}`);
+    return error(res, 'Could not verify the IFSC code.');
   }
 };
 

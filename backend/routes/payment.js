@@ -16,6 +16,8 @@ router.get('/status/:orderRef', protect, paymentController.getStatus);
 // ─── Outgoing payouts (Opfin / RazorpayX Payroll unified API) ─────────────────
 // Real-time UPI provider lookup (debounced from the client).
 router.post('/lookup-upi-provider', protect, payoutController.lookupUpiProvider);
+// Real-time IFSC branch verification (debounced from the client).
+router.get('/verify-ifsc/:ifscCode', protect, payoutController.verifyIfsc);
 // Current daily transfer-limit usage for the dashboard header chip.
 router.get('/transfer-limit', protect, payoutController.getTransferLimit);
 // Disburse: protect → verifyLimits (24h reset + ceiling) → controller.

@@ -309,7 +309,22 @@ exports.getAccountDetails = async (req, res) => {
       where: { user_id: req.user.id },
     });
     if (!account) return notFound(res, 'Account not found.');
-    return success(res, { account });
+
+    // Apply the same rolling 24h reset used by the transfer guard so the
+    // returned limit figures are never stale, then expose computed convenience
+    // fields (daily_transfer_limit + remaining_limit_today) on the response.
+    const now = Date.now();
+    const lastReset = account.last_limit_reset ? new Date(account.last_limit_reset).getTime() : null;
+    if (lastReset === null || (now - lastReset) >= 24 * 60 * 60 * 1000) {
+      await account.update({ daily_transferred: 0, last_limit_reset: new Date() });
+    }
+
+    const dailyLimit = parseFloat(account.daily_transfer_limit || 0);
+    const usedToday = parseFloat(account.daily_transferred || 0);
+    const accountData = account.toJSON();
+    accountData.remaining_limit_today = Math.max(dailyLimit - usedToday, 0);
+
+    return success(res, { account: accountData });
   } catch (err) {
     return error(res, 'Failed to fetch account details.');
   }
