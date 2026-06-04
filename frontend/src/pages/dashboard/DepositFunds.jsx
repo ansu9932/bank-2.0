@@ -483,8 +483,30 @@ export default function DepositFunds() {
                         alt="UPI payment QR code"
                         draggable={false}
                         style={{
-                          position: 'absolute', width: '420px', height: 'auto', top: '-75px',
-                          margin: 0, padding: 0, imageRendering: 'crisp-edges',
+                          // White-label crop mask. Razorpay returns a square QR image with its
+                          // vendor logo/branding occupying the TOP band. We zoom the image to
+                          // 420px and view it through the 200×200 overflow-hidden window so only
+                          // the lower matrix region shows.
+                          //   • Horizontal: left:50% + translateX(-50%) centres the matrix
+                          //     EXPLICITLY rather than relying on implicit flex static-position
+                          //     centring (browser-fragile). The image has wide side margins, so
+                          //     the ±110px that fall outside the window are quiet-zone whitespace,
+                          //     never matrix — sides stay safe.
+                          //   • Vertical: top:-100px (was -75px) pushes more of the top branding
+                          //     strip out of view while keeping the full matrix + its lower quiet
+                          //     zone visible. NOTE: this offset is calibrated to Razorpay's current
+                          //     image layout — verify visually against a live QR before production,
+                          //     and nudge toward -90px if any matrix top is clipped, or toward
+                          //     -110px if logo remnants remain.
+                          position: 'absolute',
+                          width: '420px',
+                          height: 'auto',
+                          left: '50%',
+                          top: '-100px',
+                          transform: 'translateX(-50%)',
+                          margin: 0,
+                          padding: 0,
+                          imageRendering: 'crisp-edges',
                         }}
                       />
                     </div>
