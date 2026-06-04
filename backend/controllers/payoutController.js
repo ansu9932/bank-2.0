@@ -339,5 +339,212 @@ exports.getTransferLimit = async (req, res) => {
   }
 };
 
+// ─── Internal Transfer (Alister → Alister) ────────────────────────────────────
+// POST /api/payments/internal-transfer   (protected + verifyLimits)
+// On-us transfer between two Alister Bank accounts. No external gateway: we
+// verify the recipient account exists locally, then perform a single atomic
+// ledger transaction — debit the sender, credit the recipient, and write a
+// matching pair of COMPLETED transaction records. The verifyLimits middleware
+// has already rolled the 24h window and confirmed the daily ceiling.
+exports.internalTransfer = async (req, res) => {
+  try {
+    const {
+      amount, accountNumber, confirmAccountNumber, beneficiaryName,
+      description, securityPin,
+    } = req.body;
+
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      return badRequest(res, 'Enter a valid transfer amount.');
+    }
+    if (!accountNumber) return badRequest(res, 'Recipient Alister account number is required.');
+    if (confirmAccountNumber !== undefined && String(accountNumber) !== String(confirmAccountNumber)) {
+      return badRequest(res, 'Account number and confirmation do not match.');
+    }
+
+    // The verifyLimits middleware resolved + attached the sender account. Fall
+    // back to a direct lookup so the controller is also safe if mounted alone.
+    const senderAccount = req.transferAccount
+      || await Account.findOne({ where: { user_id: req.user.id } });
+    if (!senderAccount) return notFound(res, 'No active bank account found for this profile.');
+    if (senderAccount.status === 'frozen') {
+      return error(res, 'Your account is frozen. Contact support.', 403);
+    }
+
+    // Prevent self-transfer.
+    if (String(senderAccount.account_number) === String(accountNumber)) {
+      return badRequest(res, 'You cannot transfer to your own account.');
+    }
+
+    // ── Recipient must be a real, active Alister account ──────────────────────
+    const recipientAccount = await Account.findOne({ where: { account_number: String(accountNumber).trim() } });
+    if (!recipientAccount) {
+      return badRequest(res, 'Recipient Alister account not found. Please verify the account number.');
+    }
+    if (recipientAccount.status !== 'active') {
+      return badRequest(res, 'Recipient account is not active and cannot receive funds.');
+    }
+
+    // ── Security PIN verification ─────────────────────────────────────────────
+    const user = await User.findByPk(req.user.id);
+    if (!user?.security_pin) return badRequest(res, 'No security PIN set. Please contact support.');
+    const pinValid = await bcrypt.compare(String(securityPin || ''), user.security_pin);
+    if (!pinValid) return badRequest(res, 'Incorrect security PIN.');
+
+    // ── Sufficient balance ────────────────────────────────────────────────────
+    if (parseFloat(senderAccount.available_balance) < parsedAmount) {
+      return badRequest(res, 'Insufficient balance for this transfer.');
+    }
+
+    const recipientUser = await User.findByPk(recipientAccount.user_id);
+    const recipientName = recipientUser
+      ? `${recipientUser.first_name || ''} ${recipientUser.last_name || ''}`.trim()
+      : (beneficiaryName || 'Alister Account');
+    const senderName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Alister Account';
+    const referenceNumber = generateReferenceNumber('ALST');
+
+    // ── Atomic ledger transaction ─────────────────────────────────────────────
+    const t = await sequelize.transaction();
+    let writeResult;
+    try {
+      // Lock BOTH rows (lowest id first) to avoid deadlocks under concurrency.
+      const [firstId, secondId] = [senderAccount.id, recipientAccount.id].sort();
+      const lockedA = await Account.findOne({ where: { id: firstId }, transaction: t, lock: t.LOCK.UPDATE });
+      const lockedB = await Account.findOne({ where: { id: secondId }, transaction: t, lock: t.LOCK.UPDATE });
+      const lockedSender = lockedA.id === senderAccount.id ? lockedA : lockedB;
+      const lockedRecipient = lockedA.id === recipientAccount.id ? lockedA : lockedB;
+
+      const senderBalanceBefore = parseFloat(lockedSender.balance);
+      const senderBalanceAfter = senderBalanceBefore - parsedAmount;
+      if (senderBalanceAfter < 0) throw new Error('Insufficient balance');
+
+      const recipientBalanceBefore = parseFloat(lockedRecipient.balance);
+      const recipientBalanceAfter = recipientBalanceBefore + parsedAmount;
+
+      // Debit sender (+ increment daily usage), credit recipient.
+      await lockedSender.update({
+        balance: senderBalanceAfter,
+        available_balance: parseFloat(lockedSender.available_balance) - parsedAmount,
+        daily_transferred: parseFloat(lockedSender.daily_transferred || 0) + parsedAmount,
+      }, { transaction: t });
+
+      await lockedRecipient.update({
+        balance: recipientBalanceAfter,
+        available_balance: parseFloat(lockedRecipient.available_balance) + parsedAmount,
+      }, { transaction: t });
+
+      // Sender's debit leg (completed).
+      const debitTxn = await Transaction.create({
+        account_id: lockedSender.id,
+        reference_number: referenceNumber,
+        transaction_type: 'debit',
+        transfer_mode: 'INTERNAL',
+        amount: parsedAmount,
+        balance_before: senderBalanceBefore,
+        balance_after: senderBalanceAfter,
+        description: description || `Alister transfer to ${recipientName}`,
+        narration: `INTERNAL ${recipientAccount.account_number}`,
+        category: 'transfer',
+        status: 'success',
+        to_account_number: recipientAccount.account_number,
+        to_account_name: recipientName,
+        to_ifsc: recipientAccount.ifsc_code,
+        from_account_number: lockedSender.account_number,
+        from_account_name: senderName,
+        processed_at: new Date(),
+        ip_address: req.ip,
+        tags: { provider: 'internal', railMode: 'ALISTER', counterpartyAccountId: lockedRecipient.id },
+      }, { transaction: t });
+
+      // Recipient's credit leg (completed). Distinct reference suffix to satisfy
+      // the unique reference_number constraint while staying easy to correlate.
+      await Transaction.create({
+        account_id: lockedRecipient.id,
+        reference_number: `${referenceNumber}-CR`,
+        transaction_type: 'credit',
+        transfer_mode: 'INTERNAL',
+        amount: parsedAmount,
+        balance_before: recipientBalanceBefore,
+        balance_after: recipientBalanceAfter,
+        description: description || `Alister transfer from ${senderName}`,
+        narration: `INTERNAL ${lockedSender.account_number}`,
+        category: 'transfer',
+        status: 'success',
+        to_account_number: recipientAccount.account_number,
+        to_account_name: recipientName,
+        from_account_number: lockedSender.account_number,
+        from_account_name: senderName,
+        processed_at: new Date(),
+        ip_address: req.ip,
+        tags: { provider: 'internal', railMode: 'ALISTER', counterpartyAccountId: lockedSender.id, linkedRef: referenceNumber },
+      }, { transaction: t });
+
+      // Notify both parties.
+      await Notification.create({
+        user_id: lockedSender.user_id,
+        title: `${fmtINR(parsedAmount)} sent to ${recipientName}`,
+        message: `Your Alister transfer to ${recipientName} is complete. Ref: ${referenceNumber}`,
+        type: 'transaction',
+        priority: 'high',
+      }, { transaction: t });
+
+      if (lockedRecipient.user_id) {
+        await Notification.create({
+          user_id: lockedRecipient.user_id,
+          title: `${fmtINR(parsedAmount)} received from ${senderName}`,
+          message: `You received an Alister transfer from ${senderName}. Ref: ${referenceNumber}`,
+          type: 'transaction',
+          priority: 'high',
+        }, { transaction: t });
+      }
+
+      await t.commit();
+      writeResult = { transactionId: debitTxn.id, senderBalanceAfter };
+    } catch (txErr) {
+      await t.rollback();
+      logger.error(`Internal transfer ledger write failed (${referenceNumber}): ${txErr.message}`);
+      return error(res, 'Transfer could not be completed. Please try again.');
+    }
+
+    // Async side-effects (don't block the response).
+    sendTransferAlertEmail(user.email, user.first_name, {
+      type: 'debit',
+      amount: parsedAmount.toFixed(2),
+      reference: referenceNumber,
+      counterparty: `${recipientName} · ${recipientAccount.account_number}`,
+      mode: 'ALISTER',
+      balance: writeResult.senderBalanceAfter,
+      time: new Date().toLocaleString(),
+    }).catch(() => {});
+
+    createAuditLog({
+      userId: req.user.id,
+      action: 'INTERNAL_TRANSFER',
+      entityType: 'Transaction',
+      entityId: referenceNumber,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Internal Alister transfer of ${fmtINR(parsedAmount)} to ${recipientAccount.account_number}.`,
+    }).catch(() => {});
+
+    const snapshot = req.transferLimitSnapshot;
+    return success(res, {
+      referenceNumber,
+      transactionId: writeResult.transactionId,
+      mode: 'ALISTER',
+      amount: parsedAmount,
+      status: 'completed',
+      balance: writeResult.senderBalanceAfter,
+      available_balance: writeResult.senderBalanceAfter,
+      recipientName,
+      remainingDailyLimit: snapshot ? snapshot.remainingAfter
+        : Math.max(parseFloat(senderAccount.daily_transfer_limit) - parseFloat(senderAccount.daily_transferred || 0) - parsedAmount, 0),
+    }, 'Transfer completed successfully.');
+  } catch (err) {
+    logger.error(`internalTransfer error: ${err.message}`);
+    return error(res, 'Transfer failed. Please try again.');
+  }
+};
+
 exports.resumePendingNeftSettlements = resumePendingNeftSettlements;
 exports.scheduleNeftSettlement = scheduleNeftSettlement;

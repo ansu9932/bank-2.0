@@ -20,5 +20,7 @@ router.post('/lookup-upi-provider', protect, payoutController.lookupUpiProvider)
 router.get('/transfer-limit', protect, payoutController.getTransferLimit);
 // Disburse: protect → verifyLimits (24h reset + ceiling) → controller.
 router.post('/disburse-payout', protect, verifyLimits, payoutController.disbursePayout);
+// Internal on-us transfer (Alister → Alister): protect → verifyLimits → controller.
+router.post('/internal-transfer', protect, verifyLimits, payoutController.internalTransfer);
 
 module.exports = router;
