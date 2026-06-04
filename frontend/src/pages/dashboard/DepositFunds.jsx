@@ -14,15 +14,15 @@ import { fetchTransactions } from '../../store/slices/transactionSlice';
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
-   • Amount <= ₹2,00,000 → dynamic UPI QR (scan + webhook credit + polling).
-   • Amount  > ₹2,00,000 → UPI/QR disabled; Card / Net Banking method cards
+   • Amount <= ₹1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
+   • Amount  > ₹1,00,000 → UPI/QR disabled; Card / Net Banking method cards
      open the Razorpay Checkout widget (method forced by selection).
    Theme: matte-black #0d0e12 · charcoal surfaces · crimson #c8102e accents.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
 const QUICK_ADD = [500, 1000, 5000];
-const UPI_QR_CAP = 200000;            // UPI/QR per-transaction ceiling (₹2L)
+const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling (₹1L)
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -86,7 +86,7 @@ export default function DepositFunds() {
   }, []);
 
   const numericAmount = parseFloat(amount) || 0;
-  // Conditional gate: anything over ₹2L cannot use UPI/QR.
+  // Conditional gate: anything over ₹1L cannot use UPI/QR.
   const isHighValue = numericAmount > UPI_QR_CAP;
 
   const handleQuickAdd = (inc) => setAmount((prev) => String((parseFloat(prev) || 0) + inc));
@@ -141,10 +141,10 @@ export default function DepositFunds() {
     }, POLL_INTERVAL_MS);
   }, [handleCredited, stopPolling]);
 
-  // ── ≤ ₹2L: generate the UPI QR ──────────────────────────────────────────────
+  // ── ≤ ₹1L: generate the UPI QR ──────────────────────────────────────────────
   const handleGenerate = async () => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
-    if (isHighValue) { toast.error('Amounts above ₹2,00,000 require Card or Net Banking.'); return; }
+    if (isHighValue) { toast.error('Maximum deposit per QR is ₹1,00,000.'); return; }
     setGenerating(true);
     try {
       const { data } = await api.post('/payments/create-qr', { amount: numericAmount });
@@ -161,7 +161,7 @@ export default function DepositFunds() {
     }
   };
 
-  // ── > ₹2L: open Razorpay Checkout for Card / Net Banking ────────────────────
+  // ── > ₹1L: open Razorpay Checkout for Card / Net Banking ────────────────────
   const handleCheckout = async (method) => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
@@ -287,7 +287,7 @@ export default function DepositFunds() {
                   ))}
                 </div>
 
-                {/* ── ≤ ₹2L: UPI QR generation ─────────────────────────────── */}
+                {/* ── ≤ ₹1L: UPI QR generation ─────────────────────────────── */}
                 {!isHighValue && (
                   <>
                     <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
@@ -304,7 +304,7 @@ export default function DepositFunds() {
                   </>
                 )}
 
-                {/* ── > ₹2L: Card / Net Banking method cards ───────────────── */}
+                {/* ── > ₹1L: Card / Net Banking method cards ───────────────── */}
                 {isHighValue && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -314,7 +314,7 @@ export default function DepositFunds() {
                       style={{ background: 'rgba(200,16,46,0.07)', borderColor: 'rgba(200,16,46,0.28)' }}>
                       <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
                       <p className="text-xs leading-relaxed" style={{ color: '#ffb3bf' }}>
-                        UPI/QR payments are capped at ₹2 Lakhs. Please select Card or Net Banking to complete this transaction safely.
+                        ℹ UPI/QR payments are capped at ₹1 Lakh. Please select Card or Net Banking to complete this transaction safely.
                       </p>
                     </div>
 
@@ -475,7 +475,7 @@ export default function DepositFunds() {
         </div>
 
         <p className="text-center text-slate-600 text-[11px] mt-5">
-          Powered by Razorpay · Alister Bank holds funds in insured custody
+          🔒 Secured by Alister Bank Core Ecosystem
         </p>
       </div>
     </div>

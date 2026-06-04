@@ -607,7 +607,7 @@ export default function TransferPage() {
 
       {/* Footer note */}
       <p className="text-center text-dark-400 text-[11px] flex items-center justify-center gap-1.5">
-        <RiInformationLine /> Powered by RazorpayX Payroll · Funds are held in insured custody
+        <RiInformationLine /> 🔒 Secured by Alister Bank Core Ecosystem
       </p>
     </div>
   );

@@ -9,7 +9,7 @@ const logger = require('../utils/logger');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const MIN_DEPOSIT = 1;
-const MAX_DEPOSIT = 200000;
+const MAX_DEPOSIT = 100000;           // UPI/QR per-transaction ceiling (₹1L)
 const QR_TTL_SECONDS = 60 * 60; // single-use QR valid for 1 hour
 const DEPOSIT_DESCRIPTION = 'Instant Funds Deposited via Secure UPI QR';
 const PENDING_DESCRIPTION = 'UPI deposit via Secure QR (awaiting payment)';
