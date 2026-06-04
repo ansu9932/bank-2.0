@@ -7,14 +7,14 @@ const logger = require('../utils/logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT GATEWAY
-   High-value deposits (> ₹2,00,000) cannot use UPI/QR (NPCI per-txn cap), so
+   High-value deposits (> ₹1,00,000) cannot use UPI/QR (NPCI per-txn cap), so
    they open the Razorpay Checkout widget against a server-created Order with a
    forced method preference (Card or Net Banking). The shared webhook in
    paymentController credits the balance on `payment.captured`.
    ────────────────────────────────────────────────────────────────────────── */
 
-// ₹2,00,000 — the UPI/QR per-transaction ceiling.
-const UPI_QR_CAP = 200000;
+// ₹1,00,000 — the UPI/QR per-transaction ceiling.
+const UPI_QR_CAP = 100000;
 const MIN_DEPOSIT = 1;
 // Razorpay hard cap for a single order (₹5,00,00,000). Keeps payloads sane.
 const MAX_DEPOSIT = 50000000;
@@ -34,7 +34,7 @@ function buildOrderRef() {
 // ─── Create a Checkout deposit order ──────────────────────────────────────────
 // POST /api/payments/create-deposit-order   (protected)
 // Body: { amount, paymentMethod }  where paymentMethod ∈ 'card' | 'netbanking'
-//       (and 'upi'/'qr' are explicitly rejected above the ₹2L cap).
+//       (and 'upi'/'qr' are explicitly rejected above the ₹1L cap).
 exports.createDepositOrder = async (req, res) => {
   try {
     if (!isConfigured()) {
@@ -53,7 +53,7 @@ exports.createDepositOrder = async (req, res) => {
       return badRequest(res, `Maximum deposit per transaction is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
     }
 
-    // ── Conditional rule: UPI/QR is hard-capped at ₹2,00,000 ──────────────────
+    // ── Conditional rule: UPI/QR is hard-capped at ₹1,00,000 ──────────────────
     if (amount > UPI_QR_CAP && QR_METHODS.includes(paymentMethod)) {
       return badRequest(
         res,
