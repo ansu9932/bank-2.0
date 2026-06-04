@@ -98,13 +98,13 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
     debounceRef.current = setTimeout(async () => {
       setPanVerifying(true);
       setPanVerifyOk(false);
-      setPanVerifyMsg('Verifying PAN details with tax registry…');
+      setPanVerifyMsg('Verifying your identity with income tax registry…');
       try {
         const { data } = await api.post('/kyc/verify-pan', { pan });
         const result = data?.data || {};
         if (result.verified && result.name) {
           lastVerifiedPan.current = pan;
-          // Split the verified legal name into first / last for the form.
+          // Cashfree returns the full registered_name; split into first / last.
           const parts = String(result.name).trim().split(/\s+/);
           const firstName = parts.shift() || '';
           const lastName = parts.join(' ');
@@ -112,19 +112,19 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
           if (setNameLocked) setNameLocked(true);
           setPanVerifyOk(true);
           setPanVerifyMsg(`Verified: ${result.name}`);
-          toast.success('PAN verified — name auto-filled from tax registry.');
+          toast.success('PAN verified — name auto-filled from income tax registry.');
         } else {
-          // Graceful fallback: let the user proceed with manually entered name.
+          // PAN not found / not valid — let the user re-check the number.
           if (setNameLocked) setNameLocked(false);
           setPanVerifyOk(false);
-          setPanVerifyMsg(result.message || 'Could not verify this PAN. You can continue and we will verify it during review.');
+          setPanVerifyMsg(result.message || 'This PAN could not be verified. Please re-check the number.');
         }
       } catch (err) {
         if (setNameLocked) setNameLocked(false);
         setPanVerifyOk(false);
         setPanVerifyMsg(
           err?.response?.data?.message
-          || 'PAN verification is temporarily unavailable. You can continue; we will verify during review.'
+          || 'Identity verification is temporarily unavailable. Please try again shortly.'
         );
       } finally {
         setPanVerifying(false);
@@ -136,7 +136,19 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
   }, [form.panNumber]);
 
   return (
-    <div>
+    <div className="relative">
+      {/* Sleek verification overlay — covers the form while Cashfree responds. */}
+      {panVerifying && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-2xl bg-dark-900/80 backdrop-blur-sm">
+          <div className="relative flex items-center justify-center mb-4">
+            <span className="absolute inline-flex h-14 w-14 rounded-full bg-brand-500/30 animate-ping" />
+            <RiLoader4Line className="text-brand-400 text-4xl animate-spin" />
+          </div>
+          <p className="text-white text-sm font-medium">Verifying your identity with income tax registry…</p>
+          <p className="text-dark-300 text-[11px] mt-1">Securely matching your PAN with Cashfree Secure ID</p>
+        </div>
+      )}
+
       <h3 className="font-display text-xl font-700 text-white mb-1">KYC Documents</h3>
       <p className="text-dark-300 text-sm mb-6">Upload clear, legible copies of your documents. Files are encrypted and stored securely.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -154,7 +166,7 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
               {idKey && (
                 <>
                   <input
-                    className={`input-field mb-1 ${errors[idKey] ? '!border-brand-500 focus:!border-brand-500' : ''}`}
+                    className={`input-field mb-1 ${errors[idKey] ? '!border-brand-500 focus:!border-brand-500' : ''} ${isPan && (panVerifying || panVerifyOk) ? 'opacity-70 cursor-not-allowed' : ''}`}
                     value={displayValue}
                     onChange={isAadhaar ? onAadhaarChange : isPan ? onPanChange : onPlainChange(idKey)}
                     placeholder={placeholder}
@@ -162,6 +174,8 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
                     maxLength={isAadhaar ? 14 : isPan ? 10 : undefined}
                     autoCapitalize={isPan ? 'characters' : undefined}
                     style={isPan ? { textTransform: 'uppercase' } : undefined}
+                    disabled={isPan && panVerifying}
+                    readOnly={isPan && panVerifyOk}
                   />
                   {errors[idKey] && <p className="text-brand-400 text-[11px] mb-1">{errors[idKey]}</p>}
 
