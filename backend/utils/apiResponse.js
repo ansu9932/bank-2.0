@@ -45,4 +45,18 @@ const tooManyRequests = (res, message = 'Too many requests') => {
   return error(res, message, 429);
 };
 
-module.exports = { success, created, error, unauthorized, forbidden, notFound, badRequest, tooManyRequests };
+/**
+ * Distinct link-validation failure response. Carries an explicit `errorType`
+ * (e.g. 'EXPIRED_LINK' | 'INVALID_LINK') so the frontend can branch on the
+ * exact failure and render the self-service recovery form.
+ */
+const linkError = (res, errorType = 'INVALID_LINK', message = 'This link is no longer valid', statusCode = 400) => {
+  return res.status(statusCode).json({
+    success: false,
+    errorType,
+    message,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+module.exports = { success, created, error, unauthorized, forbidden, notFound, badRequest, tooManyRequests, linkError };

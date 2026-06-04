@@ -57,4 +57,11 @@ router.post('/setup-account', [
 
 router.get('/verify-setup/:token', authController.verifySetup);
 
+// Self-service onboarding link regeneration (expired Video KYC / Account Setup).
+router.post('/regenerate-link', authLimiter, [
+  body('email').isEmail().withMessage('A valid email is required'),
+  body('customerId').notEmpty().withMessage('Customer ID is required'),
+  body('type').isIn(['account-setup', 'video-kyc']).withMessage('A valid link type is required'),
+], validate, authController.regenerateOnboardingLink);
+
 module.exports = router;

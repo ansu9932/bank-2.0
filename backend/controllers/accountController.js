@@ -11,7 +11,7 @@ const {
   sendKYCUnderReviewEmail, sendVideoKYCEmail, sendAccountApprovedEmail,
 } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
-const { success, error, badRequest, notFound, created } = require('../utils/apiResponse');
+const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 
 // ─── Submit Account Opening Application ───────────────────────────────────────
@@ -133,10 +133,10 @@ exports.verifyVideoKYCLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'video_kyc', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired Video KYC link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This Video KYC link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'This Video KYC link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This Video KYC link has expired. You can request a fresh one below.');
     }
 
     const user = await User.findByPk(link.user_id, {
@@ -203,7 +203,12 @@ exports.submitVideoKYC = async (req, res) => {
 // no session), it still returns success so the wizard completes gracefully.
 exports.uploadKYCCapture = async (req, res) => {
   try {
-    if (!req.file) return badRequest(res, 'KYC capture image is required.');
+    // `.fields()` populates req.files; fall back to req.file for compatibility.
+    // The primary capture is the `document`; if only a `selfie` was sent, use it.
+    const captureFile = req.file
+      || req.files?.document?.[0]
+      || req.files?.selfie?.[0];
+    if (!captureFile) return badRequest(res, 'KYC capture image is required.');
 
     // ── Resolve the user + (optional) secure link ──────────────────────────
     let userId = null;
@@ -240,10 +245,10 @@ exports.uploadKYCCapture = async (req, res) => {
     await KYCDocument.create({
       user_id: userId,
       document_type: 'video_kyc', // reuse the valid enum value used by the workflow
-      file_path: req.file.path,
-      file_name: req.file.originalname,
-      file_size: req.file.size,
-      mime_type: req.file.mimetype,
+      file_path: captureFile.path,
+      file_name: captureFile.originalname,
+      file_size: captureFile.size,
+      mime_type: captureFile.mimetype,
     });
 
     // ── Advance the user's workflow record ─────────────────────────────────
@@ -285,10 +290,10 @@ exports.verifySetupLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'account_setup', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This setup link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'Setup link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This setup link has expired. You can request a fresh one below.');
     }
 
     return success(res, { valid: true }, 'Link is valid. Complete your account setup.');

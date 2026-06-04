@@ -1,30 +1,33 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RiQrCodeLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
-  RiSecurePaymentLine, RiArrowLeftLine, RiRefreshLine, RiBankCardLine,
+  RiSecurePaymentLine, RiArrowLeftLine, RiArrowRightLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
-import { fetchAccount } from '../../store/slices/accountSlice';
+import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · INSTANT UPI DEPOSIT
-   Generates a dynamic single-use Razorpay UPI QR, renders it in a premium
-   dark frame, then polls the backend until the secure webhook credits the
-   balance — finishing with a sleek success animation + global balance refresh.
+   Generates a dynamic single-use Razorpay UPI QR, crops it to the clean B/W
+   grid, polls for the webhook credit, instantly updates the global balance,
+   then redirects to the transactions ledger.
    Theme: matte-black #0d0e12 · charcoal surfaces · crimson #c8102e accents.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
 const QUICK_ADD = [500, 1000, 5000];
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
+const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
 
 // View phases: 'form' → 'qr' (awaiting payment) → 'success'
 export default function DepositFunds() {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { account } = useSelector((s) => s.account);
 
   const [phase, setPhase] = useState('form');
@@ -35,12 +38,14 @@ export default function DepositFunds() {
   const [newBalance, setNewBalance] = useState(null);
 
   const pollRef = useRef(null);
+  const redirectRef = useRef(null);
 
-  // Always make sure the account balance is loaded for the header.
+  // Ensure the account balance is loaded for the header chip.
   useEffect(() => {
     if (!account) dispatch(fetchAccount());
   }, [account, dispatch]);
 
+  // ── Timer hygiene — prevent memory leaks ───────────────────────────────────
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -48,53 +53,79 @@ export default function DepositFunds() {
     }
   }, []);
 
-  // Clean up the polling timer when the component unmounts.
-  useEffect(() => () => stopPolling(), [stopPolling]);
+  useEffect(() => () => {
+    // Cleanly tear down BOTH timers on unmount.
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (redirectRef.current) clearTimeout(redirectRef.current);
+  }, []);
 
   const numericAmount = parseFloat(amount) || 0;
 
-  const handleQuickAdd = (inc) => {
-    setAmount((prev) => String((parseFloat(prev) || 0) + inc));
-  };
+  const handleQuickAdd = (inc) => setAmount((prev) => String((parseFloat(prev) || 0) + inc));
 
   const handleAmountChange = (e) => {
     const v = e.target.value;
-    // Allow only digits and a single decimal point.
-    if (/^\d*\.?\d*$/.test(v)) setAmount(v);
+    if (/^\d*\.?\d*$/.test(v)) setAmount(v); // digits + single optional decimal
   };
 
-  // ── Poll the backend until the webhook credits the deposit ────────────────
+  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+  // ── Handle a confirmed credit ──────────────────────────────────────────────
+  const handleCredited = useCallback((payload) => {
+    stopPolling();
+    const credited = Number(payload.amount) || 0;
+    const balance = payload.balance;
+    const available = payload.available_balance;
+
+    setCreditedAmount(credited);
+    if (balance != null) setNewBalance(balance);
+    setPhase('success');
+
+    // 1) Instant global state update so the dashboard balance reflects funds
+    //    immediately — no manual reload.
+    if (balance != null) {
+      dispatch(updateBalance({
+        balance,
+        available_balance: available != null ? available : balance,
+      }));
+    }
+    // 2) Authoritative refresh of account + ledger from the server.
+    dispatch(fetchAccount());
+    dispatch(fetchTransactions({ limit: 50, page: 1 }));
+
+    toast.success('Funds credited to your account!');
+
+    // 3) Route to the transactions ledger after the success animation.
+    redirectRef.current = setTimeout(() => {
+      navigate('/dashboard/transactions');
+    }, SUCCESS_REDIRECT_MS);
+  }, [dispatch, navigate, stopPolling]);
+
+  // ── Poll the backend every 2.5s until 'completed' ──────────────────────────
   const startPolling = useCallback((orderRef) => {
     stopPolling();
     pollRef.current = setInterval(async () => {
       try {
         const { data } = await api.get(`/payments/status/${orderRef}`);
-        if (data?.data?.status === 'paid') {
-          stopPolling();
-          setCreditedAmount(data.data.amount);
-          setNewBalance(data.data.balance);
-          setPhase('success');
-          // Trigger a global Redux balance + ledger refresh.
-          dispatch(fetchAccount());
-          dispatch(fetchTransactions({ limit: 50, page: 1 }));
-          toast.success('Funds credited to your account!');
+        if (data?.status === 'completed') {
+          handleCredited(data);
         }
-      } catch {
-        // Transient polling failure — keep trying silently.
+      } catch (err) {
+        // Transient network/poll failure — log and keep trying silently.
+        // eslint-disable-next-line no-console
+        console.warn('[deposit] status poll failed, retrying:', err?.message || err);
       }
     }, POLL_INTERVAL_MS);
-  }, [dispatch, stopPolling]);
+  }, [handleCredited, stopPolling]);
 
-  // ── Generate the secure QR ─────────────────────────────────────────────────
+  // ── Generate the secure QR ──────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setGenerating(true);
     try {
       const { data } = await api.post('/payments/create-qr', { amount: numericAmount });
       const payload = data?.data;
-      if (!payload?.image_url || !payload?.orderRef) {
-        throw new Error('Malformed QR response');
-      }
+      if (!payload?.image_url || !payload?.orderRef) throw new Error('Malformed QR response');
       setOrder(payload);
       setPhase('qr');
       startPolling(payload.orderRef);
@@ -106,17 +137,16 @@ export default function DepositFunds() {
     }
   };
 
-  // ── Reset back to the amount form ──────────────────────────────────────────
+  // ── Reset back to the amount form ───────────────────────────────────────────
   const handleReset = () => {
     stopPolling();
+    if (redirectRef.current) { clearTimeout(redirectRef.current); redirectRef.current = null; }
     setOrder(null);
     setCreditedAmount(0);
     setNewBalance(null);
     setAmount('');
     setPhase('form');
   };
-
-  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>
@@ -138,9 +168,7 @@ export default function DepositFunds() {
           {account && (
             <div className="ml-auto text-right">
               <p className="text-slate-500 text-[10px] uppercase tracking-widest">Balance</p>
-              <p className="text-white font-semibold text-sm tabular-nums">
-                {fmt(account.balance)}
-              </p>
+              <p className="text-white font-semibold text-sm tabular-nums">{fmt(account.balance)}</p>
             </div>
           )}
         </div>
@@ -160,22 +188,16 @@ export default function DepositFunds() {
                   Deposit Amount
                 </label>
 
-                {/* Amount input */}
                 <div className="relative">
                   <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-semibold text-slate-400">₹</span>
                   <input
-                    type="text"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={handleAmountChange}
-                    placeholder="0"
-                    autoFocus
+                    type="text" inputMode="decimal" value={amount} onChange={handleAmountChange}
+                    placeholder="0" autoFocus
                     className="w-full bg-[#0d0e12] border border-white/[0.08] rounded-2xl pl-12 pr-5 py-5 text-3xl font-bold text-white outline-none transition-all focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 tabular-nums"
                     style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                   />
                 </div>
 
-                {/* Quick-add chips */}
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   {QUICK_ADD.map((inc) => (
                     <button key={inc} type="button" onClick={() => handleQuickAdd(inc)}
@@ -185,7 +207,6 @@ export default function DepositFunds() {
                   ))}
                 </div>
 
-                {/* Generate button */}
                 <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
                   className="w-full mt-7 py-4 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 28px ${CRIMSON}44` }}>
@@ -201,7 +222,7 @@ export default function DepositFunds() {
               </motion.div>
             )}
 
-            {/* ── Phase 2: live QR + waiting ──────────────────────────────── */}
+            {/* ── Phase 2: cropped QR + waiting ───────────────────────────── */}
             {phase === 'qr' && order && (
               <motion.div key="qr"
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
@@ -212,16 +233,47 @@ export default function DepositFunds() {
                 </p>
                 <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
 
-                {/* QR frame */}
+                {/* Premium white QR card with cropped grid */}
                 <motion.div
                   initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                  className="relative rounded-3xl p-4 bg-white"
+                  className="relative rounded-3xl bg-white p-4"
                   style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                  <img
-                    src={order.image_url}
-                    alt="UPI payment QR code"
-                    className="w-56 h-56 sm:w-64 sm:h-64 object-contain rounded-xl"
-                  />
+
+                  {/* Aggressive crop — only the central B/W QR grid is visible.
+                      The image is absolutely positioned: the flex container's
+                      justify-content:center sets its horizontal static position
+                      (centering the 420px image in the 200px window), while
+                      top:-75px lifts it to align the grid vertically. */}
+                  <div
+                    style={{
+                      width: '200px',
+                      height: '200px',
+                      overflow: 'hidden',
+                      position: 'relative',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      background: '#ffffff',
+                      borderRadius: '12px',
+                      margin: 0,
+                      padding: 0,
+                    }}>
+                    <img
+                      src={order.image_url}
+                      alt="UPI payment QR code"
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        width: '420px',
+                        height: 'auto',
+                        top: '-75px',
+                        margin: 0,
+                        padding: 0,
+                        imageRendering: 'crisp-edges',
+                      }}
+                    />
+                  </div>
+
                   {/* Crimson corner brackets */}
                   {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
                     'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
@@ -229,13 +281,12 @@ export default function DepositFunds() {
                   ))}
                 </motion.div>
 
-                {/* Pulsing waiting state */}
+                {/* Pulsing crimson waiting state */}
                 <div className="mt-7 w-full rounded-2xl border border-brand-500/25 px-5 py-4"
                   style={{ background: 'rgba(200,16,46,0.06)' }}>
                   <div className="flex items-center justify-center gap-3">
                     <motion.span
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ background: CRIMSON }}
+                      className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: CRIMSON }}
                       animate={{ scale: [1, 1.5, 1], opacity: [1, 0.4, 1], boxShadow: [`0 0 0 0 ${CRIMSON}66`, `0 0 0 8px ${CRIMSON}00`, `0 0 0 0 ${CRIMSON}00`] }}
                       transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
                     />
@@ -276,20 +327,21 @@ export default function DepositFunds() {
                   Deposit Successful
                 </h2>
                 <p className="text-green-400 font-semibold text-lg mt-1">{fmt(creditedAmount)} added</p>
-
                 {newBalance != null && (
-                  <div className="mt-6 w-full max-w-xs rounded-2xl border border-white/[0.06] bg-[#0d0e12] px-5 py-4 flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-slate-400 text-sm">
-                      <RiBankCardLine /> Updated balance
-                    </span>
-                    <span className="text-white font-bold tabular-nums">{fmt(newBalance)}</span>
-                  </div>
+                  <p className="text-slate-400 text-sm mt-2">
+                    Updated balance: <span className="text-white font-semibold tabular-nums">{fmt(newBalance)}</span>
+                  </p>
                 )}
 
-                <button type="button" onClick={handleReset}
-                  className="w-full max-w-xs mt-7 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-95"
+                <div className="flex items-center gap-2 mt-6 text-slate-400 text-xs">
+                  <RiLoader4Line className="animate-spin" style={{ color: '#ff3d52' }} />
+                  Redirecting to your transactions…
+                </div>
+
+                <button type="button" onClick={() => { handleReset(); navigate('/dashboard/transactions'); }}
+                  className="w-full max-w-xs mt-6 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-95"
                   style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 24px ${CRIMSON}44` }}>
-                  <RiRefreshLine className="text-lg" /> Make Another Deposit
+                  View Transactions <RiArrowRightLine className="text-lg" />
                 </button>
               </motion.div>
             )}
@@ -297,7 +349,6 @@ export default function DepositFunds() {
           </AnimatePresence>
         </div>
 
-        {/* Footer note */}
         <p className="text-center text-slate-600 text-[11px] mt-5">
           Powered by Razorpay UPI · Alister Bank holds funds in insured custody
         </p>

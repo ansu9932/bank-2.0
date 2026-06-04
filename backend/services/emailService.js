@@ -181,7 +181,7 @@ const sendVideoKYCEmail = async (email, name, kycLink) => {
         <a href="${kycLink}" class="btn">Start Video KYC →</a>
       </p>
       <div class="info-box">
-        <p>⏱ This link expires in <strong>5 minutes</strong>. Do not share this link with anyone.</p>
+        <p>⏱ This link expires in <strong>24 hours</strong>. Do not share this link with anyone.</p>
       </div>
       <p><strong>What you'll need:</strong></p>
       <p>• Good lighting and a clear background<br/>• Your original ID document ready<br/>• A stable internet connection</p>
@@ -206,7 +206,7 @@ const sendAccountApprovedEmail = async (email, name, setupLink, accountNumber) =
         <a href="${setupLink}" class="btn">Set Up My Account →</a>
       </p>
       <div class="info-box">
-        <p>⏱ This setup link expires in <strong>5 minutes</strong>. Please complete setup immediately.</p>
+        <p>⏱ This setup link expires in <strong>24 hours</strong>. Please complete setup immediately.</p>
       </div>
     </div>`);
   return sendEmail({ to: email, subject: 'Alister Bank — Your Account is Approved! Set Up Now', html });
