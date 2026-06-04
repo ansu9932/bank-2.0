@@ -20,6 +20,61 @@ const STEPS = [
   { id: 5, label: 'Review',        icon: '✅' },
 ];
 
+// ── Field validation patterns (shared with the step components) ───────────────
+const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE   = /^[6-9]\d{9}$/;          // Indian mobile: 10 digits, starts 6-9
+const AADHAAR_RE = /^\d{12}$/;              // exactly 12 digits (raw, un-spaced)
+const PAN_RE     = /^[A-Z]{5}[0-9]{4}[A-Z]$/; // e.g. ABCDE1234F
+const PINCODE_RE = /^\d{6}$/;
+
+// Required document uploads for the Documents step.
+const REQUIRED_DOCS = [
+  ['aadhaar', 'Aadhaar card'],
+  ['pan', 'PAN card'],
+  ['selfie', 'Live selfie'],
+  ['signature', 'Signature'],
+  ['address_proof', 'Address proof'],
+];
+
+/**
+ * Validate a single step's required fields. Returns a map of
+ * { fieldKey: 'message' }. An empty map means the step is valid and the user
+ * may advance. File-upload errors are keyed as `file_<docKey>`.
+ */
+export function getStepErrors(step, form, otpVerified) {
+  const e = {};
+
+  if (step === 1) {
+    if (!form.firstName?.trim()) e.firstName = 'First name is required.';
+    if (!form.lastName?.trim()) e.lastName = 'Last name is required.';
+    if (!form.email?.trim()) e.email = 'Email address is required.';
+    else if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address.';
+    if (!form.phone?.trim()) e.phone = 'Mobile number is required.';
+    else if (!PHONE_RE.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number.';
+    if (!form.dateOfBirth) e.dateOfBirth = 'Date of birth is required.';
+    if (!form.gender) e.gender = 'Please select your gender.';
+    if (!form.accountType) e.accountType = 'Please select an account type.';
+  } else if (step === 2) {
+    if (!form.addressLine1?.trim()) e.addressLine1 = 'Address line 1 is required.';
+    if (!form.city?.trim()) e.city = 'City is required.';
+    if (!form.state) e.state = 'Please select a state.';
+    if (!form.pincode?.trim()) e.pincode = 'PIN code is required.';
+    else if (!PINCODE_RE.test(form.pincode.trim())) e.pincode = 'Enter a valid 6-digit PIN code.';
+  } else if (step === 3) {
+    if (!form.aadhaarNumber) e.aadhaarNumber = 'Aadhaar number is required.';
+    else if (!AADHAAR_RE.test(form.aadhaarNumber)) e.aadhaarNumber = 'Aadhaar must be exactly 12 digits.';
+    if (!form.panNumber) e.panNumber = 'PAN number is required.';
+    else if (!PAN_RE.test(form.panNumber)) e.panNumber = 'Enter a valid PAN (e.g. ABCDE1234F).';
+    REQUIRED_DOCS.forEach(([k, label]) => {
+      if (!form.files?.[k]) e[`file_${k}`] = `${label} upload is required.`;
+    });
+  } else if (step === 4) {
+    if (!otpVerified) e.otp = 'Please verify your email with the OTP before continuing.';
+  }
+
+  return e;
+}
+
 const initForm = {
   // Personal
   firstName: '', lastName: '', email: '', phone: '',
@@ -42,13 +97,53 @@ export default function AccountOpeningPage() {
   const [otpVerified, setOtpVerified] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [customerId, setCustomerId] = useState('');
+  // Inline per-step validation errors. Populated only after a blocked "Next"
+  // (or submit) so the form doesn't shout at the user before they've typed.
+  const [errors, setErrors] = useState({});
+  const [showErrors, setShowErrors] = useState(false);
+  // Set true once the PAN auto-fetch returns a verified legal name, which locks
+  // the First/Last name fields from manual editing (Step 3 → reflected in Step 1).
+  const [nameLocked, setNameLocked] = useState(false);
 
   const updateForm = (updates) => setForm(prev => ({ ...prev, ...updates }));
 
-  const next = () => setStep(s => Math.min(s + 1, 5));
-  const prev = () => setStep(s => Math.max(s - 1, 1));
+  // Live validation for the current step; drives the disabled Next button.
+  const currentErrors = getStepErrors(step, form, otpVerified);
+  const currentStepValid = Object.keys(currentErrors).length === 0;
+
+  const next = () => {
+    const stepErrors = getStepErrors(step, form, otpVerified);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(stepErrors);
+      setShowErrors(true);
+      toast.error('Please complete the required fields before continuing.');
+      return;
+    }
+    setErrors({});
+    setShowErrors(false);
+    setStep(s => Math.min(s + 1, 5));
+  };
+
+  const prev = () => {
+    setErrors({});
+    setShowErrors(false);
+    setStep(s => Math.max(s - 1, 1));
+  };
 
   const handleSubmit = async () => {
+    // Final guard: re-validate every step so a user who somehow reached Review
+    // with a gap (or edited back) can't submit an incomplete payload → 500.
+    const allErrors = [1, 2, 3, 4].reduce(
+      (acc, s) => ({ ...acc, ...getStepErrors(s, form, otpVerified) }), {});
+    if (Object.keys(allErrors).length > 0) {
+      setErrors(allErrors);
+      setShowErrors(true);
+      const firstBadStep = [1, 2, 3, 4].find(
+        s => Object.keys(getStepErrors(s, form, otpVerified)).length > 0);
+      toast.error('Some required details are missing. Returning to fix them.');
+      if (firstBadStep) setStep(firstBadStep);
+      return;
+    }
     if (!otpVerified) { toast.error('Please verify your email first.'); return; }
     setLoading(true);
     try {
@@ -167,9 +262,27 @@ export default function AccountOpeningPage() {
               initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}
             >
-              {step === 1 && <StepPersonal form={form} update={updateForm} />}
-              {step === 2 && <StepAddress form={form} update={updateForm} />}
-              {step === 3 && <StepDocuments form={form} update={updateForm} />}
+              {step === 1 && (
+                <StepPersonal
+                  form={form} update={updateForm}
+                  errors={showErrors ? errors : {}}
+                  nameLocked={nameLocked}
+                />
+              )}
+              {step === 2 && (
+                <StepAddress
+                  form={form} update={updateForm}
+                  errors={showErrors ? errors : {}}
+                />
+              )}
+              {step === 3 && (
+                <StepDocuments
+                  form={form} update={updateForm}
+                  errors={showErrors ? errors : {}}
+                  nameLocked={nameLocked}
+                  setNameLocked={setNameLocked}
+                />
+              )}
               {step === 4 && (
                 <StepOTPVerify
                   email={form.email}
@@ -191,7 +304,12 @@ export default function AccountOpeningPage() {
             </button>
 
             {step < 5 ? (
-              <button onClick={next} className="btn-primary">
+              <button
+                onClick={next}
+                disabled={!currentStepValid}
+                title={currentStepValid ? '' : 'Complete the required fields to continue'}
+                className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 Next <RiArrowRightLine />
               </button>
             ) : (
