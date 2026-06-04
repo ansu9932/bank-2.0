@@ -78,6 +78,33 @@ async function createUpiQr({ amount, description, notes, closeBy }) {
 }
 
 /**
+ * Create a Razorpay Order for a Checkout-based deposit (Card / Net Banking).
+ *
+ * Unlike the UPI QR flow (which is fixed-amount and polled), high-value deposits
+ * open the Razorpay Checkout widget against an Order. We pass the amount in
+ * PAISE (rupees * 100) per Razorpay's contract and attach tracking notes so the
+ * webhook can resolve the user + credit the balance on capture.
+ *
+ * @param {object} params
+ * @param {number} params.amount     Amount in INR (rupees).
+ * @param {string} params.receipt    Our internal order reference (<=40 chars).
+ * @param {object} params.notes      Metadata propagated to the captured payment.
+ * @returns {Promise<object>} The Razorpay Order entity.
+ */
+async function createOrder({ amount, receipt, notes }) {
+  const client = getRazorpayInstance();
+  if (!client) throw new Error('RAZORPAY_NOT_CONFIGURED');
+
+  return client.orders.create({
+    amount: Math.round(Number(amount) * 100), // rupees → paise
+    currency: 'INR',
+    receipt: String(receipt).slice(0, 40),
+    payment_capture: 1, // auto-capture on successful authorization
+    notes,
+  });
+}
+
+/**
  * Cryptographically validate an incoming Razorpay webhook signature.
  *
  * @param {string|Buffer} body      The RAW request body (exact bytes received).
@@ -105,5 +132,6 @@ module.exports = {
   getRazorpayInstance,
   isConfigured,
   createUpiQr,
+  createOrder,
   validateWebhookSignature,
 };

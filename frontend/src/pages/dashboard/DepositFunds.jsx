@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   RiQrCodeLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
   RiSecurePaymentLine, RiArrowLeftLine, RiArrowRightLine,
+  RiBankCardLine, RiBankLine, RiInformationLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -12,19 +13,44 @@ import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
 
 /* ──────────────────────────────────────────────────────────────────────────
-   ALISTER BANK · INSTANT UPI DEPOSIT
-   Generates a dynamic single-use Razorpay UPI QR, crops it to the clean B/W
-   grid, polls for the webhook credit, instantly updates the global balance,
-   then redirects to the transactions ledger.
+   ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
+   • Amount <= ₹2,00,000 → dynamic UPI QR (scan + webhook credit + polling).
+   • Amount  > ₹2,00,000 → UPI/QR disabled; Card / Net Banking method cards
+     open the Razorpay Checkout widget (method forced by selection).
    Theme: matte-black #0d0e12 · charcoal surfaces · crimson #c8102e accents.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
 const QUICK_ADD = [500, 1000, 5000];
+const UPI_QR_CAP = 200000;            // UPI/QR per-transaction ceiling (₹2L)
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
+const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 
-// View phases: 'form' → 'qr' (awaiting payment) → 'success'
+// Lazily inject the Razorpay Checkout script once; resolves when ready.
+function loadRazorpayCheckout() {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') { reject(new Error('No window')); return; }
+    if (window.Razorpay) { resolve(window.Razorpay); return; }
+
+    let script = document.getElementById('rzp-checkout-js');
+    if (!script) {
+      script = document.createElement('script');
+      script.id = 'rzp-checkout-js';
+      script.src = CHECKOUT_SRC;
+      script.async = true;
+      document.body.appendChild(script);
+    }
+    const started = Date.now();
+    const poll = setInterval(() => {
+      if (window.Razorpay) { clearInterval(poll); resolve(window.Razorpay); }
+      else if (Date.now() - started > 15000) { clearInterval(poll); reject(new Error('Checkout failed to load')); }
+    }, 100);
+    script.addEventListener('error', () => { clearInterval(poll); reject(new Error('Checkout script error')); });
+  });
+}
+
+// View phases: 'form' → 'qr' (awaiting QR payment) → 'success'
 export default function DepositFunds() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -33,7 +59,8 @@ export default function DepositFunds() {
   const [phase, setPhase] = useState('form');
   const [amount, setAmount] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [order, setOrder] = useState(null);          // { orderRef, qrId, image_url, amount }
+  const [checkoutMethod, setCheckoutMethod] = useState(null); // 'card' | 'netbanking' while launching
+  const [order, setOrder] = useState(null);          // { orderRef, image_url, amount }
   const [creditedAmount, setCreditedAmount] = useState(0);
   const [newBalance, setNewBalance] = useState(null);
 
@@ -54,12 +81,13 @@ export default function DepositFunds() {
   }, []);
 
   useEffect(() => () => {
-    // Cleanly tear down BOTH timers on unmount.
     if (pollRef.current) clearInterval(pollRef.current);
     if (redirectRef.current) clearTimeout(redirectRef.current);
   }, []);
 
   const numericAmount = parseFloat(amount) || 0;
+  // Conditional gate: anything over ₹2L cannot use UPI/QR.
+  const isHighValue = numericAmount > UPI_QR_CAP;
 
   const handleQuickAdd = (inc) => setAmount((prev) => String((parseFloat(prev) || 0) + inc));
 
@@ -70,7 +98,7 @@ export default function DepositFunds() {
 
   const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-  // ── Handle a confirmed credit ──────────────────────────────────────────────
+  // ── Handle a confirmed credit (shared by QR + Checkout flows) ──────────────
   const handleCredited = useCallback((payload) => {
     stopPolling();
     const credited = Number(payload.amount) || 0;
@@ -81,21 +109,17 @@ export default function DepositFunds() {
     if (balance != null) setNewBalance(balance);
     setPhase('success');
 
-    // 1) Instant global state update so the dashboard balance reflects funds
-    //    immediately — no manual reload.
     if (balance != null) {
       dispatch(updateBalance({
         balance,
         available_balance: available != null ? available : balance,
       }));
     }
-    // 2) Authoritative refresh of account + ledger from the server.
     dispatch(fetchAccount());
     dispatch(fetchTransactions({ limit: 50, page: 1 }));
 
     toast.success('Funds credited to your account!');
 
-    // 3) Route to the transactions ledger after the success animation.
     redirectRef.current = setTimeout(() => {
       navigate('/dashboard/transactions');
     }, SUCCESS_REDIRECT_MS);
@@ -111,16 +135,16 @@ export default function DepositFunds() {
           handleCredited(data);
         }
       } catch (err) {
-        // Transient network/poll failure — log and keep trying silently.
         // eslint-disable-next-line no-console
         console.warn('[deposit] status poll failed, retrying:', err?.message || err);
       }
     }, POLL_INTERVAL_MS);
   }, [handleCredited, stopPolling]);
 
-  // ── Generate the secure QR ──────────────────────────────────────────────────
+  // ── ≤ ₹2L: generate the UPI QR ──────────────────────────────────────────────
   const handleGenerate = async () => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
+    if (isHighValue) { toast.error('Amounts above ₹2,00,000 require Card or Net Banking.'); return; }
     setGenerating(true);
     try {
       const { data } = await api.post('/payments/create-qr', { amount: numericAmount });
@@ -137,11 +161,67 @@ export default function DepositFunds() {
     }
   };
 
+  // ── > ₹2L: open Razorpay Checkout for Card / Net Banking ────────────────────
+  const handleCheckout = async (method) => {
+    if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
+    setCheckoutMethod(method);
+    try {
+      const { data } = await api.post('/payments/create-deposit-order', {
+        amount: numericAmount,
+        paymentMethod: method,
+      });
+      const cfg = data?.data;
+      if (!cfg?.orderId || !cfg?.keyId) throw new Error('Malformed order response');
+
+      const Razorpay = await loadRazorpayCheckout();
+
+      const options = {
+        key: cfg.keyId,
+        amount: cfg.amountPaise,
+        currency: cfg.currency,
+        name: cfg.name,
+        description: cfg.description,
+        order_id: cfg.orderId,
+        prefill: cfg.prefill,
+        notes: { orderRef: cfg.orderRef },
+        theme: { color: CRIMSON },
+        // Force the chosen rail in the Checkout widget.
+        method: cfg.methodConfig,
+        handler: () => {
+          // Payment authorized in the widget. The webhook credits the balance;
+          // begin polling so the UI flips to success the moment it lands.
+          toast.success('Payment received — confirming with your bank…');
+          setOrder({ orderRef: cfg.orderRef, amount: cfg.amount });
+          setPhase('qr'); // reuse the "awaiting confirmation" waiting panel
+          startPolling(cfg.orderRef);
+        },
+        modal: {
+          ondismiss: () => {
+            setCheckoutMethod(null);
+            toast('Payment cancelled.', { icon: 'ℹ️' });
+          },
+        },
+      };
+
+      const rzp = new Razorpay(options);
+      rzp.on('payment.failed', (resp) => {
+        toast.error(resp?.error?.description || 'Payment failed. Please try again.');
+        setCheckoutMethod(null);
+      });
+      rzp.open();
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Could not start the payment. Please try again.';
+      toast.error(msg);
+      setCheckoutMethod(null);
+    }
+  };
+
   // ── Reset back to the amount form ───────────────────────────────────────────
   const handleReset = () => {
     stopPolling();
     if (redirectRef.current) { clearTimeout(redirectRef.current); redirectRef.current = null; }
     setOrder(null);
+    setCheckoutMethod(null);
     setCreditedAmount(0);
     setNewBalance(null);
     setAmount('');
@@ -163,7 +243,7 @@ export default function DepositFunds() {
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
               Add Money
             </h1>
-            <p className="text-slate-400 text-xs mt-0.5">Instant UPI top-up · credited in real time</p>
+            <p className="text-slate-400 text-xs mt-0.5">Instant top-up · UPI, Card &amp; Net Banking</p>
           </div>
           {account && (
             <div className="ml-auto text-right">
@@ -179,7 +259,7 @@ export default function DepositFunds() {
 
           <AnimatePresence mode="wait">
 
-            {/* ── Phase 1: amount form ────────────────────────────────────── */}
+            {/* ── Phase 1: amount form (conditional CTA) ──────────────────── */}
             {phase === 'form' && (
               <motion.div key="form"
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
@@ -207,79 +287,124 @@ export default function DepositFunds() {
                   ))}
                 </div>
 
-                <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
-                  className="w-full mt-7 py-4 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 28px ${CRIMSON}44` }}>
-                  {generating
-                    ? <><RiLoader4Line className="animate-spin text-lg" /> Generating…</>
-                    : <><RiQrCodeLine className="text-lg" /> Generate Secure QR</>}
-                </button>
+                {/* ── ≤ ₹2L: UPI QR generation ─────────────────────────────── */}
+                {!isHighValue && (
+                  <>
+                    <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
+                      className="w-full mt-7 py-4 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 28px ${CRIMSON}44` }}>
+                      {generating
+                        ? <><RiLoader4Line className="animate-spin text-lg" /> Generating…</>
+                        : <><RiQrCodeLine className="text-lg" /> Proceed · Generate Secure QR</>}
+                    </button>
+                    <div className="flex items-center justify-center gap-2 mt-5 text-slate-500 text-xs">
+                      <RiShieldCheckLine style={{ color: '#ff3d52' }} />
+                      <span>UPI payments are processed over an encrypted network</span>
+                    </div>
+                  </>
+                )}
 
-                <div className="flex items-center justify-center gap-2 mt-5 text-slate-500 text-xs">
-                  <RiShieldCheckLine style={{ color: '#ff3d52' }} />
-                  <span>Payments are processed over an encrypted UPI network</span>
-                </div>
+                {/* ── > ₹2L: Card / Net Banking method cards ───────────────── */}
+                {isHighValue && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    className="mt-7">
+                    {/* Info sub-badge */}
+                    <div className="flex items-start gap-2 rounded-xl px-4 py-3 mb-4 border"
+                      style={{ background: 'rgba(200,16,46,0.07)', borderColor: 'rgba(200,16,46,0.28)' }}>
+                      <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
+                      <p className="text-xs leading-relaxed" style={{ color: '#ffb3bf' }}>
+                        UPI/QR payments are capped at ₹2 Lakhs. Please select Card or Net Banking to complete this transaction safely.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Card Payment */}
+                      <button type="button" onClick={() => handleCheckout('card')}
+                        disabled={Boolean(checkoutMethod)}
+                        className="group text-left rounded-2xl p-5 border transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{ background: '#0d0e12', borderColor: 'rgba(255,255,255,0.08)' }}>
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 border"
+                          style={{ background: 'rgba(200,16,46,0.12)', borderColor: 'rgba(200,16,46,0.3)' }}>
+                          {checkoutMethod === 'card'
+                            ? <RiLoader4Line className="animate-spin text-xl" style={{ color: '#ff3d52' }} />
+                            : <RiBankCardLine className="text-xl" style={{ color: '#ff3d52' }} />}
+                        </div>
+                        <p className="text-white font-semibold text-sm">Card Payment</p>
+                        <p className="text-slate-400 text-[11px] mt-1 leading-snug">
+                          All major Domestic &amp; International Debit and Credit Cards.
+                        </p>
+                      </button>
+
+                      {/* Net Banking */}
+                      <button type="button" onClick={() => handleCheckout('netbanking')}
+                        disabled={Boolean(checkoutMethod)}
+                        className="group text-left rounded-2xl p-5 border transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{ background: '#0d0e12', borderColor: 'rgba(255,255,255,0.08)' }}>
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 border"
+                          style={{ background: 'rgba(200,16,46,0.12)', borderColor: 'rgba(200,16,46,0.3)' }}>
+                          {checkoutMethod === 'netbanking'
+                            ? <RiLoader4Line className="animate-spin text-xl" style={{ color: '#ff3d52' }} />
+                            : <RiBankLine className="text-xl" style={{ color: '#ff3d52' }} />}
+                        </div>
+                        <p className="text-white font-semibold text-sm">Net Banking</p>
+                        <p className="text-slate-400 text-[11px] mt-1 leading-snug">
+                          Major corporate &amp; retail banking portals.
+                        </p>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-2 mt-5 text-slate-500 text-xs">
+                      <RiShieldCheckLine style={{ color: '#ff3d52' }} />
+                      <span>Secured by Razorpay · PCI-DSS compliant checkout</span>
+                    </div>
+                  </motion.div>
+                )}
               </motion.div>
             )}
 
-            {/* ── Phase 2: cropped QR + waiting ───────────────────────────── */}
+            {/* ── Phase 2: QR / awaiting confirmation ─────────────────────── */}
             {phase === 'qr' && order && (
               <motion.div key="qr"
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
                 className="p-6 sm:p-8 flex flex-col items-center text-center">
 
                 <p className="text-slate-300 text-sm mb-1">
-                  Scan to pay <span className="text-white font-bold">{fmt(order.amount)}</span>
+                  {order.image_url ? 'Scan to pay ' : 'Confirming payment of '}
+                  <span className="text-white font-bold">{fmt(order.amount)}</span>
                 </p>
-                <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
+                {order.image_url && (
+                  <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
+                )}
 
-                {/* Premium white QR card with cropped grid */}
-                <motion.div
-                  initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                  className="relative rounded-3xl bg-white p-4"
-                  style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-
-                  {/* Aggressive crop — only the central B/W QR grid is visible.
-                      The image is absolutely positioned: the flex container's
-                      justify-content:center sets its horizontal static position
-                      (centering the 420px image in the 200px window), while
-                      top:-75px lifts it to align the grid vertically. */}
-                  <div
-                    style={{
-                      width: '200px',
-                      height: '200px',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      background: '#ffffff',
-                      borderRadius: '12px',
-                      margin: 0,
-                      padding: 0,
-                    }}>
-                    <img
-                      src={order.image_url}
-                      alt="UPI payment QR code"
-                      draggable={false}
+                {/* Cropped QR (UPI flow only) */}
+                {order.image_url && (
+                  <motion.div
+                    initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                    className="relative rounded-3xl bg-white p-4"
+                    style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
+                    <div
                       style={{
-                        position: 'absolute',
-                        width: '420px',
-                        height: 'auto',
-                        top: '-75px',
-                        margin: 0,
-                        padding: 0,
-                        imageRendering: 'crisp-edges',
-                      }}
-                    />
-                  </div>
-
-                  {/* Crimson corner brackets */}
-                  {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
-                    'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
-                    <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
-                  ))}
-                </motion.div>
+                        width: '200px', height: '200px', overflow: 'hidden', position: 'relative',
+                        display: 'flex', justifyContent: 'center', alignItems: 'center',
+                        background: '#ffffff', borderRadius: '12px', margin: 0, padding: 0,
+                      }}>
+                      <img
+                        src={order.image_url}
+                        alt="UPI payment QR code"
+                        draggable={false}
+                        style={{
+                          position: 'absolute', width: '420px', height: 'auto', top: '-75px',
+                          margin: 0, padding: 0, imageRendering: 'crisp-edges',
+                        }}
+                      />
+                    </div>
+                    {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
+                      'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
+                      <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
+                    ))}
+                  </motion.div>
+                )}
 
                 {/* Pulsing crimson waiting state */}
                 <div className="mt-7 w-full rounded-2xl border border-brand-500/25 px-5 py-4"
@@ -350,7 +475,7 @@ export default function DepositFunds() {
         </div>
 
         <p className="text-center text-slate-600 text-[11px] mt-5">
-          Powered by Razorpay UPI · Alister Bank holds funds in insured custody
+          Powered by Razorpay · Alister Bank holds funds in insured custody
         </p>
       </div>
     </div>
