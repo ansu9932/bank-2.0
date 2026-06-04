@@ -25,6 +25,29 @@ exports.openAccount = async (req, res) => {
       accountType,
     } = req.body;
 
+    // ── Explicit required-field validation ─────────────────────────────────────
+    // The DB columns are NOT NULL; missing values would otherwise surface as a
+    // generic Sequelize 500 deep in .create(). Validate up-front and return a
+    // precise 400 naming the first missing field instead. (This is the primary
+    // cause of the reported mobile 500s: partially-filled payloads reaching
+    // .create() before the frontend gating existed.)
+    const requiredFields = {
+      firstName, lastName, email, phone, dateOfBirth, gender,
+      addressLine1, city, state, pincode, accountType,
+    };
+    const missing = Object.entries(requiredFields)
+      .filter(([, v]) => v === undefined || v === null || String(v).trim() === '')
+      .map(([k]) => k);
+    if (missing.length > 0) {
+      logger.warn(`openAccount rejected — missing required fields: ${missing.join(', ')}`);
+      return badRequest(res, `Missing required fields: ${missing.join(', ')}.`);
+    }
+
+    // Normalize the identity fields the same way the client does (defensive:
+    // strip Aadhaar spacing, upper-case PAN) so stored values are canonical.
+    const aadhaarClean = aadhaarNumber ? String(aadhaarNumber).replace(/\D/g, '') : null;
+    const panClean = panNumber ? String(panNumber).toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
+
     // Check duplicates
     const existingEmail = await User.findOne({ where: { email } });
     if (existingEmail) return badRequest(res, 'An account with this email already exists.');
@@ -52,19 +75,21 @@ exports.openAccount = async (req, res) => {
       gender,
       father_name: fatherName,
       mother_name: motherName,
-      marital_status: maritalStatus,
+      marital_status: maritalStatus || null,
       nationality: nationality || 'Indian',
       occupation,
-      annual_income: annualIncome,
+      // annual_income is DECIMAL — coerce blanks to null so an empty string
+      // doesn't trip a numeric validation error.
+      annual_income: annualIncome === '' || annualIncome === undefined ? null : annualIncome,
       address_line1: addressLine1,
       address_line2: addressLine2,
       city,
       state,
       pincode,
       country: country || 'India',
-      aadhaar_number: aadhaarNumber,
-      pan_number: panNumber,
-      passport_number: passportNumber,
+      aadhaar_number: aadhaarClean,
+      pan_number: panClean,
+      passport_number: passportNumber || null,
       account_type: accountType || 'savings',
       kyc_status: 'pending',
       account_status: 'pending',
@@ -101,8 +126,13 @@ exports.openAccount = async (req, res) => {
       }
     }
 
-    // Send review email
-    await sendKYCUnderReviewEmail(email, firstName, customerId);
+    // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
+    // successfully-created account into a 500; log it and continue.
+    try {
+      await sendKYCUnderReviewEmail(email, firstName, customerId);
+    } catch (mailErr) {
+      logger.error(`KYC review email failed for ${email} (non-fatal): ${mailErr.message}`);
+    }
 
     // Update kyc status to under_review
     await user.update({ kyc_status: 'under_review' });
@@ -122,7 +152,26 @@ exports.openAccount = async (req, res) => {
       message: 'Application submitted successfully. Documents are under review.',
     }, 'Application submitted successfully.');
   } catch (err) {
-    logger.error(`Account opening error: ${err.message}`);
+    // ── Full error context to the node terminal so the failing column/constraint
+    //    is identifiable on the live (Hostinger) dashboard ──────────────────────
+    logger.error(`Account opening error: ${err.name}: ${err.message}`);
+    if (err.original) logger.error(`Raw DB error: ${err.original.message}`);
+    if (err.stack) logger.error(err.stack);
+
+    // Map known Sequelize failures to a precise 400 instead of a generic 500.
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      const field = err.errors?.[0]?.path || 'field';
+      return badRequest(res, `An account with this ${field} already exists.`);
+    }
+    if (err.name === 'SequelizeValidationError') {
+      const detail = err.errors?.[0]?.message || 'A submitted field is invalid.';
+      return badRequest(res, detail);
+    }
+    if (err.name === 'SequelizeDatabaseError') {
+      // e.g. value too long, bad enum, datatype mismatch — actionable as 400.
+      return badRequest(res, 'One or more submitted details are invalid. Please review and try again.');
+    }
+
     return error(res, 'Failed to submit application. Please try again.');
   }
 };

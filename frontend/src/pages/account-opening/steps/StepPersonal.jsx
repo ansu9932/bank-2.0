@@ -1,38 +1,64 @@
 import React from 'react';
 
-const Field = ({ label, children }) => (
+const Field = ({ label, error, children, hint }) => (
   <div>
     <label className="form-label">{label}</label>
     {children}
+    {hint && !error && <p className="text-dark-400 text-[11px] mt-1">{hint}</p>}
+    {error && <p className="text-brand-400 text-[11px] mt-1">{error}</p>}
   </div>
 );
 
-export default function StepPersonal({ form, update }) {
+export default function StepPersonal({ form, update, errors = {}, nameLocked = false }) {
   const set = (k) => (e) => update({ [k]: e.target.value });
+
+  // Digit-only handler for the mobile number, capped at 10 digits.
+  const setPhone = (e) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+    update({ phone: digits });
+  };
+
+  // Red ring helper for invalid fields.
+  const ring = (k) => (errors[k] ? ' !border-brand-500 focus:!border-brand-500' : '');
 
   return (
     <div>
       <h3 className="font-display text-xl font-700 text-white mb-1">Personal Information</h3>
       <p className="text-dark-300 text-sm mb-6">Fill in your basic personal details as per government ID</p>
 
+      {nameLocked && (
+        <div className="mb-5 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-xs text-green-300 flex items-center gap-2">
+          <span>🔒</span>
+          <span>Your name has been verified against the PAN registry and locked to match your tax records.</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="First Name *">
-          <input className="input-field" value={form.firstName} onChange={set('firstName')} placeholder="Arjun" />
+        <Field label="First Name *" error={errors.firstName} hint={nameLocked ? 'Auto-filled from PAN verification' : undefined}>
+          <input
+            className={`input-field${ring('firstName')}${nameLocked ? ' opacity-70 cursor-not-allowed' : ''}`}
+            value={form.firstName} onChange={set('firstName')} placeholder="Arjun"
+            readOnly={nameLocked}
+          />
         </Field>
-        <Field label="Last Name *">
-          <input className="input-field" value={form.lastName} onChange={set('lastName')} placeholder="Sharma" />
+        <Field label="Last Name *" error={errors.lastName} hint={nameLocked ? 'Auto-filled from PAN verification' : undefined}>
+          <input
+            className={`input-field${ring('lastName')}${nameLocked ? ' opacity-70 cursor-not-allowed' : ''}`}
+            value={form.lastName} onChange={set('lastName')} placeholder="Sharma"
+            readOnly={nameLocked}
+          />
         </Field>
-        <Field label="Email Address *">
-          <input className="input-field" type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
+        <Field label="Email Address *" error={errors.email}>
+          <input className={`input-field${ring('email')}`} type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
         </Field>
-        <Field label="Mobile Number *">
-          <input className="input-field" type="tel" value={form.phone} onChange={set('phone')} placeholder="9876543210" maxLength={10} />
+        <Field label="Mobile Number *" error={errors.phone}>
+          <input className={`input-field${ring('phone')}`} type="tel" inputMode="numeric" value={form.phone} onChange={setPhone} placeholder="9876543210" maxLength={10} />
         </Field>
-        <Field label="Date of Birth *">
-          <input className="input-field" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} max={new Date(Date.now() - 18*365*24*60*60*1000).toISOString().split('T')[0]} />
+        <Field label="Date of Birth *" error={errors.dateOfBirth}>
+          <input className={`input-field${ring('dateOfBirth')}`} type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} max={new Date(Date.now() - 18*365*24*60*60*1000).toISOString().split('T')[0]} />
         </Field>
-        <Field label="Gender *">
-          <select className="input-field" value={form.gender} onChange={set('gender')}>
+        <Field label="Gender *" error={errors.gender}>
+          <select className={`input-field${ring('gender')}`} value={form.gender} onChange={set('gender')}>
             <option value="">Select gender</option>
             <option value="male">Male</option>
             <option value="female">Female</option>
@@ -60,8 +86,8 @@ export default function StepPersonal({ form, update }) {
         <Field label="Annual Income (₹)">
           <input className="input-field" type="number" value={form.annualIncome} onChange={set('annualIncome')} placeholder="1500000" />
         </Field>
-        <Field label="Account Type *">
-          <select className="input-field" value={form.accountType} onChange={set('accountType')}>
+        <Field label="Account Type *" error={errors.accountType}>
+          <select className={`input-field${ring('accountType')}`} value={form.accountType} onChange={set('accountType')}>
             <option value="savings">Savings Account</option>
             <option value="current">Current Account</option>
           </select>

@@ -41,7 +41,7 @@ export default function StepReview({ form }) {
       </Section>
 
       <Section title="KYC Documents" icon="📄">
-        <Row label="Aadhaar Number" value={form.aadhaarNumber} />
+        <Row label="Aadhaar Number" value={(form.aadhaarNumber || '').replace(/(.{4})/g, '$1 ').trim()} />
         <Row label="PAN Number" value={form.panNumber} />
         <Row label="Passport Number" value={form.passportNumber} />
         <div className="mt-2 flex flex-wrap gap-2">
