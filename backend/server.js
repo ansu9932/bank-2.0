@@ -166,6 +166,15 @@ const start = async () => {
       console.error(workflowErr);
     }
 
+    // Re-arm settlement timers for any NEFT payouts left 'processing' by a
+    // restart, so they still transition to completed after their delay window.
+    try {
+      const { resumePendingNeftSettlements } = require('./controllers/payoutController');
+      await resumePendingNeftSettlements();
+    } catch (neftErr) {
+      logger.error(`Failed to resume NEFT settlements: ${neftErr.message}`);
+    }
+
     app.listen(PORT, () => {
       logger.info(`\n🏦 ══════════════════════════════════════════════`);
       logger.info(`   ALISTER BANK API SERVER RUNNING`);
