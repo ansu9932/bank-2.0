@@ -474,7 +474,12 @@ export default function DepositFunds() {
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
                     <div
                       style={{
-                        width: '200px', height: '200px', overflow: 'hidden', position: 'relative',
+                        // Bounding view window — strict overflow:hidden slices off the top
+                        // branding band. Height bumped 200→220px to recover vertical matrix
+                        // room given the more aggressive -150px upward pull, keeping the
+                        // black-and-white grid fully exposed and centred. Width held at 200px
+                        // (sides are quiet-zone whitespace).
+                        width: '200px', height: '220px', overflow: 'hidden', position: 'relative',
                         display: 'flex', justifyContent: 'center', alignItems: 'center',
                         background: '#ffffff', borderRadius: '12px', margin: 0, padding: 0,
                       }}>
@@ -485,24 +490,30 @@ export default function DepositFunds() {
                         style={{
                           // White-label crop mask. Razorpay returns a square QR image with its
                           // vendor logo/branding occupying the TOP band. We zoom the image to
-                          // 420px and view it through the 200×200 overflow-hidden window so only
+                          // 420px and view it through the 200×220 overflow-hidden window so only
                           // the lower matrix region shows.
                           //   • Horizontal: left:50% + translateX(-50%) centres the matrix
                           //     EXPLICITLY rather than relying on implicit flex static-position
                           //     centring (browser-fragile). The image has wide side margins, so
-                          //     the ±110px that fall outside the window are quiet-zone whitespace,
-                          //     never matrix — sides stay safe.
-                          //   • Vertical: top:-100px (was -75px) pushes more of the top branding
-                          //     strip out of view while keeping the full matrix + its lower quiet
-                          //     zone visible. NOTE: this offset is calibrated to Razorpay's current
-                          //     image layout — verify visually against a live QR before production,
-                          //     and nudge toward -90px if any matrix top is clipped, or toward
-                          //     -110px if logo remnants remain.
+                          //     the portions that fall outside the window are quiet-zone
+                          //     whitespace, never matrix — sides stay safe.
+                          //   • Vertical: top:-150px (was -100px) — a more aggressive upward pull
+                          //     to force the full top branding band out of view, per live UI check.
+                          //
+                          // ⚠️ FINDER-PATTERN CEILING: the QR's TWO top finder patterns (the large
+                          // corner squares) sit just below the logo band. Pushing `top` more
+                          // negative than the logo height WILL clip them and make the code
+                          // unscannable. If scanning breaks at -150px, the logo band is taller than
+                          // this crop can hide without destroying the matrix — at that point the
+                          // real fix is backend-generated UPI string + client-side renderer
+                          // (needs a real merchant VPA), NOT a larger offset.
+                          //   Tuning: -130px if the top finder patterns start to clip;
+                          //           -170px only if logo remnants still show AND scanning still works.
                           position: 'absolute',
                           width: '420px',
                           height: 'auto',
                           left: '50%',
-                          top: '-100px',
+                          top: '-150px',
                           transform: 'translateX(-50%)',
                           margin: 0,
                           padding: 0,
