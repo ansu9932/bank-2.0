@@ -23,6 +23,20 @@ import { fetchTransactions } from '../../store/slices/transactionSlice';
 const CRIMSON = '#c8102e';
 const QUICK_ADD = [500, 1000, 5000];
 const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling (₹1L)
+
+// Net-banking partner grid. The selected code is forwarded to the hosted
+// Razorpay widget via prefill.bank so it routes straight to the bank's
+// login/redirect — no cardholder data ever touches our DOM (PCI SAQ A).
+const NETBANKING_BANKS = [
+  { code: 'HDFC', name: 'HDFC Bank' },
+  { code: 'ICIC', name: 'ICICI Bank' },
+  { code: 'SBIN', name: 'State Bank of India' },
+  { code: 'UTIB', name: 'Axis Bank' },
+  { code: 'KKBK', name: 'Kotak Mahindra Bank' },
+  { code: 'YESB', name: 'Yes Bank' },
+  { code: 'IDFB', name: 'IDFC FIRST Bank' },
+  { code: 'INDB', name: 'IndusInd Bank' },
+];
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -60,6 +74,8 @@ export default function DepositFunds() {
   const [amount, setAmount] = useState('');
   const [generating, setGenerating] = useState(false);
   const [checkoutMethod, setCheckoutMethod] = useState(null); // 'card' | 'netbanking' while launching
+  const [netBankingOpen, setNetBankingOpen] = useState(false); // custom bank grid expanded?
+  const [selectedBank, setSelectedBank] = useState(null);      // { code, name } chosen in the grid
   const [order, setOrder] = useState(null);          // { orderRef, image_url, amount }
   const [creditedAmount, setCreditedAmount] = useState(0);
   const [newBalance, setNewBalance] = useState(null);
@@ -161,8 +177,11 @@ export default function DepositFunds() {
     }
   };
 
-  // ── > ₹1L: open Razorpay Checkout for Card / Net Banking ────────────────────
-  const handleCheckout = async (method) => {
+  // ── > ₹1L: open the re-skinned Razorpay hosted widget for Card / Net Banking ─
+  // Card data (PAN/CVV) is collected *inside* Razorpay's iframe, never in our
+  // DOM, so we stay in PCI SAQ A scope. For Net Banking we forward the chosen
+  // bank via prefill so the widget routes straight to that bank's redirect.
+  const handleCheckout = async (method, bankCode = null) => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
     try {
@@ -175,6 +194,14 @@ export default function DepositFunds() {
 
       const Razorpay = await loadRazorpayCheckout();
 
+      // Clone the server-supplied prefill so we can attach the bank routing
+      // hints for Net Banking without mutating the response object.
+      const prefill = { ...(cfg.prefill || {}) };
+      if (method === 'netbanking' && bankCode) {
+        prefill.method = 'netbanking';
+        prefill.bank = bankCode; // e.g. 'HDFC', 'SBIN', 'ICIC' → skips bank picker
+      }
+
       const options = {
         key: cfg.keyId,
         amount: cfg.amountPaise,
@@ -182,9 +209,14 @@ export default function DepositFunds() {
         name: cfg.name,
         description: cfg.description,
         order_id: cfg.orderId,
-        prefill: cfg.prefill,
+        prefill,
         notes: { orderRef: cfg.orderRef },
-        theme: { color: CRIMSON },
+        // Alister Bank skin: crimson accents over a rich matte-black backdrop so
+        // the hosted widget blends seamlessly into the dashboard.
+        theme: {
+          color: CRIMSON,
+          backdrop_color: '#000000',
+        },
         // Force the chosen rail in the Checkout widget.
         method: cfg.methodConfig,
         handler: () => {
@@ -222,6 +254,8 @@ export default function DepositFunds() {
     if (redirectRef.current) { clearTimeout(redirectRef.current); redirectRef.current = null; }
     setOrder(null);
     setCheckoutMethod(null);
+    setNetBankingOpen(false);
+    setSelectedBank(null);
     setCreditedAmount(0);
     setNewBalance(null);
     setAmount('');
@@ -336,16 +370,16 @@ export default function DepositFunds() {
                         </p>
                       </button>
 
-                      {/* Net Banking */}
-                      <button type="button" onClick={() => handleCheckout('netbanking')}
+                      {/* Net Banking — opens our custom partner-bank grid below */}
+                      <button type="button"
+                        onClick={() => { setNetBankingOpen((v) => !v); setSelectedBank(null); }}
                         disabled={Boolean(checkoutMethod)}
+                        aria-expanded={netBankingOpen}
                         className="group text-left rounded-2xl p-5 border transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-                        style={{ background: '#0d0e12', borderColor: 'rgba(255,255,255,0.08)' }}>
+                        style={{ background: '#0d0e12', borderColor: netBankingOpen ? CRIMSON : 'rgba(255,255,255,0.08)' }}>
                         <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 border"
                           style={{ background: 'rgba(200,16,46,0.12)', borderColor: 'rgba(200,16,46,0.3)' }}>
-                          {checkoutMethod === 'netbanking'
-                            ? <RiLoader4Line className="animate-spin text-xl" style={{ color: '#ff3d52' }} />
-                            : <RiBankLine className="text-xl" style={{ color: '#ff3d52' }} />}
+                          <RiBankLine className="text-xl" style={{ color: '#ff3d52' }} />
                         </div>
                         <p className="text-white font-semibold text-sm">Net Banking</p>
                         <p className="text-slate-400 text-[11px] mt-1 leading-snug">
@@ -354,9 +388,59 @@ export default function DepositFunds() {
                       </button>
                     </div>
 
+                    {/* Custom matte-black partner-bank selector (Net Banking).
+                        Selecting a bank forwards its code to the hosted widget so
+                        the user lands straight on that bank's login — no card data
+                        on our page, PCI SAQ A preserved. */}
+                    <AnimatePresence initial={false}>
+                      {netBankingOpen && (
+                        <motion.div key="nb-grid"
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden">
+                          <div className="mt-3 rounded-2xl border p-4"
+                            style={{ background: '#0d0e12', borderColor: 'rgba(255,255,255,0.08)' }}>
+                            <p className="text-slate-300 text-[11px] font-medium uppercase tracking-widest mb-3">
+                              Select your bank
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                              {NETBANKING_BANKS.map((bank) => {
+                                const active = selectedBank?.code === bank.code;
+                                return (
+                                  <button key={bank.code} type="button"
+                                    onClick={() => setSelectedBank(bank)}
+                                    disabled={Boolean(checkoutMethod)}
+                                    className="flex items-center gap-2 text-left rounded-xl px-3 py-2.5 border text-xs font-semibold transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    style={{
+                                      background: active ? 'rgba(200,16,46,0.12)' : 'rgba(255,255,255,0.03)',
+                                      borderColor: active ? CRIMSON : 'rgba(255,255,255,0.08)',
+                                      color: active ? '#ffb3bf' : '#cbd5e1',
+                                    }}>
+                                    <RiBankLine className="flex-shrink-0" style={{ color: active ? '#ff3d52' : '#64748b' }} />
+                                    <span className="truncate">{bank.name}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <button type="button"
+                              onClick={() => selectedBank && handleCheckout('netbanking', selectedBank.code)}
+                              disabled={!selectedBank || Boolean(checkoutMethod)}
+                              className="w-full mt-4 py-3.5 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 24px ${CRIMSON}44` }}>
+                              {checkoutMethod === 'netbanking'
+                                ? <><RiLoader4Line className="animate-spin text-lg" /> Connecting…</>
+                                : <><RiBankLine className="text-lg" /> {selectedBank ? `Proceed to ${selectedBank.name}` : 'Select a bank to continue'}</>}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     <div className="flex items-center justify-center gap-2 mt-5 text-slate-500 text-xs">
                       <RiShieldCheckLine style={{ color: '#ff3d52' }} />
-                      <span>Secured by Razorpay · PCI-DSS compliant checkout</span>
+                      <span>Secured by Razorpay · PCI-DSS SAQ A hosted checkout</span>
                     </div>
                   </motion.div>
                 )}
