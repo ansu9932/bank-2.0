@@ -3,6 +3,7 @@ const { protect } = require('../middleware/auth');
 const verifyLimits = require('../middleware/verifyLimits');
 const paymentController = require('../controllers/paymentController');
 const payoutController = require('../controllers/payoutController');
+const depositController = require('../controllers/depositController');
 
 // ─── Public webhook ───────────────────────────────────────────────────────────
 // Razorpay → server-to-server notifications. No user auth; integrity is enforced
@@ -12,6 +13,8 @@ router.post('/webhook', paymentController.webhook);
 // ─── Authenticated deposit endpoints (UPI QR top-up) ──────────────────────────
 router.post('/create-qr', protect, paymentController.createQR);
 router.get('/status/:orderRef', protect, paymentController.getStatus);
+// High-value Checkout deposit (Card / Net Banking) for amounts > ₹2L.
+router.post('/create-deposit-order', protect, depositController.createDepositOrder);
 
 // ─── Outgoing payouts (Opfin / RazorpayX Payroll unified API) ─────────────────
 // Real-time UPI provider lookup (debounced from the client).
