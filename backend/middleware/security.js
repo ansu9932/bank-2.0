@@ -52,6 +52,21 @@ const otpLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter — KYC identity validation (PAN verify) endpoints.
+ *
+ * Separate from otpLimiter so onboarding PAN lookups get an appropriate,
+ * relaxed ceiling (correcting typos / moving between steps must not lock a
+ * user out) AND a correct, identity-flavoured message — the OTP wording was
+ * leaking onto PAN entry. Still throttled because the endpoint proxies a
+ * metered third-party (Cashfree) and is reachable before auth.
+ */
+const panVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,                   // ~30 attempts/window — generous for typo retries
+  handler: (req, res) => tooManyRequests(res, 'Too many validation attempts. Please slow down and try again shortly.'),
+});
+
+/**
  * Rate limiter — transfer endpoints
  */
 const transferLimiter = rateLimit({
@@ -124,6 +139,7 @@ module.exports = {
   authLimiter,
   loginLimiter,
   otpLimiter,
+  panVerifyLimiter,
   transferLimiter,
   securityHeaders,
   sanitizeRequest,
