@@ -10,7 +10,9 @@ const { panVerifyLimiter } = require('../middleware/security');
    protecting the metered Cashfree verification suite that this proxies.
    ────────────────────────────────────────────────────────────────────────── */
 
-// POST /api/kyc/verify-pan — PAN → registered-name lookup via Cashfree /pan/advance.
+// POST /api/kyc/verify-pan — PAN → registered-name lookup via Cashfree
+// synchronous PAN verify (/verification/pan). Validates ONLY the PAN string;
+// independent of the multi-step registration form's validation.
 router.post('/verify-pan', panVerifyLimiter, kycController.verifyPanController);
 
 module.exports = router;
