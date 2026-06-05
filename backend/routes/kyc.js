@@ -1,15 +1,16 @@
 const router = require('express').Router();
 const kycController = require('../controllers/kycController');
-const { otpLimiter } = require('../middleware/security');
+const { panVerifyLimiter } = require('../middleware/security');
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · KYC ROUTES (Cashfree Secure ID)
    Public (pre-login) onboarding verification helpers. The PAN endpoint is
-   rate-limited (reusing the OTP limiter: 5 requests / 10 min / IP) because it
-   proxies the metered Cashfree verification suite and is reachable before auth.
+   rate-limited with a dedicated, relaxed validation limiter (30 req / 15 min /
+   IP) — generous enough for typo corrections and step navigation, while still
+   protecting the metered Cashfree verification suite that this proxies.
    ────────────────────────────────────────────────────────────────────────── */
 
 // POST /api/kyc/verify-pan — PAN → registered-name lookup via Cashfree /pan/advance.
-router.post('/verify-pan', otpLimiter, kycController.verifyPanController);
+router.post('/verify-pan', panVerifyLimiter, kycController.verifyPanController);
 
 module.exports = router;
