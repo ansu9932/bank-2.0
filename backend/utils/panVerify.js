@@ -31,6 +31,31 @@ const logger = require('./logger');
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const REQUEST_TIMEOUT_MS = 15000;
 const PAN_RESOURCE_PATH = '/pan/advance';
+// Cashfree requires a date-based API version header. Override via env if your
+// dashboard mandates a different one; the raw-body logging below will reveal
+// the exact required value if this is ever rejected.
+const DEFAULT_API_VERSION = '2023-08-01';
+
+/** JSON.stringify that never throws (handles circular / odd payloads). */
+function safeStringify(value) {
+  try {
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Describe the SHAPE of a payload (top-level keys / type) without dumping the
+ * values — used for diagnostics so we can see Cashfree's dictionary structure
+ * in prod logs WITHOUT logging identity PII (names, DOB, etc.).
+ */
+function describeShape(value) {
+  if (value === null || value === undefined) return String(value);
+  if (Array.isArray(value)) return `array[${value.length}]`;
+  if (typeof value !== 'object') return typeof value;
+  return `{ ${Object.keys(value).join(', ')} }`;
+}
 
 /** Resolve the Cashfree Verification base URL from the environment switch. */
 function baseUrl() {
@@ -83,9 +108,9 @@ async function verifyPan(pan) {
   // Unique, traceable id Cashfree echoes back and logs against this request.
   const verificationId = `ALB-PAN-${randomUUID().replace(/-/g, '').slice(0, 20)}`;
 
-  let data;
+  let response;
   try {
-    ({ data } = await axios.post(
+    response = await axios.post(
       `${baseUrl()}${PAN_RESOURCE_PATH}`,
       { pan: normalized, verification_id: verificationId },
       {
@@ -93,39 +118,117 @@ async function verifyPan(pan) {
           'Content-Type': 'application/json',
           'x-client-id': process.env.CASHFREE_CLIENT_ID,
           'x-client-secret': process.env.CASHFREE_CLIENT_SECRET,
+          // Cashfree verification APIs require a version header; omitting it is a
+          // common cause of blanket non-2xx rejections (→ the reported 502).
+          'x-api-version': process.env.CASHFREE_API_VERSION || DEFAULT_API_VERSION,
         },
         timeout: REQUEST_TIMEOUT_MS,
+        // Resolve (don't throw) for any status < 500 so we can inspect 4xx bodies
+        // and classify them (e.g. a "PAN not found" 422 is a NORMAL outcome, not
+        // a server fault). Only true upstream 5xx / network errors reject.
+        validateStatus: (s) => s < 500,
       },
-    ));
+    );
   } catch (err) {
+    // Network-layer faults only (4xx no longer lands here thanks to validateStatus).
+    // axios surfaces socket resets / timeouts / DNS failures as a rejected promise
+    // — this catch is the promise-based equivalent of a stream '.on("error")'
+    // listener, so a dropped Cashfree socket can never reach the process as an
+    // unhandled rejection. We classify the common transport codes for clearer
+    // ops logs, then throw a structured fault → controller returns clean JSON.
     const status = err?.response?.status;
-    const apiMsg = err?.response?.data?.message || err?.response?.data?.error || err.message;
-    logger.error(`[cashfree:pan] ${verificationId} upstream error${status ? ` [${status}]` : ''}: ${typeof apiMsg === 'string' ? apiMsg : JSON.stringify(apiMsg)}`);
+    const transient = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE'];
+    const kind = err.code && transient.includes(err.code) ? `socket/${err.code}` : (err.code || 'unknown');
+    logger.error(
+      `[cashfree:pan] ${verificationId} transport failure (${kind})`
+      + `${status ? ` [status=${status}]` : ''}: ${err.message}`
+      + ` | body=${safeStringify(err?.response?.data)}`,
+    );
     throw makeError('CASHFREE_UPSTREAM', 'PAN verification service is currently unavailable.');
   }
 
-  // Cashfree returns registered_name + a validity signal (valid:true / status:"VALID").
-  const registeredName = data?.registered_name || data?.data?.registered_name || null;
-  const isValid = data?.valid === true || String(data?.status || data?.data?.status || '').toUpperCase() === 'VALID';
+  const { status, data } = response;
 
-  if (isValid && registeredName) {
+  // ── Insulated response-processing boundary ──────────────────────────────────
+  // axios has already buffered the socket and JSON-parsed the body by this point
+  // (there is no manual stream / JSON.parse to wrap — this is the promise-based
+  // equivalent of insulating the ".on('end')" parse+map callback). This local
+  // try/catch is belt-and-suspenders: even if some future field-mapping change
+  // throws on a malformed payload, it is converted into a structured, catchable
+  // CASHFREE_UPSTREAM error — never an unhandled throw that could kill the thread.
+  try {
+    // ── Defensive extraction (flat root layout first) ─────────────────────────
+    // Cashfree's live PAN response is FLAT: registered_name lives at the ROOT.
+    // We read root first, then fall back to a nested envelope for older/other
+    // products. Optional chaining + ?? mean a missing/null parent at ANY level
+    // drops safely to the empty-string/null fallback instead of a type error.
+    const root = (data && typeof data === 'object') ? data : {};
+    const inner = (root.data && typeof root.data === 'object') ? root.data : {};
+    const registeredName =
+      root.registered_name ?? inner.registered_name ?? root.name ?? inner.name ?? '';
+    const validityRaw =
+      root.valid ?? inner.valid ?? root.status ?? inner.status ?? '';
+    const isValid =
+      validityRaw === true || String(validityRaw).toUpperCase() === 'VALID';
+
+    // ── 4xx: a structured client/validation response from Cashfree ────────────
+    // Treat a clearly "PAN not valid/not found" body as a normal { verified:false }
+    // outcome; treat auth/version/quota problems (no name, error-ish body) as a
+    // diagnosable upstream fault so we don't pretend the lookup ran.
+    if (status >= 400) {
+      logger.error(
+        `[cashfree:pan] ${verificationId} non-2xx response`
+        + ` [status=${status}] shape=${describeShape(data)} body=${safeStringify(data)}`,
+      );
+      const looksLikePanRejection =
+        !registeredName
+        && /not\s*(found|valid)|invalid\s*pan|no\s*record/i.test(safeStringify(data));
+      if (looksLikePanRejection) {
+        return {
+          verified: false,
+          name: null,
+          status: String(root.status ?? inner.status ?? 'NOT_FOUND').toUpperCase(),
+          message: 'This PAN could not be verified with the income tax registry. Please re-check the number.',
+          verificationId,
+        };
+      }
+      // Auth/version/quota/etc. — surface as a coded upstream fault. The controller
+      // logs the body above and returns a clean 400 JSON (per ops preference), so
+      // the load balancer never sees an opaque 502 and the thread stays alive.
+      throw makeError('CASHFREE_UPSTREAM', `PAN verification rejected by gateway (status ${status}).`);
+    }
+
+    if (isValid && registeredName) {
+      return {
+        verified: true,
+        name: String(registeredName).trim(),
+        status: 'VALID',
+        message: 'PAN verified with the income tax registry.',
+        verificationId,
+      };
+    }
+
+    // 2xx but not valid / no name — a normal "PAN not found" outcome.
     return {
-      verified: true,
-      name: String(registeredName).trim(),
-      status: 'VALID',
-      message: 'PAN verified with the income tax registry.',
+      verified: false,
+      name: null,
+      status: String(root.status ?? inner.status ?? 'INVALID').toUpperCase(),
+      message: 'This PAN could not be verified with the income tax registry. Please re-check the number.',
       verificationId,
     };
+  } catch (mapErr) {
+    // A coded error we intentionally threw above (e.g. CASHFREE_UPSTREAM) — let
+    // it propagate unchanged to the controller's catch.
+    if (mapErr.code) throw mapErr;
+    // Any genuinely unexpected mapping failure: log the shape (no PII values) and
+    // convert to a structured upstream fault so the thread survives and the
+    // controller returns clean JSON.
+    logger.error(
+      `[cashfree:pan] ${verificationId} response-mapping failure: ${mapErr.message}`
+      + ` | status=${status} shape=${describeShape(data)}`,
+    );
+    throw makeError('CASHFREE_UPSTREAM', 'Unexpected verification response format.');
   }
-
-  // Valid API call, but the PAN is not valid / has no name — a normal outcome.
-  return {
-    verified: false,
-    name: null,
-    status: String(data?.status || data?.data?.status || 'INVALID').toUpperCase(),
-    message: 'This PAN could not be verified with the income tax registry. Please re-check the number.',
-    verificationId,
-  };
 }
 
 module.exports = { isConfigured, isValidPanFormat, verifyPan };

@@ -61,9 +61,10 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
   const [panVerifying, setPanVerifying] = useState(false);
   const [panVerifyMsg, setPanVerifyMsg] = useState('');   // status line under the PAN field
   const [panVerifyOk, setPanVerifyOk] = useState(false);
-  // Track the last PAN we actually fired a request for, so we don't re-verify
-  // the same value repeatedly (and don't re-fire on unrelated re-renders).
-  const lastVerifiedPan = useRef('');
+  // PAN value we've already DISPATCHED a request for (set synchronously before
+  // the network call). Guards against duplicate concurrent dispatches for the
+  // same value caused by re-renders, tab switches, or edit-and-retype races.
+  const dispatchedPan = useRef('');
   const debounceRef = useRef(null);
 
   // ── Aadhaar: digit-only, hard cap 12, store the RAW un-spaced value ─────────
@@ -80,30 +81,38 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
 
   const onPlainChange = (k) => (e) => update({ [k]: e.target.value });
 
-  // ── PAN name auto-fetch: when a structurally valid 10-char PAN is reached,
-  //    debounce then POST /api/kyc/verify-pan and auto-populate + lock the name.
+  // ── PAN name auto-fetch ─────────────────────────────────────────────────────
+  // Fires EXACTLY ONCE the moment a clean, full 10-char PAN pattern is locked in.
+  // The effect only depends on form.panNumber, so unrelated state changes (file
+  // uploads, etc.) never re-trigger it; `dispatchedPan` blocks duplicate calls
+  // for the same value; and a stale-response guard discards results for a PAN
+  // the user has since edited.
   useEffect(() => {
     const pan = (form.panNumber || '').toUpperCase();
 
-    // Reset transient status if the PAN is no longer a complete valid pattern.
+    // Not a complete valid pattern → reset transient status, fire nothing.
     if (!PAN_RE.test(pan)) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (panVerifyMsg) { setPanVerifyMsg(''); setPanVerifyOk(false); }
       return;
     }
-    // Already verified this exact PAN — nothing to do.
-    if (pan === lastVerifiedPan.current) return;
+    // Already dispatched (in-flight or completed) for this exact PAN — skip.
+    if (pan === dispatchedPan.current) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      // Mark as dispatched BEFORE the call so any re-render during the in-flight
+      // window cannot launch a second request for the same value.
+      dispatchedPan.current = pan;
       setPanVerifying(true);
       setPanVerifyOk(false);
       setPanVerifyMsg('Verifying your identity with income tax registry…');
       try {
         const { data } = await api.post('/kyc/verify-pan', { pan });
+        // Stale-response guard: ignore if the user changed the PAN meanwhile.
+        if (pan !== (form.panNumber || '').toUpperCase()) return;
         const result = data?.data || {};
         if (result.verified && result.name) {
-          lastVerifiedPan.current = pan;
           // Cashfree returns the full registered_name; split into first / last.
           const parts = String(result.name).trim().split(/\s+/);
           const firstName = parts.shift() || '';
@@ -115,11 +124,15 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
           toast.success('PAN verified — name auto-filled from income tax registry.');
         } else {
           // PAN not found / not valid — let the user re-check the number.
+          // Allow a retry for this same value by clearing the dispatch guard.
+          dispatchedPan.current = '';
           if (setNameLocked) setNameLocked(false);
           setPanVerifyOk(false);
           setPanVerifyMsg(result.message || 'This PAN could not be verified. Please re-check the number.');
         }
       } catch (err) {
+        // Transient failure — clear the guard so the user can retry the same PAN.
+        if (pan === (form.panNumber || '').toUpperCase()) dispatchedPan.current = '';
         if (setNameLocked) setNameLocked(false);
         setPanVerifyOk(false);
         setPanVerifyMsg(
