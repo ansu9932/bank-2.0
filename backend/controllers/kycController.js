@@ -34,16 +34,30 @@ exports.verifyPanController = async (req, res) => {
       message: result.message,
     }, result.verified ? 'PAN verified successfully.' : 'PAN verification completed.');
   } catch (err) {
-    // Honest failure mapping — never silently pass the user through.
+    // ── Expanded diagnostics: print the exact status + body shape Cashfree
+    //    returned so a structure/version mismatch is visible in Hostinger logs.
+    //    (panVerify already logs the raw body; this captures anything attached
+    //    to the thrown error too.) Never logs identity PII values.
+    const upstreamStatus = err?.response?.status ?? err?.status ?? 'n/a';
+    const upstreamBody = err?.response?.data ?? err?.body ?? null;
+    logger.error(
+      `[verify-pan] handler caught: code=${err.code || 'NONE'} msg=${err.message} `
+      + `upstreamStatus=${upstreamStatus} upstreamBody=${
+        (() => { try { return typeof upstreamBody === 'string' ? upstreamBody : JSON.stringify(upstreamBody); } catch { return String(upstreamBody); } })()
+      }`,
+    );
+    if (err.stack) logger.error(err.stack);
+
+    // Honest, catchable mapping — the Node thread always survives; we always
+    // return clean JSON, never an unhandled rejection.
     if (err.code === 'CASHFREE_NOT_CONFIGURED') {
-      logger.error('verify-pan: Cashfree credentials not configured.');
       return error(res, 'Identity verification is temporarily unavailable. Please try again shortly.', 503);
     }
+    // Gateway rejected / response mismatch → clean 400 JSON to the proxy
+    // (per ops preference) rather than a 502 the load balancer obscures.
     if (err.code === 'CASHFREE_UPSTREAM') {
-      logger.error(`verify-pan: Cashfree upstream failure: ${err.message}`);
-      return error(res, 'Could not reach the identity verification service. Please try again.', 502);
+      return badRequest(res, 'Could not complete PAN verification. Please re-check the number and try again.');
     }
-    logger.error(`verify-pan unexpected error: ${err.message}\n${err.stack}`);
-    return error(res, 'Could not verify PAN right now. Please try again.');
+    return badRequest(res, 'Could not verify PAN right now. Please try again.');
   }
 };
