@@ -40,10 +40,11 @@ const PAN_RESOURCE_PATH = process.env.CASHFREE_PAN_RESOURCE_PATH || '/pan';
 // caller supplies no real name we inject a neutral placeholder purely to satisfy
 // schema validation — the gateway still returns the true `registered_name`.
 const NAME_PLACEHOLDER = process.env.CASHFREE_PAN_NAME_PLACEHOLDER || 'Alister Bank Customer';
-// Cashfree requires a date-based API version header. Override via env if your
-// dashboard mandates a different one; the raw-body logging below will reveal
-// the exact required value if this is ever rejected.
-const DEFAULT_API_VERSION = '2023-08-01';
+// Cashfree requires a date-based API version header. Newer accounts expect a
+// current-era version (Cashfree's own Postman docs reference e.g. 2025-01-01);
+// an outdated value can itself trigger a 400 schema rejection. Override via env
+// to match your dashboard; the raw-body logging below reveals the required value.
+const DEFAULT_API_VERSION = '2025-01-01';
 
 /** JSON.stringify that never throws (handles circular / odd payloads). */
 function safeStringify(value) {
@@ -118,7 +119,10 @@ async function verifyPan(pan, name) {
   }
 
   // Unique, traceable id Cashfree echoes back and logs against this request.
-  const verificationId = `ALB-PAN-${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+  // MUST be ALPHANUMERIC ONLY — Cashfree's verification_id rejects hyphens/
+  // special chars (every doc example is plain alphanumeric, e.g. "test001"),
+  // and a hyphenated id is a likely cause of a 400 "invalid request" rejection.
+  const verificationId = `ALBPAN${randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
   // Satisfy the sync schema's required `name`. Real applicant name if supplied,
   // otherwise a neutral placeholder (we want the registry's name, not a match).
