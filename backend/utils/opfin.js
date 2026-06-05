@@ -21,14 +21,28 @@ const OPFIN_PEOPLE_URL = process.env.RAZORPAYX_PAYROLL_URL
 const REQUEST_TIMEOUT_MS = 20000;
 
 /**
- * Whether the Opfin payroll credentials are present.
+ * Resolve the RazorpayX/Opfin credentials with a defensive fallback so the
+ * module adapts to either env naming convention without code changes:
+ *   • API id : RAZORPAYX_API_ID  ⟶ falls back to RAZORPAYX_PAYROLL_API_ID
+ *   • secret : RAZORPAYX_API_KEY ⟶ falls back to RAZORPAYX_PAYROLL_API_KEY_SECRET
+ * Resolved at call-time (not module-load) so tests/runtime env changes are
+ * honoured, and so isConfigured() and buildAuth() can never drift apart.
+ * @returns {{ id: (string|undefined), key: (string|undefined) }}
+ */
+function resolveCredentials() {
+  return {
+    id: process.env.RAZORPAYX_API_ID || process.env.RAZORPAYX_PAYROLL_API_ID,
+    key: process.env.RAZORPAYX_API_KEY || process.env.RAZORPAYX_PAYROLL_API_KEY_SECRET,
+  };
+}
+
+/**
+ * Whether the Opfin payroll credentials are present (under either naming).
  * @returns {boolean}
  */
 function isConfigured() {
-  return Boolean(
-    process.env.RAZORPAYX_PAYROLL_API_ID
-    && process.env.RAZORPAYX_PAYROLL_API_KEY_SECRET
-  );
+  const { id, key } = resolveCredentials();
+  return Boolean(id && key);
 }
 
 /**
@@ -36,10 +50,8 @@ function isConfigured() {
  * @returns {{ id: string, key: string }}
  */
 function buildAuth() {
-  return {
-    id: process.env.RAZORPAYX_PAYROLL_API_ID,
-    key: process.env.RAZORPAYX_PAYROLL_API_KEY_SECRET,
-  };
+  const { id, key } = resolveCredentials();
+  return { id, key };
 }
 
 /**
