@@ -30,7 +30,16 @@ const logger = require('./logger');
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const REQUEST_TIMEOUT_MS = 15000;
-const PAN_RESOURCE_PATH = '/pan/advance';
+// Cashfree synchronous PAN verify endpoint. Base is '.../verification', so the
+// default resource '/pan' yields the documented '/verification/pan' URL
+// (https://www.cashfree.com/docs/api-reference/vrs/v2/pan/verify-pan-sync).
+// Override via env if your account uses a different product (e.g. '/pan/advance').
+const PAN_RESOURCE_PATH = process.env.CASHFREE_PAN_RESOURCE_PATH || '/pan';
+// The sync API's schema REQUIRES a `name` alongside `pan` (it computes a
+// name-match score). We're doing an identity LOOKUP, not a match, so when the
+// caller supplies no real name we inject a neutral placeholder purely to satisfy
+// schema validation — the gateway still returns the true `registered_name`.
+const NAME_PLACEHOLDER = process.env.CASHFREE_PAN_NAME_PLACEHOLDER || 'Alister Bank Customer';
 // Cashfree requires a date-based API version header. Override via env if your
 // dashboard mandates a different one; the raw-body logging below will reveal
 // the exact required value if this is ever rejected.
@@ -89,12 +98,15 @@ function makeError(code, message) {
  * Verify a PAN with Cashfree and extract the registered legal name.
  *
  * @param {string} pan 10-char PAN (case-insensitive; upper-cased internally).
+ * @param {string} [name] Optional applicant name. The sync API requires a
+ *   `name` field; when none is provided we inject NAME_PLACEHOLDER so schema
+ *   validation passes while the gateway still returns the true registered_name.
  * @returns {Promise<{verified:boolean, name:string|null, status:string, message:string, verificationId:string|null}>}
  *   Resolves for both "valid" and "invalid PAN" (a normal upstream outcome).
  * @throws {Error} with `.code` of CASHFREE_NOT_CONFIGURED | CASHFREE_UPSTREAM
  *   for config/network/upstream faults — never fabricate a pass on failure.
  */
-async function verifyPan(pan) {
+async function verifyPan(pan, name) {
   const normalized = String(pan || '').toUpperCase().trim();
 
   if (!isValidPanFormat(normalized)) {
@@ -108,11 +120,15 @@ async function verifyPan(pan) {
   // Unique, traceable id Cashfree echoes back and logs against this request.
   const verificationId = `ALB-PAN-${randomUUID().replace(/-/g, '').slice(0, 20)}`;
 
+  // Satisfy the sync schema's required `name`. Real applicant name if supplied,
+  // otherwise a neutral placeholder (we want the registry's name, not a match).
+  const requestName = (typeof name === 'string' && name.trim()) ? name.trim() : NAME_PLACEHOLDER;
+
   let response;
   try {
     response = await axios.post(
       `${baseUrl()}${PAN_RESOURCE_PATH}`,
-      { pan: normalized, verification_id: verificationId },
+      { pan: normalized, name: requestName, verification_id: verificationId },
       {
         headers: {
           'Content-Type': 'application/json',

@@ -11,17 +11,26 @@ const logger = require('../utils/logger');
    ────────────────────────────────────────────────────────────────────────── */
 
 // ─── Verify PAN & fetch registered name ───────────────────────────────────────
-// POST /api/kyc/verify-pan   Body: { pan }
+// POST /api/kyc/verify-pan   Body: { pan, name? }
+//
+// This endpoint is INTENTIONALLY standalone: it validates ONLY that `pan` is
+// present and a well-formed 10-char PAN. It does NOT inspect or require any
+// other onboarding fields (Aadhaar, address, etc.) and shares no validation
+// gate with the multi-step registration submit — a user can verify their PAN
+// the moment they type it, regardless of the rest of the form's state.
 exports.verifyPanController = async (req, res) => {
   try {
     const pan = String(req.body.pan || '').toUpperCase().trim();
+    // Optional real applicant name (not required). When absent, the util injects
+    // a neutral placeholder so Cashfree's schema validation passes.
+    const name = typeof req.body.name === 'string' ? req.body.name : undefined;
 
     if (!pan) return badRequest(res, 'PAN number is required.');
     if (!isValidPanFormat(pan)) {
       return badRequest(res, 'Enter a valid 10-character PAN (e.g. ABCDE1234F).');
     }
 
-    const result = await verifyPan(pan);
+    const result = await verifyPan(pan, name);
 
     // 200 covers both "valid" and "PAN not found" — both are normal outcomes the
     // client handles inline. Only the registered name + status are echoed back;
