@@ -30,11 +30,13 @@ if (typeof sweepTimer.unref === 'function') sweepTimer.unref();
 /**
  * Issue a new handshake token bound to the requesting IP.
  * @param {string} ip
+ * @param {string} [purpose='login'] Namespace so a login nonce can't be replayed
+ *   as a registration nonce (and vice-versa).
  * @returns {{ token: string, expiresIn: number }}
  */
-function issueHandshake(ip) {
+function issueHandshake(ip, purpose = 'login') {
   const token = crypto.randomBytes(32).toString('hex');
-  store.set(token, { expiresAt: Date.now() + TTL_MS, ip: ip || null, used: false });
+  store.set(token, { expiresAt: Date.now() + TTL_MS, ip: ip || null, used: false, purpose });
   return { token, expiresIn: Math.floor(TTL_MS / 1000) };
 }
 
@@ -43,13 +45,17 @@ function issueHandshake(ip) {
  * Returns a reason code so the caller can message precisely.
  * @param {string} token
  * @param {string} ip
+ * @param {string} [purpose='login'] Must match the purpose the token was issued
+ *   for; a mismatch is treated as an invalid token.
  * @returns {{ valid: boolean, reason?: 'missing'|'invalid'|'expired'|'used'|'ip_mismatch' }}
  */
-function consumeHandshake(token, ip) {
+function consumeHandshake(token, ip, purpose = 'login') {
   if (!token || typeof token !== 'string') return { valid: false, reason: 'missing' };
 
   const meta = store.get(token);
   if (!meta) return { valid: false, reason: 'invalid' };
+  // Cross-purpose replay protection (e.g. a login token submitted to onboarding).
+  if ((meta.purpose || 'login') !== purpose) { store.delete(token); return { valid: false, reason: 'invalid' }; }
   if (meta.used) { store.delete(token); return { valid: false, reason: 'used' }; }
   if (Date.now() > meta.expiresAt) { store.delete(token); return { valid: false, reason: 'expired' }; }
   // IP binding (soft): only enforce when both IPs are known. Proxies can shift

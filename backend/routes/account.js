@@ -9,6 +9,11 @@ router.post('/open',
   accountController.openAccount
 );
 
+// Ephemeral handshake nonce for the secure onboarding gateway (HDFC-style).
+// Wizard fetches this on mount, appends it to the URL, and echoes it as the
+// `x-registration-handshake` header on final submit.
+router.get('/registration-handshake', accountController.registrationHandshake);
+
 router.get('/verify-video-kyc/:token', accountController.verifyVideoKYCLink);
 router.post('/submit-video-kyc',
   videoUpload.single('video'),
