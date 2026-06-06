@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const adminController = require('../controllers/adminController');
+const requestController = require('../controllers/requestController');
 const { adminProtect, requireRole } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/security');
 
@@ -32,5 +33,9 @@ router.post('/transactions/:id/flag', requireRole('super_admin', 'admin'), admin
 router.get('/audit-logs', requireRole('super_admin', 'admin'), adminController.getAuditLogs);
 router.get('/tickets', adminController.getAdminTickets);
 router.put('/tickets/:id', adminController.updateTicket);
+
+// Service Requests (Debit Card / Cheque Book) — list + process (approve/decline)
+router.get('/service-requests', requestController.adminListRequests);
+router.patch('/service-requests/:id', requireRole('super_admin', 'admin'), requestController.adminProcessRequest);
 
 module.exports = router;

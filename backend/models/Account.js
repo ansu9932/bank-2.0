@@ -13,7 +13,9 @@ const Account = sequelize.define('Account', {
   hold_amount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   currency: { type: DataTypes.STRING(5), defaultValue: 'INR' },
   status: { type: DataTypes.ENUM('active', 'frozen', 'dormant', 'closed'), defaultValue: 'active' },
-  daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 500000.00 },
+  // Active daily transaction limit. New accounts start RESTRICTED at ₹5,000;
+  // an admin can raise it up to the ₹5,00,000 max ceiling via modifyUserCeiling.
+  daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 5000.00 },
   daily_transferred: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   last_limit_reset: { type: DataTypes.DATE },
   interest_rate: { type: DataTypes.DECIMAL(5, 2), defaultValue: 4.00 },
