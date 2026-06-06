@@ -8,6 +8,12 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 
+// Absolute lifespan of the login screen, mirroring the backend login handshake
+// TTL (exactly 10 minutes). If the page sits open/idle past this window, the
+// handshake the user holds is already dead server-side, so we proactively wipe
+// state and bounce to the public homepage.
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -18,10 +24,12 @@ export default function LoginPage() {
   // URL as ?h=, and echoed back on submit so the backend can block replays.
   const [handshakeToken, setHandshakeToken] = useState('');
   const fetchedRef = useRef(false);
+  // Wall-clock moment the handshake initialized; drives the idle-expiry timer.
+  const handshakeStartRef = useRef(0);
 
   // Navigation guard: wipe credentials/temp state if the user leaves the login
   // page, and redirect to the homepage on a non-whitelisted exit.
-  const { allowNavigation } = useEntryPageGuard({
+  const { allowNavigation, runCleanup } = useEntryPageGuard({
     resetState: () => { setForm({ username: '', password: '' }); setShowPwd(false); },
   });
 
@@ -34,6 +42,7 @@ export default function LoginPage() {
       const token = data?.data?.handshakeToken;
       if (token) {
         setHandshakeToken(token);
+        handshakeStartRef.current = Date.now();
         const url = new URL(window.location.href);
         url.searchParams.set('h', token);
         window.history.replaceState({}, '', url);
@@ -48,6 +57,30 @@ export default function LoginPage() {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     initHandshake();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Idle / expiry watchdog ─────────────────────────────────────────────────
+  // Poll elapsed time since the handshake initialized. Once the 10-minute login
+  // window is exceeded, forcefully break the active state: clear the in-memory
+  // form + transient storage/tokens, then redirect to the public homepage.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const startedAt = handshakeStartRef.current;
+      if (startedAt && Date.now() - startedAt > LOGIN_WINDOW_MS) {
+        clearInterval(id);
+        runCleanup();            // reset form + wipe session/local storage + cookies
+        setHandshakeToken('');
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('h');
+          window.history.replaceState({}, '', url);
+        } catch { /* ignore */ }
+        toast.error('Your secure login session expired. Redirecting to home…');
+        window.location.replace('/');
+      }
+    }, 15 * 1000); // check every 15s — cheap, and well within the 10-min window
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -76,6 +76,12 @@ export function getStepErrors(step, form, otpVerified) {
   return e;
 }
 
+// Absolute lifespan of the multi-step account creator, mirroring the backend
+// registration handshake TTL (exactly 40 minutes). If the wizard sits open/idle
+// past this window, the registration nonce the user holds is already dead
+// server-side, so we proactively wipe state and bounce to the public homepage.
+const REGISTRATION_WINDOW_MS = 40 * 60 * 1000;
+
 const initForm = {
   // Personal
   firstName: '', lastName: '', email: '', phone: '',
@@ -112,6 +118,8 @@ export default function AccountOpeningPage() {
   // backend can block replay / CSRF on the onboarding pipeline.
   const [handshakeToken, setHandshakeToken] = useState('');
   const handshakeFetchedRef = useRef(false);
+  // Wall-clock moment the handshake initialized; drives the idle-expiry timer.
+  const handshakeStartRef = useRef(0);
 
   // Mint a short-lived registration nonce and reflect it in the address bar so
   // the onboarding funnel behaves like an enterprise SSO redirect handshake.
@@ -121,6 +129,7 @@ export default function AccountOpeningPage() {
       const token = data?.data?.handshakeToken;
       if (token) {
         setHandshakeToken(token);
+        handshakeStartRef.current = Date.now();
         const url = new URL(window.location.href);
         url.searchParams.set('rt', token);
         window.history.replaceState({}, '', url);
@@ -142,7 +151,7 @@ export default function AccountOpeningPage() {
   // Navigation guard: if the user abandons onboarding (link, nav, back button,
   // refresh/close), wipe ALL in-memory registration vars + any temp signup
   // storage and redirect to the homepage on a non-whitelisted exit.
-  const { allowNavigation } = useEntryPageGuard({
+  const { allowNavigation, runCleanup } = useEntryPageGuard({
     resetState: () => {
       setForm(initForm);
       setStep(1);
@@ -153,6 +162,32 @@ export default function AccountOpeningPage() {
       setCustomerId('');
     },
   });
+
+  // ── Idle / expiry watchdog ─────────────────────────────────────────────────
+  // Poll elapsed time since the handshake initialized. Once the 40-minute
+  // onboarding window is exceeded, forcefully break the active state: clear all
+  // in-memory form inputs + transient storage/tokens, then redirect to the
+  // public homepage. Skipped after a successful submit (success screen).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (submitted) return;
+      const startedAt = handshakeStartRef.current;
+      if (startedAt && Date.now() - startedAt > REGISTRATION_WINDOW_MS) {
+        clearInterval(id);
+        runCleanup();            // reset wizard state + wipe session/local storage + cookies
+        setHandshakeToken('');
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('rt');
+          window.history.replaceState({}, '', url);
+        } catch { /* ignore */ }
+        toast.error('Your secure registration session expired. Redirecting to home…');
+        window.location.replace('/');
+      }
+    }, 30 * 1000); // check every 30s — cheap, and well within the 40-min window
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitted]);
 
   const updateForm = (updates) => setForm(prev => ({ ...prev, ...updates }));
 
