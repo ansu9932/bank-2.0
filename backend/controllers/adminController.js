@@ -7,7 +7,7 @@ const { generateAdminToken } = require('../middleware/auth');
 const {
   generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
 } = require('../utils/helpers');
-const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail } = require('../services/emailService');
+const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -380,6 +380,13 @@ exports.rejectKYC = async (req, res) => {
       priority: 'urgent',
     });
 
+    // Transactional rejection email — non-fatal (a mail hiccup never blocks the
+    // admin action or the status update).
+    if (user.email) {
+      sendKYCRejectedEmail(user.email, user.first_name || 'Customer', reason || 'Documents not acceptable')
+        .catch((e) => logger.error(`KYC rejection email failed (${user.email}): ${e.message}`));
+    }
+
     await createAuditLog({
       adminId: req.admin.id,
       userId: user.id,
@@ -451,6 +458,10 @@ exports.reviewKYC = async (req, res) => {
         type: 'kyc',
         priority: 'urgent',
       });
+      if (user.email) {
+        sendKYCRejectedEmail(user.email, user.first_name || 'Customer', reason || 'Biometric verification failed.')
+          .catch((e) => logger.error(`KYC rejection email failed (${user.email}): ${e.message}`));
+      }
       await createAuditLog({
         adminId: req.admin.id, userId: user.id, action: 'KYC_REVIEW_REJECTED',
         entityType: 'User', entityId: user.id, newValues: { reason }, ipAddress: req.ip, status: 'success',

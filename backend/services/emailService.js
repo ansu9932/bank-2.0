@@ -413,6 +413,26 @@ const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, chan
   return sendEmail({ to: email, subject: 'Alister Bank — Card Control Updated', html });
 };
 
+/**
+ * KYC rejection notice — sent when an admin flags a user's identity profile or
+ * documents as 'rejected'. Explains the verification could not be approved and
+ * guides them to re-upload clear, legible documents. Gmail-safe inline styles.
+ */
+const sendKYCRejectedEmail = async (email, name, reason) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#10060; Verification Not Approved')}
+    ${heading('KYC Verification Could Not Be Approved')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Thank you for submitting your KYC details to <strong>Alister Bank</strong>. After review, we were unable to approve your identity verification at this time.')}
+    ${infoBox(`<strong>Reason:</strong> ${reason || 'The submitted documents could not be verified.'}`)}
+    ${para('To proceed, please re-upload <strong>clear, legible, and valid</strong> verification documents, ensuring:')}
+    ${para('• All four corners of each document are visible<br/>• Text and photos are sharp and in focus (no glare or blur)<br/>• Details match the information on your application<br/>• Files are recent and not expired')}
+    ${para('Once you re-submit, our compliance team will review your application again promptly.')}
+    ${infoBox('&#128274; Need help? Contact Alister Bank support and we\'ll guide you through re-submission.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Action Needed: KYC Verification Not Approved', html });
+};
+
 module.exports = {
   sendEmail,
   sendOTPEmail,
@@ -427,4 +447,5 @@ module.exports = {
   sendCardRejectedEmail,
   sendCheckbookRejectedEmail,
   sendCardControlAlertEmail,
+  sendKYCRejectedEmail,
 };

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
 import { RiEyeLine, RiEyeOffLine, RiBankLine, RiLockLine, RiUserLine, RiShieldCheckLine } from 'react-icons/ri';
 import { login, clearError } from '../../store/slices/authSlice';
+import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 
@@ -13,12 +14,42 @@ export default function LoginPage() {
   const { loading, error } = useSelector(s => s.auth);
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPwd, setShowPwd] = useState(false);
+  // HDFC-style ephemeral handshake token. Fetched on mount, mirrored into the
+  // URL as ?h=, and echoed back on submit so the backend can block replays.
+  const [handshakeToken, setHandshakeToken] = useState('');
+  const fetchedRef = useRef(false);
 
   // Navigation guard: wipe credentials/temp state if the user leaves the login
   // page, and redirect to the homepage on a non-whitelisted exit.
   const { allowNavigation } = useEntryPageGuard({
     resetState: () => { setForm({ username: '', password: '' }); setShowPwd(false); },
   });
+
+  // ── Secure handshake bootstrap ───────────────────────────────────────────
+  // Mint a short-lived state token, then reflect it in the address bar so the
+  // login gateway behaves like an enterprise SSO redirect handshake.
+  const initHandshake = async () => {
+    try {
+      const { data } = await api.get('/auth/login-handshake');
+      const token = data?.data?.handshakeToken;
+      if (token) {
+        setHandshakeToken(token);
+        const url = new URL(window.location.href);
+        url.searchParams.set('h', token);
+        window.history.replaceState({}, '', url);
+      }
+    } catch {
+      // Non-fatal: surfaced on submit if still missing.
+      setHandshakeToken('');
+    }
+  };
+
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    initHandshake();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (error) { toast.error(error); dispatch(clearError()); }
@@ -27,11 +58,22 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.username || !form.password) { toast.error('Please fill all fields'); return; }
-    const result = await dispatch(login({ ...form }));
+    // Prefer in-state token; fall back to the URL param if state was reset.
+    const tokenFromUrl = new URLSearchParams(window.location.search).get('h');
+    const hToken = handshakeToken || tokenFromUrl || '';
+    if (!hToken) {
+      toast.error('Secure session not ready. Refreshing…');
+      await initHandshake();
+      return;
+    }
+    const result = await dispatch(login({ ...form, handshakeToken: hToken }));
     if (login.fulfilled.match(result)) {
       allowNavigation(); // sanctioned success exit → no redirect-home
       toast.success('Welcome back!');
       navigate('/dashboard');
+    } else {
+      // Handshake is single-use; on any failure mint a fresh one for the retry.
+      initHandshake();
     }
   };
 
