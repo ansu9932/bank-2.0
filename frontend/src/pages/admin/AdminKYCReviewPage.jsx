@@ -4,7 +4,7 @@ import {
   RiShieldCheckLine, RiCloseCircleLine, RiCheckboxCircleLine,
   RiRefreshLine, RiUserLine, RiTimeLine, RiAlertLine,
   RiFileShield2Line, RiImageLine, RiMailLine, RiPhoneLine,
-  RiMapPinLine,  RiLoader4Line,
+  RiMapPinLine, RiLoader4Line, RiIdCardLine,
   RiSearchLine, RiZoomInLine, RiCloseLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
