@@ -75,196 +75,261 @@ const sendEmail = async ({ to, subject, html, text }) => {
 };
 
 // ─── Email Templates ──────────────────────────────────────────────────────────
+//
+// Gmail-compatible architecture: Gmail (web + app) STRIPS <style> blocks and
+// most class selectors, so every visual rule below is INLINE and the layout is
+// built with nested <table> elements (the only reliably-rendered box model in
+// email clients). A single small <style> block is kept ONLY for the responsive
+// @media fallback; if Gmail drops it the inline widths still render correctly.
 
-const baseTemplate = (content) => `
-<!DOCTYPE html>
-<html lang="en">
+const BRAND = {
+  crimson: '#c8102e',
+  crimsonDark: '#8b0000',
+  ink: '#0d0d14',
+  panel: '#111118',
+  panelAlt: '#1a1a2e',
+  border: '#1e1e2e',
+  text: '#ffffff',
+  muted: '#a0a0b0',
+  faint: '#666666',
+};
+
+/**
+ * Render a premium, Gmail-safe email. `content` is a string of <tr> rows that
+ * slot into the central body table (each cell already inline-styled).
+ */
+const baseTemplate = (content) => `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
   <title>Alister Bank</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background:#0a0a0f; color:#ffffff; }
-    .wrapper { max-width:620px; margin:0 auto; padding:20px; }
-    .header { background:linear-gradient(135deg,#c8102e 0%,#8b0000 100%); padding:32px 40px; border-radius:16px 16px 0 0; text-align:center; }
-    .header img { height:40px; margin-bottom:12px; }
-    .header h1 { color:#fff; font-size:22px; font-weight:700; letter-spacing:1px; }
-    .header p { color:rgba(255,255,255,0.75); font-size:13px; margin-top:4px; }
-    .body { background:#111118; padding:36px 40px; border-left:1px solid #1e1e2e; border-right:1px solid #1e1e2e; }
-    .body h2 { font-size:20px; color:#ffffff; margin-bottom:16px; }
-    .body p { color:#a0a0b0; font-size:15px; line-height:1.7; margin-bottom:14px; }
-    .otp-box { background:linear-gradient(135deg,#1a0a10,#200d18); border:1px solid rgba(200,16,46,0.3); border-radius:12px; padding:24px; text-align:center; margin:24px 0; }
-    .otp-code { font-size:42px; font-weight:800; letter-spacing:12px; color:#c8102e; font-family:monospace; }
-    .otp-note { color:#666; font-size:12px; margin-top:10px; }
-    .btn { display:inline-block; background:linear-gradient(135deg,#c8102e,#8b0000); color:#fff; text-decoration:none; padding:14px 36px; border-radius:8px; font-weight:600; font-size:15px; margin:20px 0; }
-    .info-box { background:#1a1a2e; border-left:3px solid #c8102e; padding:16px 20px; border-radius:6px; margin:20px 0; }
-    .info-box p { color:#c0c0d0; font-size:14px; margin:0; }
-    .divider { border:none; border-top:1px solid #1e1e2e; margin:24px 0; }
-    .footer { background:#0d0d14; padding:24px 40px; border-radius:0 0 16px 16px; border:1px solid #1e1e2e; border-top:none; text-align:center; }
-    .footer p { color:#555; font-size:12px; line-height:1.6; }
-    .footer a { color:#c8102e; text-decoration:none; }
-    .anti-phish { background:#0a0a0f; border:1px solid #1e1e2e; border-radius:8px; padding:12px 16px; margin-top:16px; }
-    .anti-phish p { color:#666; font-size:11px; }
-    .highlight { color:#c8102e; font-weight:600; }
-    .badge { display:inline-block; background:rgba(200,16,46,0.15); color:#c8102e; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; margin-bottom:16px; }
-    .detail-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #1e1e2e; }
-    .detail-row:last-child { border-bottom:none; }
-    .detail-label { color:#666; font-size:13px; }
-    .detail-value { color:#fff; font-size:13px; font-weight:600; }
+    /* Responsive fallback only — all critical styling is inline below. */
+    @media only screen and (max-width:620px){
+      .alb-wrap{ width:100% !important; }
+      .alb-pad{ padding-left:24px !important; padding-right:24px !important; }
+      .alb-h1{ font-size:20px !important; }
+    }
   </style>
 </head>
-<body>
-  <div class="wrapper">
-    <div class="header">
-      <h1>⬡ ALISTER BANK</h1>
-      <p>Secure Banking · Trusted Worldwide</p>
-    </div>
-    ${content}
-    <div class="footer">
-      <p>© ${new Date().getFullYear()} Alister Bank. All rights reserved.</p>
-      <p>This is an automated message. Please do not reply to this email.</p>
-      <p><a href="#">Privacy Policy</a> &nbsp;|&nbsp; <a href="#">Terms of Service</a> &nbsp;|&nbsp; <a href="#">Contact Support</a></p>
-      <div class="anti-phish">
-        <p>🔒 <strong>Anti-Phishing Notice:</strong> Alister Bank will never ask for your password, PIN, or OTP via phone or email. If you did not request this email, please ignore it or <a href="#">report phishing</a>.</p>
-      </div>
-    </div>
-  </div>
+<body style="margin:0; padding:0; background-color:#0a0a0f; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%;">
+  <!-- Preheader spacing + outer background -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0a0a0f;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" class="alb-wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+
+          <!-- Header -->
+          <tr>
+            <td class="alb-pad" align="center" style="background:linear-gradient(135deg,${BRAND.crimson} 0%,${BRAND.crimsonDark} 100%); background-color:${BRAND.crimson}; padding:32px 40px; border-radius:16px 16px 0 0;">
+              <h1 class="alb-h1" style="margin:0; color:#ffffff; font-size:22px; font-weight:700; letter-spacing:1px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">&#11041; ALISTER BANK</h1>
+              <p style="margin:6px 0 0; color:rgba(255,255,255,0.78); font-size:13px;">Secure Banking &middot; Trusted Worldwide</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          ${content}
+
+          <!-- Footer -->
+          <tr>
+            <td class="alb-pad" align="center" style="background-color:${BRAND.ink}; padding:24px 40px; border-radius:0 0 16px 16px; border:1px solid ${BRAND.border}; border-top:none;">
+              <p style="margin:0 0 6px; color:#555555; font-size:12px; line-height:1.6;">&copy; ${new Date().getFullYear()} Alister Bank. All rights reserved.</p>
+              <p style="margin:0 0 6px; color:#555555; font-size:12px; line-height:1.6;">This is an automated message. Please do not reply to this email.</p>
+              <p style="margin:0 0 12px; font-size:12px;">
+                <a href="${process.env.FRONTEND_URL || '#'}/privacy" style="color:${BRAND.crimson}; text-decoration:none;">Privacy Policy</a>
+                &nbsp;|&nbsp;
+                <a href="${process.env.FRONTEND_URL || '#'}/terms" style="color:${BRAND.crimson}; text-decoration:none;">Terms of Service</a>
+                &nbsp;|&nbsp;
+                <a href="${process.env.FRONTEND_URL || '#'}/support" style="color:${BRAND.crimson}; text-decoration:none;">Contact Support</a>
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background-color:#0a0a0f; border:1px solid ${BRAND.border}; border-radius:8px; padding:12px 16px;">
+                    <p style="margin:0; color:#666666; font-size:11px; line-height:1.6;">&#128274; <strong style="color:#888;">Anti-Phishing Notice:</strong> Alister Bank will never ask for your password, PIN, or OTP via phone or email. If you did not request this email, please ignore it.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
+
+/**
+ * Body shell — wraps inner HTML in the dark content panel cell. Returns the
+ * <tr> the baseTemplate expects.
+ */
+const bodyShell = (innerHtml) => `
+  <tr>
+    <td class="alb-pad" style="background-color:${BRAND.panel}; padding:36px 40px; border-left:1px solid ${BRAND.border}; border-right:1px solid ${BRAND.border};">
+      ${innerHtml}
+    </td>
+  </tr>`;
+
+/** A pill badge. */
+const badge = (label) => `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;"><tr><td style="background-color:rgba(200,16,46,0.15); color:${BRAND.crimson}; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600;">${label}</td></tr></table>`;
+
+/** A crimson CTA button built bulletproof (table cell) so it renders in Gmail. */
+const button = (label, href) => `
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto;"><tr>
+    <td align="center" style="background:linear-gradient(135deg,${BRAND.crimson},${BRAND.crimsonDark}); background-color:${BRAND.crimson}; border-radius:8px;">
+      <a href="${href}" target="_blank" style="display:inline-block; padding:14px 36px; color:#ffffff; text-decoration:none; font-weight:600; font-size:15px; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${label}</a>
+    </td>
+  </tr></table>`;
+
+/** An info callout box. */
+const infoBox = (innerHtml) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;"><tr>
+    <td style="background-color:${BRAND.panelAlt}; border-left:3px solid ${BRAND.crimson}; border-radius:6px; padding:16px 20px;">
+      <p style="margin:0; color:#c0c0d0; font-size:14px; line-height:1.6;">${innerHtml}</p>
+    </td>
+  </tr></table>`;
+
+/** A label/value detail row for transaction-style tables. */
+const detailRow = (label, value, valueColor) => `
+  <tr>
+    <td style="padding:10px 0; border-bottom:1px solid ${BRAND.border}; color:${BRAND.faint}; font-size:13px;">${label}</td>
+    <td align="right" style="padding:10px 0; border-bottom:1px solid ${BRAND.border}; color:${valueColor || '#ffffff'}; font-size:13px; font-weight:600;">${value}</td>
+  </tr>`;
+
+const heading = (text) => `<h2 style="margin:0 0 16px; font-size:20px; color:#ffffff; font-weight:700; font-family:'Segoe UI',Arial,Helvetica,sans-serif;">${text}</h2>`;
+const para = (html) => `<p style="margin:0 0 14px; color:${BRAND.muted}; font-size:15px; line-height:1.7;">${html}</p>`;
+const hl = (text) => `<span style="color:${BRAND.crimson}; font-weight:600;">${text}</span>`;
 
 // ─── Individual Email Senders ─────────────────────────────────────────────────
 
 const sendOTPEmail = async (email, otp, purpose = 'verification') => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">🔐 Verification Required</div>
-      <h2>Your One-Time Password</h2>
-      <p>You requested an OTP for <strong>${purpose}</strong>. Use the code below to proceed:</p>
-      <div class="otp-box">
-        <div class="otp-code">${otp}</div>
-        <p class="otp-note">⏱ This OTP expires in <strong>5 minutes</strong></p>
-      </div>
-      <div class="info-box">
-        <p>⚠️ Never share this OTP with anyone — including Alister Bank staff. Our team will never ask for your OTP.</p>
-      </div>
-      <p style="color:#555; font-size:13px;">If you didn't request this OTP, your account may be at risk. Please contact support immediately.</p>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128272; Verification Required')}
+    ${heading('Your One-Time Password')}
+    ${para(`You requested an OTP for <strong>${purpose}</strong>. Use the code below to proceed:`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;"><tr>
+      <td align="center" style="background-color:#1a0a10; border:1px solid rgba(200,16,46,0.3); border-radius:12px; padding:24px;">
+        <div style="font-size:40px; font-weight:800; letter-spacing:10px; color:${BRAND.crimson}; font-family:'Courier New',monospace;">${otp}</div>
+        <p style="margin:10px 0 0; color:#666; font-size:12px;">&#9201; This OTP expires in <strong>5 minutes</strong></p>
+      </td>
+    </tr></table>
+    ${infoBox('&#9888;&#65039; Never share this OTP with anyone — including Alister Bank staff. Our team will never ask for your OTP.')}
+    <p style="margin:0; color:#555; font-size:13px;">If you didn't request this OTP, your account may be at risk. Please contact support immediately.</p>
+  `));
   return sendEmail({ to: email, subject: `${otp} — Your Alister Bank OTP (expires in 5 min)`, html });
 };
 
 const sendKYCUnderReviewEmail = async (email, name, customerId) => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">📋 Application Received</div>
-      <h2>Documents Under Review</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>Thank you for applying to <strong>Alister Bank</strong>. We have received your application and documents. Our KYC team is currently reviewing them.</p>
-      <div class="info-box">
-        <p><strong>Customer ID:</strong> ${customerId}</p>
-        <p style="margin-top:8px;">Please keep this ID safe for future reference.</p>
-      </div>
-      <p>You will receive a notification shortly to complete your <strong>Video KYC</strong> verification. This is a mandatory step to activate your account.</p>
-      <p>Expected review time: <span class="highlight">10–15 minutes</span></p>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128203; Application Received')}
+    ${heading('Documents Under Review')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Thank you for applying to <strong>Alister Bank</strong>. We have received your application and documents. Our KYC team is currently reviewing them.')}
+    ${infoBox(`<strong>Customer ID:</strong> ${customerId}<br/><span style="display:inline-block; margin-top:8px;">Please keep this ID safe for future reference.</span>`)}
+    ${para('You will receive a notification shortly to complete your <strong>Video KYC</strong> verification. This is a mandatory step to activate your account.')}
+    ${para(`Expected review time: ${hl('10–15 minutes')}`)}
+  `));
   return sendEmail({ to: email, subject: 'Alister Bank — Your Application is Under Review', html });
 };
 
 const sendVideoKYCEmail = async (email, name, kycLink) => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">🎥 Video KYC Required</div>
-      <h2>Complete Your Video KYC</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>Your documents have been reviewed. To proceed with account activation, please complete your <strong>Video KYC</strong> verification.</p>
-      <p style="text-align:center;">
-        <a href="${kycLink}" class="btn">Start Video KYC →</a>
-      </p>
-      <div class="info-box">
-        <p>⏱ This link expires in <strong>24 hours</strong>. Do not share this link with anyone.</p>
-      </div>
-      <p><strong>What you'll need:</strong></p>
-      <p>• Good lighting and a clear background<br/>• Your original ID document ready<br/>• A stable internet connection</p>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#127909; Video KYC Required')}
+    ${heading('Complete Your Video KYC')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Your documents have been reviewed. To proceed with account activation, please complete your <strong>Video KYC</strong> verification.')}
+    ${button('Start Video KYC →', kycLink)}
+    ${infoBox('&#9201; This link expires in <strong>24 hours</strong>. Do not share this link with anyone.')}
+    ${para('<strong>What you\'ll need:</strong>')}
+    ${para('• Good lighting and a clear background<br/>• Your original ID document ready<br/>• A stable internet connection')}
+  `));
   return sendEmail({ to: email, subject: 'Alister Bank — Complete Your Video KYC Now', html });
 };
 
 const sendAccountApprovedEmail = async (email, name, setupLink, accountNumber) => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">✅ Account Approved!</div>
-      <h2>Welcome to Alister Bank! 🎉</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>Congratulations! Your bank account has been <strong>approved and activated</strong>. You're now part of the Alister Bank family.</p>
-      <div class="info-box">
-        <p><strong>Account Number:</strong> ${accountNumber}</p>
-        <p style="margin-top:6px;"><strong>IFSC Code:</strong> ALST0000001</p>
-        <p style="margin-top:6px;"><strong>Bank:</strong> Alister Bank</p>
-      </div>
-      <p>Click the secure button below to set up your <strong>username, password, and security PIN</strong>:</p>
-      <p style="text-align:center;">
-        <a href="${setupLink}" class="btn">Set Up My Account →</a>
-      </p>
-      <div class="info-box">
-        <p>⏱ This setup link expires in <strong>24 hours</strong>. Please complete setup immediately.</p>
-      </div>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#9989; Account Approved!')}
+    ${heading('Welcome to Alister Bank! 🎉')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Congratulations! Your bank account has been <strong>approved and activated</strong>. You\'re now part of the Alister Bank family.')}
+    ${infoBox(`<strong>Account Number:</strong> ${accountNumber}<br/><span style="display:inline-block; margin-top:6px;"><strong>IFSC Code:</strong> ALST0000001</span><br/><span style="display:inline-block; margin-top:6px;"><strong>Bank:</strong> Alister Bank</span>`)}
+    ${para('Click the secure button below to set up your <strong>username, password, and security PIN</strong>:')}
+    ${button('Set Up My Account →', setupLink)}
+    ${infoBox('&#9201; This setup link expires in <strong>24 hours</strong>. Please complete setup immediately.')}
+  `));
   return sendEmail({ to: email, subject: 'Alister Bank — Your Account is Approved! Set Up Now', html });
 };
 
 const sendLoginAlertEmail = async (email, name, loginData) => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">🔔 Login Detected</div>
-      <h2>New Login to Your Account</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>A new login was detected on your Alister Bank account.</p>
-      <div style="background:#1a1a2e; border-radius:10px; padding:20px; margin:20px 0;">
-        <div class="detail-row"><span class="detail-label">Date & Time</span><span class="detail-value">${loginData.time}</span></div>
-        <div class="detail-row"><span class="detail-label">IP Address</span><span class="detail-value">${loginData.ip}</span></div>
-        <div class="detail-row"><span class="detail-label">Device</span><span class="detail-value">${loginData.device}</span></div>
-        <div class="detail-row"><span class="detail-label">Location</span><span class="detail-value">${loginData.location || 'Unknown'}</span></div>
-      </div>
-      <p>If this was you, no action is needed. If you don't recognize this login, please change your password immediately.</p>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128276; Login Detected')}
+    ${heading('New Login to Your Account')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('A new login was detected on your Alister Bank account.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Date &amp; Time', loginData.time)}
+      ${detailRow('IP Address', loginData.ip)}
+      ${detailRow('Device', loginData.device)}
+      ${detailRow('Location', loginData.location || 'Unknown')}
+    </table>
+    ${para('If this was you, no action is needed. If you don\'t recognize this login, please change your password immediately.')}
+  `));
   return sendEmail({ to: email, subject: 'Alister Bank — New Login Detected', html });
 };
 
 const sendTransferAlertEmail = async (email, name, txData) => {
   const isDebit = txData.type === 'debit';
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">${isDebit ? '💸 Money Sent' : '💰 Money Received'}</div>
-      <h2>Transaction ${isDebit ? 'Debit' : 'Credit'} Alert</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>A transaction has been ${isDebit ? 'debited from' : 'credited to'} your account.</p>
-      <div style="background:#1a1a2e; border-radius:10px; padding:20px; margin:20px 0;">
-        <div class="detail-row"><span class="detail-label">Amount</span><span class="detail-value" style="color:${isDebit ? '#ef4444' : '#22c55e'}; font-size:18px;">₹${txData.amount}</span></div>
-        <div class="detail-row"><span class="detail-label">Reference</span><span class="detail-value">${txData.reference}</span></div>
-        <div class="detail-row"><span class="detail-label">${isDebit ? 'To Account' : 'From'}</span><span class="detail-value">${txData.counterparty}</span></div>
-        <div class="detail-row"><span class="detail-label">Mode</span><span class="detail-value">${txData.mode}</span></div>
-        <div class="detail-row"><span class="detail-label">Balance</span><span class="detail-value">₹${txData.balance}</span></div>
-        <div class="detail-row"><span class="detail-label">Date & Time</span><span class="detail-value">${txData.time}</span></div>
-      </div>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge(isDebit ? '&#128184; Money Sent' : '&#128176; Money Received')}
+    ${heading(`Transaction ${isDebit ? 'Debit' : 'Credit'} Alert`)}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`A transaction has been ${isDebit ? 'debited from' : 'credited to'} your account.`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Amount', `₹${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
+      ${detailRow('Reference', txData.reference)}
+      ${detailRow(isDebit ? 'To Account' : 'From', txData.counterparty)}
+      ${detailRow('Mode', txData.mode)}
+      ${detailRow('Balance', `₹${txData.balance}`)}
+      ${detailRow('Date &amp; Time', txData.time)}
+    </table>
+  `));
   return sendEmail({ to: email, subject: `Alister Bank — ${isDebit ? 'Debit' : 'Credit'} Alert: ₹${txData.amount}`, html });
 };
 
 const sendPasswordResetEmail = async (email, name, resetLink) => {
-  const html = baseTemplate(`
-    <div class="body">
-      <div class="badge">🔑 Password Reset</div>
-      <h2>Reset Your Password</h2>
-      <p>Dear <span class="highlight">${name}</span>,</p>
-      <p>We received a request to reset your Alister Bank password. Click the button below to proceed:</p>
-      <p style="text-align:center;">
-        <a href="${resetLink}" class="btn">Reset Password →</a>
-      </p>
-      <div class="info-box">
-        <p>⏱ This link expires in <strong>5 minutes</strong>. If you did not request a password reset, please ignore this email.</p>
-      </div>
-    </div>`);
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128273; Password Reset')}
+    ${heading('Reset Your Password')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('We received a request to reset your Alister Bank password. Click the button below to proceed:')}
+    ${button('Reset Password →', resetLink)}
+    ${infoBox('&#9201; This link expires in <strong>5 minutes</strong>. If you did not request a password reset, please ignore this email.')}
+  `));
   return sendEmail({ to: email, subject: 'Alister Bank — Password Reset Request', html });
+};
+
+/**
+ * Service-request confirmation (debit card / cheque book). Sent when a request
+ * passes the duplicate gate. `serviceLabel` is human-readable (e.g. "Debit Card").
+ */
+const sendServiceRequestEmail = async (email, name, { serviceLabel, requestId, createdAt }) => {
+  const when = createdAt ? new Date(createdAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128221; Request Received')}
+    ${heading(`Your ${serviceLabel} Request is Under Review`)}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`We've received your request for a <strong>${serviceLabel}</strong>. Our team is reviewing it and will update you as it progresses.`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Service', serviceLabel)}
+      ${detailRow('Reference', requestId)}
+      ${detailRow('Status', 'Pending Review', '#f59e0b')}
+      ${detailRow('Requested On', when)}
+    </table>
+    ${infoBox('You\'ll receive another notification once your request has been processed. No action is needed from you right now.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — ${serviceLabel} Request Received`, html });
 };
 
 module.exports = {
@@ -276,4 +341,5 @@ module.exports = {
   sendLoginAlertEmail,
   sendTransferAlertEmail,
   sendPasswordResetEmail,
+  sendServiceRequestEmail,
 };

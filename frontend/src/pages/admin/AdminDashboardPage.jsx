@@ -21,9 +21,15 @@ import {
   RiArrowDownLine,
   RiShieldLine,
   RiFlagLine,
+  RiBankCard2Line,
+  RiFileList3Line,
+  RiCheckboxCircleLine,
+  RiCloseCircleLine,
+  RiLoader4Line,
 } from 'react-icons/ri';
 import api from '../../services/api';
 import { format, formatDistanceToNow } from 'date-fns';
+import toast from 'react-hot-toast';
 
 
 // ─── Safe date helpers (identical to DashboardPage — no shared module needed) ─
@@ -314,12 +320,12 @@ function AdminTopBar({ adminInfo, onRefresh, refreshing }) {
           </div>
           <div>
             <h1
-              className="font-display font-700 text-white text-lg leading-tight"
+              className="font-display font-700 text-white text-base sm:text-lg leading-tight truncate"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
               Admin Dashboard
             </h1>
-            <p className="text-dark-300 text-xs">
+            <p className="hidden sm:block text-dark-300 text-xs">
               {safeFormat(new Date().toISOString(), 'EEEE, dd MMMM yyyy', 'Today')}
             </p>
           </div>
@@ -668,6 +674,185 @@ function useAdminDashboardData() {
 }
 
 
+// ─── Service Requests management panel (Feature 4) ────────────────────────────
+/**
+ * Admin panel for Debit Card / Cheque Book service requests.
+ * Lists requests from GET /admin/service-requests and lets an admin
+ * process / approve / decline via PATCH /admin/service-requests/:id.
+ * Fully responsive: a desktop table (sm+) collapses to stacked cards on mobile.
+ */
+const REQ_STATUS_BADGE = {
+  pending    : 'badge-warning',
+  processing : 'badge-info',
+  dispatched : 'badge-success',
+  delivered  : 'badge-success',
+  cancelled  : 'badge-danger',
+};
+const REQ_TYPE_LABEL = { debit_card: 'Debit Card', cheque_book: 'Cheque Book' };
+
+function ServiceRequestsPanel() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [statusFilter, setStatusFilter] = useState('pending');
+  const [actingId, setActingId] = useState(null);
+
+  const fetchRequests = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = statusFilter ? { status: statusFilter } : {};
+      const { data } = await api.get('/admin/service-requests', { params });
+      setRequests(data?.data?.requests ?? []);
+    } catch (err) {
+      console.error('[ServiceRequestsPanel] fetch error:', err);
+      toast.error(err?.response?.data?.message || 'Failed to load service requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+
+  const act = async (id, action) => {
+    setActingId(id);
+    try {
+      const { data } = await api.patch(`/admin/service-requests/${id}`, { action });
+      toast.success(data?.message || `Request ${action}d.`);
+      await fetchRequests();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || `Could not ${action} the request.`);
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const userName = (u) => (u ? `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email : '—');
+  const isActive = (s) => s === 'pending' || s === 'processing';
+
+  const FILTERS = [
+    { key: 'pending', label: 'Pending' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'dispatched', label: 'Approved' },
+    { key: 'cancelled', label: 'Declined' },
+    { key: '', label: 'All' },
+  ];
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-5 py-4 border-b border-white/[0.05]">
+        <div className="flex items-center gap-2">
+          <RiBankCard2Line className="text-brand-400 text-lg" />
+          <p className="text-white font-semibold text-sm">Service Requests</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key || 'all'}
+                type="button"
+                onClick={() => setStatusFilter(f.key)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                  statusFilter === f.key
+                    ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40'
+                    : 'bg-white/[0.03] text-dark-300 border border-white/[0.06] hover:text-white'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={fetchRequests}
+            disabled={loading}
+            className="p-1.5 rounded-lg hover:bg-white/[0.05] text-dark-200 hover:text-white transition-colors disabled:opacity-40"
+            aria-label="Refresh service requests"
+          >
+            <RiRefreshLine className={`text-base ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop column headers */}
+      <div className="hidden md:grid grid-cols-12 gap-2 px-5 py-2 border-b border-white/[0.04] text-dark-400 text-xs uppercase tracking-wide">
+        <div className="col-span-3">Customer</div>
+        <div className="col-span-2">Type</div>
+        <div className="col-span-2">Status</div>
+        <div className="col-span-2">Requested</div>
+        <div className="col-span-3 text-right">Actions</div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <div className="spinner" style={{ width: 28, height: 28, borderWidth: 3 }} />
+        </div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-10">
+          <RiFileList3Line className="text-dark-400 text-4xl mx-auto mb-2" />
+          <p className="text-dark-400 text-sm">No {statusFilter || ''} service requests.</p>
+        </div>
+      ) : (
+        <div className="px-3 sm:px-5">
+          {requests.map((r) => {
+            const acting = actingId === r.id;
+            return (
+              <div
+                key={r.id}
+                className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-2 md:items-center py-3 border-b border-white/[0.04] last:border-0"
+              >
+                {/* Customer */}
+                <div className="md:col-span-3 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{userName(r.user)}</p>
+                  <p className="text-dark-400 text-xs truncate">{r.user?.email || '—'}</p>
+                </div>
+                {/* Type */}
+                <div className="md:col-span-2">
+                  <span className="text-dark-200 text-xs">{REQ_TYPE_LABEL[r.request_type] || r.request_type}</span>
+                </div>
+                {/* Status */}
+                <div className="md:col-span-2">
+                  <span className={`badge ${REQ_STATUS_BADGE[r.status] || 'badge-info'} text-[10px]`}>
+                    {r.status}
+                  </span>
+                </div>
+                {/* Requested */}
+                <div className="md:col-span-2">
+                  <p className="text-dark-300 text-xs">{safeFormat(r.createdAt || r.created_at, 'dd MMM yyyy', 'N/A')}</p>
+                </div>
+                {/* Actions */}
+                <div className="md:col-span-3 flex items-center gap-2 md:justify-end flex-wrap">
+                  {isActive(r.status) ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => act(r.id, 'approve')}
+                        disabled={acting}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500/15 text-green-300 hover:bg-green-500/25 text-xs font-medium transition-colors disabled:opacity-40"
+                      >
+                        {acting ? <RiLoader4Line className="animate-spin" /> : <RiCheckboxCircleLine />} Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => act(r.id, 'decline')}
+                        disabled={acting}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 text-xs font-medium transition-colors disabled:opacity-40"
+                      >
+                        {acting ? <RiLoader4Line className="animate-spin" /> : <RiCloseCircleLine />} Decline
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-dark-400 text-xs">No action needed</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ─── Main page component ──────────────────────────────────────────────────────
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -995,6 +1180,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Service Requests management (Debit Card / Cheque Book) ────── */}
+        <ServiceRequestsPanel />
 
         {/* ── Quick-access action grid ─────────────────────────────────── */}
         <div className="glass-card p-5">

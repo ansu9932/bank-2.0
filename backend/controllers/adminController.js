@@ -236,6 +236,9 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'INR',
       status: 'active',
+      // New accounts start with a RESTRICTED ₹5,000 active daily limit (max
+      // potential ceiling is ₹5,00,000). An admin raises it via modifyUserCeiling.
+      daily_transfer_limit: 5000.00,
     });
 
     // Send approval email with setup link
@@ -402,6 +405,8 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'INR',
         status: 'active',
+        // Restricted ₹5,000 active daily limit by default (₹5,00,000 max ceiling).
+        daily_transfer_limit: 5000.00,
       });
     } else {
       await account.update({ status: 'active' });
@@ -650,8 +655,9 @@ exports.modifyUserCeiling = async (req, res) => {
     if (Number.isNaN(newCeiling) || newCeiling < 0) {
       return badRequest(res, 'Please provide a valid transfer ceiling (₹0 or greater).');
     }
-    if (newCeiling > 100000000) {
-      return badRequest(res, 'Transfer ceiling cannot exceed ₹10,00,00,000.');
+    // The maximum potential daily ceiling for any account is ₹5,00,000.
+    if (newCeiling > 500000) {
+      return badRequest(res, 'Daily transfer ceiling cannot exceed ₹5,00,000.');
     }
 
     const account = await Account.findOne({ where: { user_id: req.params.userId } });

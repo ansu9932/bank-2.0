@@ -64,6 +64,7 @@ app.use('/api/account', require('./routes/account'));
 app.use('/api/kyc', require('./routes/kyc'));
 app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/payments', require('./routes/payment'));
+app.use('/api/requests', require('./routes/requests'));
 app.use('/api/admin', require('./routes/admin'));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
