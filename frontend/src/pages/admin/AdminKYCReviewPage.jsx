@@ -14,9 +14,18 @@ import { format } from 'date-fns';
 // ─── Theme tokens ─────────────────────────────────────────────────────────────
 const NEON = { green: '#10b981', cyan: '#06b6d4', red: '#ef4444', amber: '#f59e0b' };
 
-// Backend origin for static /uploads assets (strip the trailing /api from the
-// configured API base; falls back to same-origin in dev via the vite proxy).
-const IMG_ORIGIN = String(import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+// Backend origin for static /uploads assets. Prefer the configured API base
+// (minus the trailing /api); fall back to the production backend domain so the
+// asset links are ALWAYS absolute to the Node backend and never resolve
+// relative to the frontend static host (which would 404 the images/videos).
+// The backend exposes these under express.static('/uploads'):
+//   documents → /uploads/documents/{filename}
+//   selfies   → /uploads/selfies/{filename}
+//   videos    → /uploads/kyc-videos/{filename}
+// document_url already carries the correct sub-folder (sliced from file_path).
+const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+const IMG_ORIGIN =
+  String(import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '') || BACKEND_ORIGIN;
 
 // Safe date formatter — never throws on null/invalid timestamps.
 const safeDate = (value, pattern = 'dd MMM yyyy, HH:mm', fallback = 'Recent') => {
@@ -140,14 +149,27 @@ function SnapshotLightbox({ open, src, label, applicant, onClose }) {
               </span>
               {applicant && <span className="text-white/40 text-xs">· {applicant}</span>}
             </div>
-            <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl flex items-center justify-center border text-white/70 hover:text-white transition-colors"
-              style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
-              aria-label="Close full-size view"
-            >
-              <RiCloseLine size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border text-[11px] font-semibold tracking-wide uppercase transition-colors"
+                style={{ borderColor: `${NEON.cyan}66`, background: `${NEON.cyan}14`, color: NEON.cyan }}
+                aria-label="Open the original document in a new browser tab"
+              >
+                <RiFileShield2Line size={14} /> Open Original
+              </a>
+              <button
+                onClick={onClose}
+                className="w-9 h-9 rounded-xl flex items-center justify-center border text-white/70 hover:text-white transition-colors"
+                style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
+                aria-label="Close full-size view"
+              >
+                <RiCloseLine size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Framed image */}
