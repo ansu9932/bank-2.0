@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest } = require('../models');
@@ -10,6 +12,16 @@ const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { paginate } = require('../utils/helpers');
+
+// ─── Shared: map a stored document path to a public /uploads web path ─────────
+// Normalizes Windows separators and slices from "uploads/…" so the value works
+// with the express.static('/uploads') mount regardless of how it was stored.
+const toWebPath = (p) => {
+  if (!p) return null;
+  const norm = String(p).replace(/\\/g, '/');
+  const m = norm.match(/uploads\/.*/);
+  return m ? `/${m[0]}` : norm;
+};
 
 // ─── Admin Login ──────────────────────────────────────────────────────────────
 exports.adminLogin = async (req, res) => {
@@ -186,9 +198,62 @@ exports.getUserDetails = async (req, res) => {
       ],
     });
     if (!user) return notFound(res, 'User not found.');
-    return success(res, { user });
+
+    // Enrich KYC documents with a resolvable web URL + secure stream path so the
+    // admin UI can render direct view links (with a clean fallback when empty).
+    const json = user.toJSON();
+    json.documents = (json.documents || []).map((d) => ({
+      ...d,
+      document_url: toWebPath(d.file_path),
+      // Authenticated stream endpoint (admin-token protected) as a hardened
+      // alternative to the static path.
+      secure_url: `/api/admin/users/${user.id}/documents/${d.id}`,
+      has_file: Boolean(d.file_path),
+    }));
+
+    return success(res, { user: json });
   } catch (err) {
     return error(res, 'Failed to fetch user details.');
+  }
+};
+
+// ─── Stream a user's KYC document (admin-only, role-protected) ────────────────
+// GET /api/admin/users/:id/documents/:docId
+// Serves the file through admin auth instead of relying solely on the public
+// static mount, so KYC assets require a valid admin token to retrieve.
+exports.getUserDocument = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+
+    const doc = await KYCDocument.findOne({ where: { id: docId, user_id: id } });
+    if (!doc) return notFound(res, 'Document not found.');
+    if (!doc.file_path) return notFound(res, 'No file is attached to this document.');
+
+    // Resolve the absolute path and CONTAIN it within the uploads directory to
+    // prevent any path-traversal escape.
+    const uploadsRoot = path.resolve(__dirname, '..', 'uploads');
+    const webRel = toWebPath(doc.file_path) || '';
+    const relInsideUploads = webRel.replace(/^\/?uploads\/?/, '');
+    const absPath = path.resolve(uploadsRoot, relInsideUploads);
+    if (!absPath.startsWith(uploadsRoot) || !fs.existsSync(absPath)) {
+      return notFound(res, 'Document file is no longer available.');
+    }
+
+    createAuditLog({
+      adminId: req.admin?.id,
+      userId: id,
+      action: 'ADMIN_VIEWED_KYC_DOCUMENT',
+      entityType: 'KYCDocument',
+      entityId: docId,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Admin viewed ${doc.document_type} document.`,
+    }).catch(() => {});
+
+    return res.sendFile(absPath);
+  } catch (err) {
+    logger.error(`getUserDocument error: ${err.message}`);
+    return error(res, 'Failed to retrieve the document.');
   }
 };
 
@@ -333,13 +398,6 @@ exports.rejectKYC = async (req, res) => {
 };
 
 // ─── KYC Review Queue (video_kyc_pending + under_review, with documents) ──────
-const toWebPath = (p) => {
-  if (!p) return null;
-  const norm = String(p).replace(/\\/g, '/');
-  const m = norm.match(/uploads\/.*/);
-  return m ? `/${m[0]}` : norm;
-};
-
 exports.getKYCQueue = async (req, res) => {
   try {
     const users = await User.findAll({

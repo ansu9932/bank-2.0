@@ -5,10 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RiEyeLine, RiEyeOffLine, RiBankLine, RiLockLine, RiUserLine, RiShieldCheckLine } from 'react-icons/ri';
 import { login, clearError } from '../../store/slices/authSlice';
 import toast from 'react-hot-toast';
-import Turnstile from '../../components/Turnstile';
-
-// Cloudflare Turnstile public site key (env-driven, with a safe public fallback).
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '0x4AAAAAADeCiQG8uA27CtkY';
+import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 
 export default function LoginPage() {
   const dispatch = useDispatch();
@@ -16,7 +13,12 @@ export default function LoginPage() {
   const { loading, error } = useSelector(s => s.auth);
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPwd, setShowPwd] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState('');
+
+  // Navigation guard: wipe credentials/temp state if the user leaves the login
+  // page, and redirect to the homepage on a non-whitelisted exit.
+  const { allowNavigation } = useEntryPageGuard({
+    resetState: () => { setForm({ username: '', password: '' }); setShowPwd(false); },
+  });
 
   useEffect(() => {
     if (error) { toast.error(error); dispatch(clearError()); }
@@ -25,10 +27,9 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.username || !form.password) { toast.error('Please fill all fields'); return; }
-    // Block submission entirely until the Turnstile bot challenge is solved.
-    if (!turnstileToken) { toast.error('Please complete the security verification.'); return; }
-    const result = await dispatch(login({ ...form, turnstileToken }));
+    const result = await dispatch(login({ ...form }));
     if (login.fulfilled.match(result)) {
+      allowNavigation(); // sanctioned success exit → no redirect-home
       toast.success('Welcome back!');
       navigate('/dashboard');
     }
@@ -150,18 +151,9 @@ export default function LoginPage() {
                 </Link>
               </div>
 
-              {/* Cloudflare Turnstile bot challenge — must pass before login */}
-              <div className="flex justify-center pt-1">
-                <Turnstile
-                  siteKey={TURNSTILE_SITE_KEY}
-                  theme="dark"
-                  onVerify={setTurnstileToken}
-                  onExpire={() => setTurnstileToken('')}
-                  onError={() => setTurnstileToken('')}
-                />
-              </div>
+              {/* Cloudflare Turnstile removed — direct submission to core endpoints. */}
 
-              <button type="submit" disabled={loading || !turnstileToken} className="btn-primary w-full py-3.5 mt-2">
+              <button type="submit" disabled={loading} className="btn-primary w-full py-3.5 mt-2">
                 {loading ? <><div className="spinner w-4 h-4" /> Signing in...</> : 'Sign In'}
               </button>
             </form>

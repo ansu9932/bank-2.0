@@ -14,6 +14,8 @@ router.get('/dashboard', adminController.getDashboardStats);
 // Users
 router.get('/users', adminController.getUsers);
 router.get('/users/:id', adminController.getUserDetails);
+// Stream a user's KYC document (Aadhaar/PAN/passport) — admin-token + role protected.
+router.get('/users/:id/documents/:docId', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.getUserDocument);
 router.post('/users/:id/approve-kyc', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.approveKYC);
 router.post('/users/:id/reject-kyc', requireRole('super_admin', 'admin', 'kyc_officer'), adminController.rejectKYC);
 
