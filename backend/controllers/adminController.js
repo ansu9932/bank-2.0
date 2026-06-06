@@ -1,11 +1,11 @@
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink } = require('../models');
+const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest } = require('../models');
 const { generateAdminToken } = require('../middleware/auth');
 const {
   generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
 } = require('../utils/helpers');
-const { sendAccountApprovedEmail, sendVideoKYCEmail } = require('../services/emailService');
+const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -176,6 +176,13 @@ exports.getUserDetails = async (req, res) => {
       include: [
         { model: Account, as: 'account' },
         { model: KYCDocument, as: 'documents' },
+        {
+          model: CardRequest,
+          as: 'cardRequests',
+          // Never expose the raw PAN/CVV to the admin UI.
+          attributes: ['id', 'request_type', 'status', 'card_network', 'card_tier', 'issuance_fee', 'createdAt'],
+          required: false,
+        },
       ],
     });
     if (!user) return notFound(res, 'User not found.');
@@ -538,6 +545,20 @@ exports.manualTransaction = async (req, res) => {
       ipAddress: req.ip,
       status: 'success',
     });
+
+    // Transaction alert email — notify the user of this credit/debit event.
+    User.findByPk(req.params.id).then((u) => {
+      if (!u?.email) return;
+      return sendTransferAlertEmail(u.email, u.first_name || 'Customer', {
+        type: type === 'debit' ? 'debit' : 'credit',
+        amount: parsedAmount.toFixed(2),
+        reference: 'Adjustment',
+        counterparty: 'Alister Bank',
+        mode: 'SYSTEM',
+        balance: balanceAfter.toFixed(2),
+        time: new Date().toLocaleString('en-IN'),
+      });
+    }).catch((e) => logger.error(`Manual-transaction email failed: ${e.message}`));
 
     return success(res, { newBalance: balanceAfter }, `₹${parsedAmount} ${type}ed successfully.`);
   } catch (err) {

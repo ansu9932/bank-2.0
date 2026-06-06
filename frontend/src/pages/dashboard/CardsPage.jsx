@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDispatch } from 'react-redux';
 import {
   RiBankCard2Line, RiVisaLine, RiMastercardLine, RiAddLine, RiCloseLine,
   RiLoader4Line, RiShieldCheckLine, RiSnowyLine, RiBankLine, RiGlobalLine,
   RiStore2Line, RiCheckLine, RiLock2Line, RiInformationLine,
+  RiEyeLine, RiEyeOffLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
 import { fetchAccount } from '../../store/slices/accountSlice';
@@ -28,9 +29,13 @@ const NETWORKS = ['Visa', 'Mastercard'];
 const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 // ─── Premium card visual (tier-themed) ────────────────────────────────────────
-function CardVisual({ card }) {
+function CardVisual({ card, revealed, onEyeClick }) {
   const tier = TIER_MAP[card.tier] || TIERS[0];
   const frozen = card.controls?.frozen;
+  const isActive = card.status === 'active';
+  // When revealed, show the full PAN/expiry/CVV returned by the secure endpoint.
+  const displayNumber = revealed?.formattedNumber || card.maskedNumber || 'XXXX XXXX XXXX XXXX';
+  const displayExpiry = revealed?.expiry || (isActive ? '••/••' : (card.expiry || '••/••'));
   return (
     <div
       className="relative w-full max-w-md mx-auto rounded-2xl p-6 text-white overflow-hidden"
@@ -67,14 +72,28 @@ function CardVisual({ card }) {
       <div className="mt-6 w-11 h-8 rounded-md"
         style={{ background: 'linear-gradient(135deg,#d4af37,#f5e7a0)', boxShadow: 'inset 0 0 4px rgba(0,0,0,0.4)' }} />
 
-      <p className="mt-4 text-lg sm:text-xl font-mono tracking-[0.18em]">
-        {card.maskedNumber || 'XXXX XXXX XXXX XXXX'}
-      </p>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="text-lg sm:text-xl font-mono tracking-[0.18em]">{displayNumber}</p>
+        {isActive && (
+          <button
+            type="button"
+            onClick={onEyeClick}
+            aria-label={revealed ? 'Hide card details' : 'Reveal card details'}
+            className="z-20 flex-shrink-0 p-2 rounded-lg bg-black/25 hover:bg-black/40 transition-colors"
+          >
+            {revealed ? <RiEyeOffLine className="text-lg" /> : <RiEyeLine className="text-lg" />}
+          </button>
+        )}
+      </div>
 
       <div className="mt-4 flex items-end justify-between">
         <div>
           <p className="text-[9px] uppercase tracking-widest text-white/60">Valid Thru</p>
-          <p className="text-sm font-medium tabular-nums">{card.expiry || '••/••'}</p>
+          <p className="text-sm font-medium tabular-nums">{displayExpiry}</p>
+        </div>
+        <div>
+          <p className="text-[9px] uppercase tracking-widest text-white/60">CVV</p>
+          <p className="text-sm font-medium tabular-nums">{revealed?.cvv || '•••'}</p>
         </div>
         <div className="text-right">
           <p className="text-[9px] uppercase tracking-widest text-white/60">Status</p>
@@ -83,6 +102,12 @@ function CardVisual({ card }) {
           </p>
         </div>
       </div>
+
+      {revealed && (
+        <p className="absolute bottom-2 left-0 right-0 text-center text-[9px] text-white/50">
+          Details auto-hide in a few seconds · keep them private
+        </p>
+      )}
     </div>
   );
 }
@@ -267,10 +292,15 @@ export default function CardsPage() {
   const [requestOpen, setRequestOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // PIN modal drives a pending controls patch.
+  // PIN modal drives either a pending controls patch OR a secure reveal.
   const [pinOpen, setPinOpen] = useState(false);
   const [pinSubmitting, setPinSubmitting] = useState(false);
+  const [pinMode, setPinMode] = useState('controls'); // 'controls' | 'reveal'
   const [pendingControls, setPendingControls] = useState(null); // { patch, label }
+
+  // Temporary plaintext reveal (auto-hides). Never persisted anywhere.
+  const [revealed, setRevealed] = useState(null);
+  const revealTimerRef = useRef(null);
 
   const loadCard = useCallback(async () => {
     setLoading(true);
@@ -285,6 +315,9 @@ export default function CardsPage() {
   }, []);
 
   useEffect(() => { loadCard(); }, [loadCard]);
+
+  // Clear any reveal timer on unmount (and wipe the plaintext from memory).
+  useEffect(() => () => { if (revealTimerRef.current) clearTimeout(revealTimerRef.current); }, []);
 
   const submitRequest = async ({ network, tier }) => {
     setSubmitting(true);
@@ -301,27 +334,54 @@ export default function CardsPage() {
     }
   };
 
-  // A control toggle stages a patch then opens the PIN modal.
+  // A control toggle stages a patch then opens the PIN modal in 'controls' mode.
   const requestControlChange = (patch, label) => {
+    setPinMode('controls');
     setPendingControls({ patch, label });
     setPinOpen(true);
   };
 
-  const confirmControlChange = async (pin) => {
-    if (!pendingControls || !card) return;
+  // The eye button: if currently revealed, hide immediately; else open the PIN
+  // modal in 'reveal' mode.
+  const handleEyeClick = () => {
+    if (revealed) {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+      setRevealed(null);
+      return;
+    }
+    setPinMode('reveal');
+    setPendingControls(null);
+    setPinOpen(true);
+  };
+
+  // Single PIN-confirm handler routing to controls OR reveal.
+  const confirmPin = async (pin) => {
+    if (!card) return;
     setPinSubmitting(true);
     try {
-      const { data } = await api.patch(`/requests/card/${card.id}/controls`, {
-        securityPin: pin,
-        controls: pendingControls.patch,
-      });
-      toast.success(data?.message || 'Card controls updated.');
-      setPinOpen(false);
-      setPendingControls(null);
-      // Reflect new controls locally from the response.
-      if (data?.data?.controls) setCard((c) => ({ ...c, controls: data.data.controls }));
+      if (pinMode === 'reveal') {
+        const { data } = await api.post(`/requests/card/${card.id}/reveal`, { securityPin: pin });
+        const details = data?.data;
+        if (details?.number) {
+          setRevealed(details);
+          // Auto-hide after 30s so plaintext never lingers on screen.
+          if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+          revealTimerRef.current = setTimeout(() => setRevealed(null), 30000);
+          toast.success('Card details revealed. They will hide automatically.');
+        }
+        setPinOpen(false);
+      } else {
+        const { data } = await api.patch(`/requests/card/${card.id}/controls`, {
+          securityPin: pin,
+          controls: pendingControls.patch,
+        });
+        toast.success(data?.message || 'Card controls updated.');
+        setPinOpen(false);
+        setPendingControls(null);
+        if (data?.data?.controls) setCard((cur) => ({ ...cur, controls: data.data.controls }));
+      }
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Could not update controls.');
+      toast.error(err?.response?.data?.message || 'Could not verify your PIN. Please try again.');
     } finally {
       setPinSubmitting(false);
     }
@@ -370,7 +430,7 @@ export default function CardsPage() {
       ) : (
         /* ── Card present ─────────────────────────────────────────────── */
         <div className="space-y-6">
-          <CardVisual card={card} />
+          <CardVisual card={card} revealed={revealed} onEyeClick={handleEyeClick} />
 
           {isPending && (
             <div className="flex items-center gap-2 rounded-xl px-4 py-3 border text-sm"
@@ -412,9 +472,9 @@ export default function CardsPage() {
       <PinModal
         open={pinOpen}
         onClose={() => { if (!pinSubmitting) { setPinOpen(false); setPendingControls(null); } }}
-        onConfirm={confirmControlChange}
+        onConfirm={confirmPin}
         submitting={pinSubmitting}
-        actionLabel={pendingControls?.label}
+        actionLabel={pinMode === 'reveal' ? 'reveal your full card details' : (pendingControls?.label)}
       />
     </div>
   );
