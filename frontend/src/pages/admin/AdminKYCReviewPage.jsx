@@ -4,7 +4,7 @@ import {
   RiShieldCheckLine, RiCloseCircleLine, RiCheckboxCircleLine,
   RiRefreshLine, RiUserLine, RiTimeLine, RiAlertLine,
   RiFileShield2Line, RiImageLine, RiMailLine, RiPhoneLine,
-  RiMapPinLine, RiLoader4Line, RiIdCardLine,
+  RiMapPinLine, RiLoader4Line,
   RiSearchLine, RiZoomInLine, RiCloseLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
@@ -445,7 +445,7 @@ export default function AdminKYCReviewPage() {
                     <p className="text-[11px] uppercase tracking-widest text-white/35 mb-2">Applicant Profile</p>
                     <div className="rounded-2xl border border-white/[0.06] bg-[#0d0d14] px-4 py-1">
                       <DetailRow icon={RiUserLine} label="Full Name" value={`${selected.first_name || ''} ${selected.last_name || ''}`} />
-                      <DetailRow icon={RiIdCardLine} label="Customer ID" value={selected.customer_id} />
+                      <DetailRow icon={RiFileShield2Line} label="Customer ID" value={selected.customer_id} />
                       <DetailRow icon={RiMailLine} label="Email" value={selected.email} />
                       <DetailRow icon={RiPhoneLine} label="Phone" value={selected.phone} />
                       <DetailRow icon={RiMapPinLine} label="Location" value={[selected.city, selected.state].filter(Boolean).join(', ')} />
