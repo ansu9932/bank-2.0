@@ -13,10 +13,39 @@ const {
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
+const { issueHandshake, consumeHandshake } = require('../utils/loginHandshake');
+
+// ─── Registration Handshake (HDFC-style ephemeral onboarding nonce) ──────────
+// GET /api/account/registration-handshake → mints a short-lived, single-use
+// state token the wizard appends to its URL and echoes back (as a header) on
+// final submit, blocking onboarding replay/CSRF.
+exports.registrationHandshake = async (req, res) => {
+  try {
+    const { token, expiresIn } = issueHandshake(req.ip, 'registration');
+    return success(res, { handshakeToken: token, expiresIn }, 'Registration handshake issued.');
+  } catch (err) {
+    logger.error(`Registration handshake error: ${err.message}`);
+    return error(res, 'Could not initialize a secure registration session.');
+  }
+};
 
 // ─── Submit Account Opening Application ───────────────────────────────────────
 exports.openAccount = async (req, res) => {
   try {
+    // ── Onboarding handshake validation (anti-replay) ────────────────────────
+    // Read the ephemeral nonce from the header (preferred) or body, validate +
+    // single-use consume it BEFORE any DB write or external identity call. An
+    // absent/expired/replayed token aborts the request immediately.
+    const handshakeToken = req.get('x-registration-handshake') || req.body.handshakeToken;
+    const hs = consumeHandshake(handshakeToken, req.ip, 'registration');
+    if (!hs.valid) {
+      const msg = hs.reason === 'expired'
+        ? 'Your secure registration session expired. Please refresh the page and start again.'
+        : 'Invalid or missing registration security handshake. Please refresh the page and try again.';
+      logger.warn(`Onboarding handshake rejected (${hs.reason}) from ${req.ip}`);
+      return badRequest(res, msg);
+    }
+
     const {
       firstName, lastName, email, phone, dateOfBirth, gender,
       fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
