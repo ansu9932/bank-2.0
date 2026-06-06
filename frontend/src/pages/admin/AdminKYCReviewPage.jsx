@@ -14,18 +14,18 @@ import { format } from 'date-fns';
 // ─── Theme tokens ─────────────────────────────────────────────────────────────
 const NEON = { green: '#10b981', cyan: '#06b6d4', red: '#ef4444', amber: '#f59e0b' };
 
-// Backend origin for static /uploads assets. Prefer the configured API base
-// (minus the trailing /api); fall back to the production backend domain so the
-// asset links are ALWAYS absolute to the Node backend and never resolve
-// relative to the frontend static host (which would 404 the images/videos).
-// The backend exposes these under express.static('/uploads'):
-//   documents → /uploads/documents/{filename}
-//   selfies   → /uploads/selfies/{filename}
-//   videos    → /uploads/kyc-videos/{filename}
+// Absolute backend origin for static /uploads assets. The frontend is served
+// from a separate static host, so KYC asset links MUST point at the Node
+// backend domain explicitly — a relative path would 404 against the frontend
+// host. Hardcoded (not env-derived) so the links compile to the exact absolute
+// production URL regardless of the local build-time VITE_API_URL value.
+// The backend serves these under express.static('/uploads'):
+//   documents → https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
+//   selfies   → https://aqua-salamander-597310.hostingersite.com/uploads/selfies/{filename}
+//   videos    → https://aqua-salamander-597310.hostingersite.com/uploads/kyc-videos/{filename}
 // document_url already carries the correct sub-folder (sliced from file_path).
 const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
-const IMG_ORIGIN =
-  String(import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '') || BACKEND_ORIGIN;
+const IMG_ORIGIN = BACKEND_ORIGIN;
 
 // Safe date formatter — never throws on null/invalid timestamps.
 const safeDate = (value, pattern = 'dd MMM yyyy, HH:mm', fallback = 'Recent') => {
