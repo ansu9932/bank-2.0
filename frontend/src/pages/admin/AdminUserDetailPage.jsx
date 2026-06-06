@@ -5,6 +5,12 @@ import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
+// Backend origin for static /uploads assets — derived from the same API base
+// api.js uses (strip the trailing /api). Falls back to same-origin in dev.
+const IMG_ORIGIN = String(
+  import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '',
+).replace(/\/api\/?$/, '');
+
 export default function AdminUserDetailPage() {
   const { id } = useParams();
   const [user, setUser] = useState(null);
@@ -151,22 +157,46 @@ export default function AdminUserDetailPage() {
             </div>
           )}
 
-          {/* KYC Documents */}
-          {user.documents?.length > 0 && (
-            <div className="glass-card p-5">
-              <p className="text-white font-semibold mb-3">KYC Documents</p>
+          {/* KYC Documents — Aadhaar / PAN / passport viewer (admin-only) */}
+          <div className="glass-card p-5">
+            <p className="text-white font-semibold mb-3">KYC Documents</p>
+            {user.documents?.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {user.documents.map(doc => (
-                  <a key={doc.id} href={`/${doc.file_path}`} target="_blank" rel="noreferrer"
-                    className="glass-card-hover p-3 text-center">
-                    <span className="text-2xl">📄</span>
-                    <p className="text-dark-200 text-xs mt-1 capitalize">{doc.document_type.replace('_',' ')}</p>
-                    <span className={`badge text-[10px] mt-1 ${doc.status === 'approved' ? 'badge-success' : doc.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>{doc.status}</span>
-                  </a>
-                ))}
+                {user.documents.map((doc) => {
+                  const hasFile = doc.has_file ?? Boolean(doc.document_url || doc.file_path);
+                  const href = doc.document_url ? `${IMG_ORIGIN}${doc.document_url}` : null;
+                  const badgeClass = doc.status === 'approved' ? 'badge-success'
+                    : doc.status === 'rejected' ? 'badge-danger' : 'badge-warning';
+                  const label = String(doc.document_type || 'document').replace(/_/g, ' ');
+
+                  // Clean fallback element when no asset path is present.
+                  if (!hasFile || !href) {
+                    return (
+                      <div key={doc.id} className="p-3 text-center rounded-xl border border-white/[0.06] opacity-60">
+                        <span className="text-2xl">🚫</span>
+                        <p className="text-dark-200 text-xs mt-1 capitalize">{label}</p>
+                        <span className="text-dark-400 text-[10px] mt-1 block">No file uploaded</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <a key={doc.id} href={href} target="_blank" rel="noreferrer"
+                      className="glass-card-hover p-3 text-center">
+                      <span className="text-2xl">📄</span>
+                      <p className="text-dark-200 text-xs mt-1 capitalize">{label}</p>
+                      <span className={`badge text-[10px] mt-1 ${badgeClass}`}>{doc.status}</span>
+                      <span className="block text-brand-400 text-[10px] mt-1">View document →</span>
+                    </a>
+                  );
+                })}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="text-center py-6">
+                <span className="text-2xl">📂</span>
+                <p className="text-dark-300 text-sm mt-2">No KYC documents uploaded by this user.</p>
+              </div>
+            )}
+          </div>
 
           {/* Cards (debit card requests) */}
           {(() => {

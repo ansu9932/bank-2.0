@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RiBankLine, RiCheckLine, RiArrowLeftLine, RiArrowRightLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 
 // Step components
 import StepPersonal from './steps/StepPersonal';
@@ -105,6 +106,21 @@ export default function AccountOpeningPage() {
   // the First/Last name fields from manual editing (Step 3 → reflected in Step 1).
   const [nameLocked, setNameLocked] = useState(false);
 
+  // Navigation guard: if the user abandons onboarding (link, nav, back button,
+  // refresh/close), wipe ALL in-memory registration vars + any temp signup
+  // storage and redirect to the homepage on a non-whitelisted exit.
+  const { allowNavigation } = useEntryPageGuard({
+    resetState: () => {
+      setForm(initForm);
+      setStep(1);
+      setOtpVerified(false);
+      setNameLocked(false);
+      setErrors({});
+      setShowErrors(false);
+      setCustomerId('');
+    },
+  });
+
   const updateForm = (updates) => setForm(prev => ({ ...prev, ...updates }));
 
   // Live validation for the current step; drives the disabled Next button.
@@ -160,6 +176,9 @@ export default function AccountOpeningPage() {
       });
       setCustomerId(data.data.customerId);
       setSubmitted(true);
+      // Onboarding succeeded — sanction any onward navigation from the success
+      // screen so the exit guard does not redirect the user to the homepage.
+      allowNavigation();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Submission failed. Please try again.');
     } finally {

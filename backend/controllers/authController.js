@@ -12,20 +12,11 @@ const {
 const { success, error, badRequest, unauthorized, notFound, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { SecureLink } = require('../models');
-const { verifyTurnstileToken } = require('../utils/turnstile');
 
 // ─── Login ─────────────────────────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
-    const { username, password, turnstileToken } = req.body;
-
-    // ── Cloudflare Turnstile bot verification ────────────────────────────────
-    // Runs BEFORE any database lookup or password hashing. If Cloudflare does
-    // not confirm the token, abort the login cycle immediately with HTTP 400.
-    const humanVerified = await verifyTurnstileToken(turnstileToken, req.ip);
-    if (!humanVerified) {
-      return badRequest(res, 'Bot verification failed. Please refresh and try again.');
-    }
+    const { username, password } = req.body;
 
     if (!username || !password) return badRequest(res, 'Username and password are required.');
 

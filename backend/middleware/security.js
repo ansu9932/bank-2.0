@@ -85,11 +85,9 @@ const securityHeaders = helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      // Allow the Cloudflare Turnstile widget script.
-      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
-      connectSrc: ["'self'", 'https://challenges.cloudflare.com'],
-      // Turnstile renders its challenge inside an iframe from this origin.
-      frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      frameSrc: ["'self'"],
       mediaSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: [],
