@@ -28,7 +28,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Registration-Token'],
 }));
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────

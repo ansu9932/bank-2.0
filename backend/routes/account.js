@@ -4,6 +4,11 @@ const accountController = require('../controllers/accountController');
 const { protect, requireActiveAccount } = require('../middleware/auth');
 const { kycUpload, kycFields, videoUpload, profileUpload } = require('../middleware/upload');
 
+// Ephemeral anti-CSRF registration nonce for the secure onboarding gateway
+// (HDFC-style). The "Open Account" wizard fetches this when its first step
+// mounts, reflects it into the URL, and echoes it back on submit.
+router.get('/registration-handshake', accountController.registrationHandshake);
+
 router.post('/open',
   kycUpload.fields(kycFields),
   accountController.openAccount

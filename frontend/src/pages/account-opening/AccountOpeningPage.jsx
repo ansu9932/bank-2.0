@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RiBankLine, RiCheckLine, RiArrowLeftLine, RiArrowRightLine } from 'react-icons/ri';
@@ -106,6 +106,39 @@ export default function AccountOpeningPage() {
   // the First/Last name fields from manual editing (Step 3 → reflected in Step 1).
   const [nameLocked, setNameLocked] = useState(false);
 
+  // ── HDFC-style ephemeral registration handshake (anti-CSRF nonce) ──────────
+  // Minted the moment the wizard's first step mounts, mirrored into the URL as
+  // ?rt=, and echoed back in the X-Registration-Token header on submit so the
+  // backend can block replay / CSRF on the onboarding pipeline.
+  const [handshakeToken, setHandshakeToken] = useState('');
+  const handshakeFetchedRef = useRef(false);
+
+  // Mint a short-lived registration nonce and reflect it in the address bar so
+  // the onboarding funnel behaves like an enterprise SSO redirect handshake.
+  const initHandshake = async () => {
+    try {
+      const { data } = await api.get('/account/registration-handshake');
+      const token = data?.data?.handshakeToken;
+      if (token) {
+        setHandshakeToken(token);
+        const url = new URL(window.location.href);
+        url.searchParams.set('rt', token);
+        window.history.replaceState({}, '', url);
+      }
+    } catch {
+      // Non-fatal: surfaced on submit if still missing.
+      setHandshakeToken('');
+    }
+  };
+
+  // Bootstrap the handshake exactly once when the first step mounts.
+  useEffect(() => {
+    if (handshakeFetchedRef.current) return;
+    handshakeFetchedRef.current = true;
+    initHandshake();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Navigation guard: if the user abandons onboarding (link, nav, back button,
   // refresh/close), wipe ALL in-memory registration vars + any temp signup
   // storage and redirect to the homepage on a non-whitelisted exit.
@@ -161,6 +194,17 @@ export default function AccountOpeningPage() {
       return;
     }
     if (!otpVerified) { toast.error('Please verify your email first.'); return; }
+
+    // Resolve the registration handshake: prefer in-state token, fall back to
+    // the URL param if state was reset. Block submit (and re-mint) if missing.
+    const tokenFromUrl = new URLSearchParams(window.location.search).get('rt');
+    const hToken = handshakeToken || tokenFromUrl || '';
+    if (!hToken) {
+      toast.error('Secure session not ready. Refreshing…');
+      await initHandshake();
+      return;
+    }
+
     setLoading(true);
     try {
       const fd = new FormData();
@@ -172,7 +216,11 @@ export default function AccountOpeningPage() {
       Object.entries(form.files).forEach(([k, v]) => { if (v) fd.append(k, v); });
 
       const { data } = await api.post('/account/open', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          // HDFC-style handshake nonce echoed back for backend validation.
+          'X-Registration-Token': hToken,
+        },
       });
       setCustomerId(data.data.customerId);
       setSubmitted(true);
@@ -180,6 +228,8 @@ export default function AccountOpeningPage() {
       // screen so the exit guard does not redirect the user to the homepage.
       allowNavigation();
     } catch (err) {
+      // The handshake is single-use; mint a fresh one so a retry can succeed.
+      initHandshake();
       toast.error(err.response?.data?.message || 'Submission failed. Please try again.');
     } finally {
       setLoading(false);
