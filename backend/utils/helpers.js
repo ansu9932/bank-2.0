@@ -136,6 +136,104 @@ const generateReferralCode = (name) => {
 };
 
 /**
+ * Compute the Luhn check digit for a numeric string of N-1 digits.
+ * @param {string} partial digits WITHOUT the final check digit
+ * @returns {number} the check digit (0–9) that makes the full string Luhn-valid
+ */
+const luhnCheckDigit = (partial) => {
+  let sum = 0;
+  // The partial's rightmost digit is in an "even" position relative to the
+  // (not-yet-appended) check digit, so doubling starts there.
+  let double = true;
+  for (let i = partial.length - 1; i >= 0; i--) {
+    let d = partial.charCodeAt(i) - 48; // fast digit parse
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return (10 - (sum % 10)) % 10;
+};
+
+/**
+ * Validate a card number against the Luhn (mod-10) checksum.
+ * @param {string} cardNumber digits only
+ * @returns {boolean}
+ */
+const isLuhnValid = (cardNumber) => {
+  const digits = String(cardNumber).replace(/\D/g, '');
+  if (digits.length < 2) return false;
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = digits.charCodeAt(i) - 48;
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+};
+
+/**
+ * Generate a Luhn-valid 16-digit card number for the given network.
+ * Uses realistic BIN prefixes: Visa starts with '4', Mastercard with '5' (51–55).
+ * The final digit is the computed Luhn check digit, so the result always passes
+ * standard checksum verification.
+ * @param {'Visa'|'Mastercard'} network
+ * @returns {string} 16-digit number
+ */
+const generateCardNumber = (network) => {
+  let prefix;
+  if (String(network).toLowerCase() === 'mastercard') {
+    // 51–55 are valid Mastercard BIN ranges.
+    prefix = String(51 + Math.floor(Math.random() * 5)); // '51'..'55'
+  } else {
+    prefix = '4'; // Visa
+  }
+  // Build the first 15 digits (prefix + random fill), then append check digit.
+  let body = prefix;
+  while (body.length < 15) {
+    body += Math.floor(Math.random() * 10).toString();
+  }
+  body = body.slice(0, 15);
+  return body + String(luhnCheckDigit(body));
+};
+
+/**
+ * Generate a 3-digit CVV.
+ * @returns {string}
+ */
+const generateCVV = () => String(Math.floor(100 + Math.random() * 900));
+
+/**
+ * Generate a card expiry 'MM/YY' a fixed number of years in the future.
+ * @param {number} yearsAhead default 5
+ * @returns {string}
+ */
+const generateCardExpiry = (yearsAhead = 5) => {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String((now.getFullYear() + yearsAhead) % 100).padStart(2, '0');
+  return `${mm}/${yy}`;
+};
+
+/**
+ * Mask a 16-digit card number as 'XXXX XXXX XXXX 1234'.
+ * @param {string} cardNumber
+ * @returns {string}
+ */
+const maskCardNumber = (cardNumber) => {
+  const d = String(cardNumber || '').replace(/\D/g, '');
+  if (d.length < 4) return 'XXXX XXXX XXXX XXXX';
+  return `XXXX XXXX XXXX ${d.slice(-4)}`;
+};
+
+/**
  * Detect device type from user agent
  */
 const detectDevice = (userAgent = '') => {
@@ -169,6 +267,12 @@ module.exports = {
   isExpired,
   sanitizeInput,
   generateReferralCode,
+  luhnCheckDigit,
+  isLuhnValid,
+  generateCardNumber,
+  generateCVV,
+  generateCardExpiry,
+  maskCardNumber,
   detectDevice,
   paginate,
 };

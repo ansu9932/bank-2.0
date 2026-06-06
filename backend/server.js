@@ -109,6 +109,58 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Database & Server Start ──────────────────────────────────────────────────
+/**
+ * Idempotently add the premium debit-card columns to an EXISTING card_requests
+ * table. Plain sequelize.sync() won't add columns to a table that already
+ * exists, and full alter-sync risks the MySQL 64-index overflow — so we add
+ * only the named columns, only when absent, with zero index changes.
+ */
+async function ensureCardRequestColumns() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  // If the table doesn't exist yet, sync() already created it WITH these
+  // columns (fresh deploy) — nothing to backfill.
+  let table;
+  try {
+    table = await qi.describeTable('card_requests');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  const columns = {
+    card_network: { type: DataTypes.STRING(20), allowNull: true },
+    card_tier: { type: DataTypes.STRING(20), allowNull: true },
+    card_number: { type: DataTypes.STRING(16), allowNull: true },
+    cvv: { type: DataTypes.STRING(4), allowNull: true },
+    expiry_date: { type: DataTypes.STRING(5), allowNull: true },
+    controls: { type: DataTypes.JSON, allowNull: true },
+    issuance_fee: { type: DataTypes.DECIMAL(10, 2), allowNull: true, defaultValue: 0.00 },
+    fee_status: { type: DataTypes.STRING(20), allowNull: true, defaultValue: 'none' },
+    fee_reference: { type: DataTypes.STRING(30), allowNull: true },
+  };
+
+  for (const [name, def] of Object.entries(columns)) {
+    if (!table[name]) {
+      try {
+        await qi.addColumn('card_requests', name, def);
+        logger.info(`card_requests: added column '${name}'.`);
+      } catch (e) {
+        logger.error(`card_requests: could not add column '${name}': ${e.message}`);
+      }
+    }
+  }
+
+  // The status ENUM gained 'active'. On MySQL the column may be a constrained
+  // ENUM; widen it to a plain STRING so 'active' is accepted without an ENUM
+  // migration. Best-effort and non-fatal.
+  try {
+    await qi.changeColumn('card_requests', 'status', { type: DataTypes.STRING(20), allowNull: true });
+  } catch (e) {
+    logger.warn(`card_requests: status column widen skipped: ${e.message}`);
+  }
+}
+
 const start = async () => {
   try {
     await sequelize.authenticate();
@@ -155,6 +207,18 @@ const start = async () => {
       await sequelize.sync({ alter: false });
       logger.info('✅ Database models synchronized.');
       console.log('✅ Database models synchronized.');
+    }
+
+    // ─── Targeted, idempotent column backfill for card_requests ───────────────
+    // Plain sync() never adds columns to an EXISTING table, so the new premium
+    // debit-card fields must be added explicitly. This is surgical (only the
+    // named columns, only if absent) and adds NO indexes — so it cannot trigger
+    // the 64-index overflow that full alter sync does. Safe to run every boot.
+    try {
+      await ensureCardRequestColumns();
+    } catch (colErr) {
+      logger.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
