@@ -13,10 +13,49 @@ const {
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
+const {
+  issueRegistrationHandshake, consumeRegistrationHandshake,
+} = require('../utils/registrationHandshake');
+
+// ─── Registration Handshake (HDFC-style ephemeral onboarding nonce) ──────────
+// GET /api/account/registration-handshake → mints a short-lived, single-use
+// anti-CSRF registration nonce. The "Open Account" wizard fetches this the
+// moment its first step mounts, reflects it into the URL, and echoes it back in
+// the request headers when it submits the compiled form. Blocks replay / CSRF
+// on the account-creation pipeline.
+exports.registrationHandshake = async (req, res) => {
+  try {
+    const { token, expiresIn } = issueRegistrationHandshake(req.ip);
+    return success(res, { handshakeToken: token, expiresIn }, 'Registration handshake issued.');
+  } catch (err) {
+    logger.error(`Registration handshake error: ${err.message}`);
+    return error(res, 'Could not initialize a secure registration session.');
+  }
+};
 
 // ─── Submit Account Opening Application ───────────────────────────────────────
 exports.openAccount = async (req, res) => {
   try {
+    // ── Ephemeral registration handshake validation (anti-CSRF / anti-replay) ─
+    // Entry-point guard for the onboarding pipeline. The nonce is read from the
+    // request headers (falling back to the body for resilience), and must be
+    // present, structurally valid, unexpired, single-use, and IP-consistent.
+    // On any failure we abort BEFORE any DB writes or external identity
+    // verification calls, protecting system stability.
+    const registrationToken =
+      req.headers['x-registration-token'] ||
+      req.headers['x-handshake-token'] ||
+      req.body?.registrationToken ||
+      req.body?.handshakeToken;
+    const hs = consumeRegistrationHandshake(registrationToken, req.ip);
+    if (!hs.valid) {
+      const msg = hs.reason === 'expired'
+        ? 'Your secure registration session expired. Please refresh the page and start again.'
+        : 'Invalid or missing security handshake. Please refresh the page and try again.';
+      logger.warn(`openAccount handshake rejected (${hs.reason}) from ${req.ip}`);
+      return badRequest(res, msg);
+    }
+
     const {
       firstName, lastName, email, phone, dateOfBirth, gender,
       fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
