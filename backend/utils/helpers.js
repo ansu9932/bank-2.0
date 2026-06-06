@@ -180,21 +180,37 @@ const isLuhnValid = (cardNumber) => {
 };
 
 /**
- * Generate a Luhn-valid 16-digit card number for the given network.
- * Uses realistic BIN prefixes: Visa starts with '4', Mastercard with '5' (51–55).
+ * Pick a TEST-compliant Mastercard BIN prefix.
+ *
+ * Per Mastercard's published BIN structure (and their Unified Checkout test
+ * data), valid Mastercard account ranges are:
+ *   • the classic 2-digit series 51–55, and
+ *   • the newer 4-digit "2-series" 2221–2720.
+ * We pick uniformly between the two families so generated TEST cards exercise
+ * both ranges. (These are non-funded test PANs — no real account is created.)
+ * @returns {string} a leading BIN fragment ('51'..'55' or '2221'..'2720')
+ */
+const mastercardTestPrefix = () => {
+  if (Math.random() < 0.5) {
+    return String(51 + Math.floor(Math.random() * 5)); // '51'..'55'
+  }
+  return String(2221 + Math.floor(Math.random() * (2720 - 2221 + 1))); // '2221'..'2720'
+};
+
+/**
+ * Generate a Luhn-valid 16-digit TEST card number for the given network.
+ *   • Visa       → starts with '4'.
+ *   • Mastercard → starts with a valid Mastercard BIN (51–55 or 2221–2720),
+ *                  matching Mastercard's test-data specification.
  * The final digit is the computed Luhn check digit, so the result always passes
- * standard checksum verification.
+ * standard checksum verification. These are test PANs only — not real cards.
  * @param {'Visa'|'Mastercard'} network
  * @returns {string} 16-digit number
  */
 const generateCardNumber = (network) => {
-  let prefix;
-  if (String(network).toLowerCase() === 'mastercard') {
-    // 51–55 are valid Mastercard BIN ranges.
-    prefix = String(51 + Math.floor(Math.random() * 5)); // '51'..'55'
-  } else {
-    prefix = '4'; // Visa
-  }
+  const prefix = String(network).toLowerCase() === 'mastercard'
+    ? mastercardTestPrefix()
+    : '4'; // Visa
   // Build the first 15 digits (prefix + random fill), then append check digit.
   let body = prefix;
   while (body.length < 15) {
@@ -202,6 +218,20 @@ const generateCardNumber = (network) => {
   }
   body = body.slice(0, 15);
   return body + String(luhnCheckDigit(body));
+};
+
+/**
+ * Detect a card network from its number (Visa / Mastercard / Unknown).
+ * @param {string} cardNumber
+ * @returns {'Visa'|'Mastercard'|'Unknown'}
+ */
+const detectCardNetwork = (cardNumber) => {
+  const d = String(cardNumber || '').replace(/\D/g, '');
+  if (/^4/.test(d)) return 'Visa';
+  const two = parseInt(d.slice(0, 2), 10);
+  const four = parseInt(d.slice(0, 4), 10);
+  if ((two >= 51 && two <= 55) || (four >= 2221 && four <= 2720)) return 'Mastercard';
+  return 'Unknown';
 };
 
 /**
@@ -270,6 +300,7 @@ module.exports = {
   luhnCheckDigit,
   isLuhnValid,
   generateCardNumber,
+  detectCardNetwork,
   generateCVV,
   generateCardExpiry,
   maskCardNumber,

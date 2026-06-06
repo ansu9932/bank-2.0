@@ -38,4 +38,7 @@ router.put('/tickets/:id', adminController.updateTicket);
 router.get('/service-requests', requestController.adminListRequests);
 router.patch('/service-requests/:id', requireRole('super_admin', 'admin'), requestController.adminProcessRequest);
 
+// Permanently delete a specific user's card.
+router.delete('/user/:userId/card/:cardId', requireRole('super_admin', 'admin'), requestController.adminDeleteUserCard);
+
 module.exports = router;

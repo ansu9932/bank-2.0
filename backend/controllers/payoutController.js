@@ -569,6 +569,19 @@ exports.internalTransfer = async (req, res) => {
       time: new Date().toLocaleString(),
     }).catch(() => {});
 
+    // Recipient CREDIT alert — every successful credit notifies the receiver too.
+    if (recipientUser?.email) {
+      sendTransferAlertEmail(recipientUser.email, recipientUser.first_name || 'Customer', {
+        type: 'credit',
+        amount: parsedAmount.toFixed(2),
+        reference: referenceNumber,
+        counterparty: `${senderName} · ${senderAccount.account_number}`,
+        mode: 'ALISTER',
+        balance: (parseFloat(recipientAccount.balance) + parsedAmount).toFixed(2),
+        time: new Date().toLocaleString(),
+      }).catch(() => {});
+    }
+
     createAuditLog({
       userId: req.user.id,
       action: 'INTERNAL_TRANSFER',

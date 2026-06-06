@@ -1,9 +1,10 @@
 const crypto = require('crypto');
 const { randomUUID } = require('crypto');
 const sequelize = require('../config/database');
-const { Account, Transaction, Notification } = require('../models');
+const { Account, Transaction, Notification, User } = require('../models');
 const { createUpiQr, isConfigured } = require('../utils/razorpay');
 const { createAuditLog } = require('../middleware/auditLogger');
+const { sendTransferAlertEmail } = require('../services/emailService');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 
@@ -240,6 +241,20 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
       status: 'success',
       description: `UPI deposit of ₹${paymentAmount} credited.`,
     }).catch(() => {});
+
+    // Transaction alert email — every successful CREDIT notifies the user.
+    User.findByPk(locked.user_id).then((u) => {
+      if (!u?.email) return;
+      return sendTransferAlertEmail(u.email, u.first_name || 'Customer', {
+        type: 'credit',
+        amount: paymentAmount.toFixed(2),
+        reference: orderRef || paymentId,
+        counterparty: 'UPI Instant Deposit',
+        mode: 'UPI',
+        balance: balanceAfter.toFixed(2),
+        time: new Date().toLocaleString('en-IN'),
+      });
+    }).catch((e) => logger.error(`Deposit credit email failed: ${e.message}`));
 
     return true;
   } catch (err) {

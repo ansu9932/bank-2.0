@@ -237,9 +237,10 @@ exports.getMyCard = async (req, res) => {
         status: card.status,
         network: card.card_network,
         tier: card.card_tier,
-        // Never expose the full PAN/CVV; mask the number, hide the CVV.
+        // Never expose the full PAN/CVV/expiry here; mask the number and hide
+        // CVV + expiry entirely. The full details are only served by the
+        // PIN-gated POST /card/:id/reveal endpoint.
         maskedNumber: card.card_number ? maskCardNumber(card.card_number) : null,
-        expiry: card.expiry_date || null,
         controls: card.controls || DEFAULT_CONTROLS,
         issuanceFee: parseFloat(card.issuance_fee || 0),
         createdAt: card.createdAt,
@@ -310,9 +311,13 @@ exports.updateCardControls = async (req, res) => {
 
     const boolKeys = ['frozen', 'atm_enabled', 'domestic_enabled', 'international_enabled'];
     boolKeys.forEach((k) => {
-      if (typeof controls[k] === 'boolean' && controls[k] !== current[k]) {
-        next[k] = controls[k];
-        changed.push({ key: k, value: controls[k] });
+      if (controls[k] !== undefined) {
+        // Coerce truthy/"true"/1 → boolean so the frontend can't trip on type.
+        const v = controls[k] === true || controls[k] === 'true' || controls[k] === 1;
+        if (v !== current[k]) {
+          next[k] = v;
+          changed.push({ key: k, value: v });
+        }
       }
     });
     const numKeys = ['domestic_limit', 'international_limit'];
@@ -326,8 +331,13 @@ exports.updateCardControls = async (req, res) => {
       }
     });
 
+    // No effective diff (e.g. the stored value already matches the requested
+    // state). The PIN was valid, so this is a successful no-op rather than an
+    // error — persist the normalized controls and return 200 so the toggle UI
+    // never shows a spurious "400 / No changes" after a correct PIN entry.
     if (changed.length === 0) {
-      return badRequest(res, 'No control changes detected.');
+      await card.update({ controls: next });
+      return success(res, { controls: next, changes: [] }, 'No changes were needed — card settings are already up to date.');
     }
 
     await card.update({ controls: next });
@@ -365,6 +375,55 @@ exports.updateCardControls = async (req, res) => {
   } catch (err) {
     logger.error(`updateCardControls error: ${err.message}`);
     return error(res, 'Could not update card controls. Please try again.');
+  }
+};
+
+// ─── Secure card reveal (PIN-gated) ───────────────────────────────────────────
+// POST /api/requests/card/:id/reveal   (protect)
+// Body: { securityPin }
+// Returns the FULL PAN + CVV + expiry for a brief client-side reveal. The data
+// is read from disk only after a valid PIN; nothing is mutated and the values
+// are never logged. The client is responsible for the auto-hide timer.
+exports.revealCard = async (req, res) => {
+  try {
+    const { securityPin } = req.body;
+    if (!securityPin || String(securityPin).length < 4) {
+      return badRequest(res, 'Enter your 4-digit transaction security PIN.');
+    }
+
+    const card = await CardRequest.findOne({
+      where: { id: req.params.id, user_id: req.user.id, request_type: TYPE_DEBIT_CARD },
+    });
+    if (!card) return notFound(res, 'Card not found.');
+    if (card.status !== 'active' || !card.card_number) {
+      return badRequest(res, 'Card details are only available once your card is active.');
+    }
+
+    // Security PIN verification (same hash as money transfers).
+    const user = await User.findByPk(req.user.id);
+    if (!user?.security_pin) return badRequest(res, 'No security PIN set. Please contact support.');
+    const pinValid = await bcrypt.compare(String(securityPin), user.security_pin);
+    if (!pinValid) return badRequest(res, 'Incorrect security PIN.');
+
+    createAuditLog({
+      userId: req.user.id, action: 'CARD_DETAILS_REVEALED', entityType: 'CardRequest',
+      entityId: card.id, ipAddress: req.ip, status: 'success',
+      description: 'Full card details revealed after PIN verification.',
+    }).catch(() => {});
+
+    // Format the PAN in groups of 4 for display.
+    const grouped = String(card.card_number).replace(/(.{4})/g, '$1 ').trim();
+    return success(res, {
+      number: card.card_number,
+      formattedNumber: grouped,
+      cvv: card.cvv || null,
+      expiry: card.expiry_date || null,
+      network: card.card_network,
+      tier: card.card_tier,
+    }, 'Card details revealed.');
+  } catch (err) {
+    logger.error(`revealCard error: ${err.message}`);
+    return error(res, 'Could not reveal card details. Please try again.');
   }
 };
 
@@ -507,6 +566,58 @@ exports.adminProcessRequest = async (req, res) => {
   } catch (err) {
     logger.error(`adminProcessRequest error: ${err.message}`);
     return error(res, 'Failed to update the service request.');
+  }
+};
+
+// ─── Admin: delete a user's card ──────────────────────────────────────────────
+// DELETE /api/admin/user/:userId/card/:cardId   (adminProtect + requireRole)
+// Permanently removes a card request/record. If an active card is deleted, the
+// account's card flags are cleared so the user's dashboard reflects "no card".
+exports.adminDeleteUserCard = async (req, res) => {
+  try {
+    const { userId, cardId } = req.params;
+
+    const card = await CardRequest.findOne({
+      where: { id: cardId, user_id: userId },
+    });
+    if (!card) return notFound(res, 'Card not found for this user.');
+
+    const wasActive = card.status === 'active';
+    const snapshot = {
+      status: card.status,
+      network: card.card_network,
+      tier: card.card_tier,
+      maskedNumber: card.card_number ? maskCardNumber(card.card_number) : null,
+    };
+
+    await card.destroy();
+
+    // Clear the account's card flags if we removed the live card.
+    if (wasActive) {
+      const acct = await Account.findOne({ where: { user_id: userId } });
+      if (acct) {
+        await acct.update({ card_issued: false, card_number_masked: null }).catch(() => {});
+      }
+      await notifyUser(userId, 'Debit Card Removed',
+        'Your debit card has been removed by Alister Bank. Please contact support if you did not expect this.');
+    }
+
+    createAuditLog({
+      adminId: req.admin?.id,
+      userId,
+      action: 'ADMIN_CARD_DELETED',
+      entityType: 'CardRequest',
+      entityId: cardId,
+      oldValues: snapshot,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Admin permanently deleted ${snapshot.tier || ''} ${snapshot.network || ''} card (was ${snapshot.status}).`,
+    }).catch(() => {});
+
+    return success(res, { cardId, deleted: true }, 'Card deleted successfully.');
+  } catch (err) {
+    logger.error(`adminDeleteUserCard error: ${err.message}`);
+    return error(res, 'Failed to delete the card.');
   }
 };
 

@@ -21,4 +21,7 @@ router.get('/my-card', protect, requestController.getMyCard);
 // PIN-gated card controls (freeze, ATM, domestic, international, limits).
 router.patch('/card/:id/controls', protect, requireActiveAccount, requestController.updateCardControls);
 
+// PIN-gated secure reveal of full card number + CVV (temporary client display).
+router.post('/card/:id/reveal', protect, requireActiveAccount, requestController.revealCard);
+
 module.exports = router;

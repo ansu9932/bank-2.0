@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine } from 'react-icons/ri';
+import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine, RiDeleteBin6Line } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -66,6 +66,16 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setTxLoading(false); }
+  };
+
+  const deleteCard = async (cardId) => {
+    // eslint-disable-next-line no-alert, no-restricted-globals
+    if (!window.confirm('Permanently delete this card? This cannot be undone.')) return;
+    try {
+      await api.delete(`/admin/user/${id}/card/${cardId}`, { headers });
+      toast.success('Card deleted successfully.');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete card'); }
   };
 
   const applyCeiling = async () => {
@@ -157,6 +167,49 @@ export default function AdminUserDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Cards (debit card requests) */}
+          {(() => {
+            const cards = (user.cardRequests || []).filter(c => c.request_type === 'debit_card');
+            if (cards.length === 0) return null;
+            const statusBadge = (s) => s === 'active' ? 'badge-success' : s === 'cancelled' ? 'badge-danger' : 'badge-warning';
+            return (
+              <div className="glass-card p-5">
+                <p className="text-white font-semibold mb-3">Debit Cards</p>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm min-w-[480px]">
+                    <thead>
+                      <tr className="text-dark-400 text-xs uppercase tracking-wide border-b border-white/[0.06]">
+                        <th className="text-left font-medium py-2 px-1">Network</th>
+                        <th className="text-left font-medium py-2 px-1">Tier</th>
+                        <th className="text-left font-medium py-2 px-1">Status</th>
+                        <th className="text-left font-medium py-2 px-1">Fee</th>
+                        <th className="text-right font-medium py-2 px-1">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cards.map((cardItem) => (
+                        <tr key={cardItem.id} className="border-b border-white/[0.04] last:border-0">
+                          <td className="py-2.5 px-1 text-white">{cardItem.card_network || '—'}</td>
+                          <td className="py-2.5 px-1 text-dark-200">{cardItem.card_tier || '—'}</td>
+                          <td className="py-2.5 px-1">
+                            <span className={`badge ${statusBadge(cardItem.status)} text-[10px]`}>{cardItem.status}</span>
+                          </td>
+                          <td className="py-2.5 px-1 text-dark-200">₹{parseFloat(cardItem.issuance_fee || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-2.5 px-1 text-right">
+                            <button onClick={() => deleteCard(cardItem.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 text-xs font-medium transition-colors">
+                              <RiDeleteBin6Line /> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Actions sidebar */}
