@@ -5,11 +5,17 @@ import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
-// Backend origin for static /uploads assets — derived from the same API base
-// api.js uses (strip the trailing /api). Falls back to same-origin in dev.
-const IMG_ORIGIN = String(
-  import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '',
-).replace(/\/api\/?$/, '');
+// Absolute backend origin for static /uploads assets. The frontend is served
+// from a separate static host, so KYC document links MUST point at the Node
+// backend domain explicitly — a relative path would 404 against the frontend
+// host. Hardcoded (not env-derived) so links compile to the exact absolute
+// production URL regardless of the local build-time env vars. The backend
+// serves these under express.static('/uploads'); doc.document_url already
+// carries the correct sub-folder (documents/ selfies/ kyc-videos/), sliced
+// from file_path, so the prefixed link resolves to e.g.:
+//   https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
+const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+const IMG_ORIGIN = BACKEND_ORIGIN;
 
 export default function AdminUserDetailPage() {
   const { id } = useParams();
@@ -180,7 +186,7 @@ export default function AdminUserDetailPage() {
                     );
                   }
                   return (
-                    <a key={doc.id} href={href} target="_blank" rel="noreferrer"
+                    <a key={doc.id} href={href} target="_blank" rel="noopener noreferrer"
                       className="glass-card-hover p-3 text-center">
                       <span className="text-2xl">📄</span>
                       <p className="text-dark-200 text-xs mt-1 capitalize">{label}</p>
