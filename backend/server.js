@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const compression = require('compression');
 const path = require('path');
+const fs = require('fs');
 
 const sequelize = require('./config/database');
 const logger = require('./utils/logger');
@@ -53,7 +54,10 @@ if (process.env.NODE_ENV !== 'test') {
 app.use(sanitizeRequest);
 
 // ─── Static Files (uploaded docs) ────────────────────────────────────────────
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Absolute path to the uploads root. ensureUploadDirs() (run at boot, below)
+// guarantees this tree + its KYC sub-folders exist so fetches never 404.
+const UPLOADS_ROOT = path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(UPLOADS_ROOT));
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 app.use('/api/', apiLimiter);
@@ -110,6 +114,30 @@ app.use((err, req, res, next) => {
 
 // ─── Database & Server Start ──────────────────────────────────────────────────
 /**
+ * Ensure the uploads directory tree exists on disk at boot.
+ *
+ * Multer creates a sub-folder lazily on first upload, but the express.static
+ * mount + any direct fetch can 404 if the tree was never created (e.g. a fresh
+ * Hostinger container, or after a deploy that doesn't ship empty dirs). We
+ * recursively create the uploads root + every known KYC/media sub-folder so
+ * assets are always servable immediately, with no manual intervention.
+ */
+function ensureUploadDirs() {
+  const subDirs = ['documents', 'selfies', 'kyc-videos', 'profiles'];
+  const targets = [UPLOADS_ROOT, ...subDirs.map((d) => path.join(UPLOADS_ROOT, d))];
+  targets.forEach((dir) => {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        logger.info(`📁 Created missing upload directory: ${dir}`);
+      }
+    } catch (e) {
+      logger.error(`Failed to create upload directory ${dir}: ${e.message}`);
+    }
+  });
+}
+
+/**
  * Idempotently add the premium debit-card columns to an EXISTING card_requests
  * table. Plain sequelize.sync() won't add columns to a table that already
  * exists, and full alter-sync risks the MySQL 64-index overflow — so we add
@@ -163,6 +191,9 @@ async function ensureCardRequestColumns() {
 
 const start = async () => {
   try {
+    // Guarantee the uploads tree exists before anything serves/writes to it.
+    ensureUploadDirs();
+
     await sequelize.authenticate();
     logger.info('✅ Database connected successfully.');
     console.log('✅ Database connected successfully.');

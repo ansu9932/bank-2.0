@@ -12,11 +12,37 @@ const {
 const { success, error, badRequest, unauthorized, notFound, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { SecureLink } = require('../models');
+const { issueHandshake, consumeHandshake } = require('../utils/loginHandshake');
+
+// ─── Login Handshake (HDFC-style ephemeral SSO nonce) ────────────────────────
+// GET /api/auth/login-handshake → mints a short-lived, single-use state token
+// the client appends to the login URL and must echo back when submitting
+// credentials. Blocks login replay / CSRF on the gateway.
+exports.loginHandshake = async (req, res) => {
+  try {
+    const { token, expiresIn } = issueHandshake(req.ip);
+    return success(res, { handshakeToken: token, expiresIn }, 'Handshake issued.');
+  } catch (err) {
+    logger.error(`Login handshake error: ${err.message}`);
+    return error(res, 'Could not initialize a secure login session.');
+  }
+};
 
 // ─── Login ─────────────────────────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, handshakeToken } = req.body;
+
+    // ── Ephemeral handshake validation (anti-replay) ─────────────────────────
+    // The token must be present, unexpired, single-use, and IP-consistent.
+    const hs = consumeHandshake(handshakeToken, req.ip);
+    if (!hs.valid) {
+      const msg = hs.reason === 'expired'
+        ? 'Your secure login session expired. Please refresh the page and try again.'
+        : 'Invalid or missing security handshake. Please refresh the page and try again.';
+      logger.warn(`Login handshake rejected (${hs.reason}) from ${req.ip}`);
+      return badRequest(res, msg);
+    }
 
     if (!username || !password) return badRequest(res, 'Username and password are required.');
 

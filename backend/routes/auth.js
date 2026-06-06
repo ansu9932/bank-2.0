@@ -16,6 +16,10 @@ router.post('/login', loginLimiter, [
   body('password').notEmpty().withMessage('Password is required'),
 ], validate, authController.login);
 
+// Ephemeral handshake nonce for the secure login gateway (HDFC-style).
+// Client fetches this first, appends it to the URL, and echoes it on submit.
+router.get('/login-handshake', authController.loginHandshake);
+
 router.post('/logout', protect, authController.logout);
 router.get('/me', protect, authController.getMe);
 
