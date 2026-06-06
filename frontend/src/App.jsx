@@ -29,6 +29,7 @@ import ProfilePage from './pages/dashboard/ProfilePage';
 import SecurityPage from './pages/dashboard/SecurityPage';
 import SupportPage from './pages/dashboard/SupportPage';
 import AnalyticsPage from './pages/dashboard/AnalyticsPage';
+import CardsPage from './pages/dashboard/CardsPage';
 
 // Admin
 import AdminLayout from './components/layout/AdminLayout';
@@ -111,6 +112,7 @@ export default function App() {
           <Route path="transfer" element={<TransferPage />} />
           <Route path="deposit" element={<DepositFunds />} />
           <Route path="beneficiaries" element={<BeneficiariesPage />} />
+          <Route path="cards" element={<CardsPage />} />
           <Route path="statement" element={<StatementPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="profile" element={<ProfilePage />} />

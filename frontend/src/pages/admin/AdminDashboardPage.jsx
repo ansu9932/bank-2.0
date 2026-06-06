@@ -684,6 +684,7 @@ function useAdminDashboardData() {
 const REQ_STATUS_BADGE = {
   pending    : 'badge-warning',
   processing : 'badge-info',
+  active     : 'badge-success',
   dispatched : 'badge-success',
   delivered  : 'badge-success',
   cancelled  : 'badge-danger',
@@ -731,6 +732,7 @@ function ServiceRequestsPanel() {
   const FILTERS = [
     { key: 'pending', label: 'Pending' },
     { key: 'processing', label: 'Processing' },
+    { key: 'active', label: 'Issued' },
     { key: 'dispatched', label: 'Approved' },
     { key: 'cancelled', label: 'Declined' },
     { key: '', label: 'All' },

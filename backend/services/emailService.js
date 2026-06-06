@@ -332,6 +332,87 @@ const sendServiceRequestEmail = async (email, name, { serviceLabel, requestId, c
   return sendEmail({ to: email, subject: `Alister Bank — ${serviceLabel} Request Received`, html });
 };
 
+/**
+ * Card issued — sent on admin approval. Renders the tier, network, masked
+ * number and expiry. The full PAN/CVV are NEVER emailed.
+ */
+const sendCardIssuedEmail = async (email, name, { tier, network, maskedNumber, expiry }) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128179; Card Issued')}
+    ${heading(`Your ${tier || ''} ${network || ''} Card is Active`)}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`Great news — your <strong>${tier || ''} ${network || ''}</strong> debit card has been issued and is now <strong style="color:#22c55e;">active</strong>. You can manage it from your Cards dashboard.`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Network', network || '—')}
+      ${detailRow('Tier', tier || '—')}
+      ${detailRow('Card Number', maskedNumber || 'XXXX XXXX XXXX XXXX')}
+      ${detailRow('Valid Thru', expiry || '—')}
+      ${detailRow('Status', 'Active', '#22c55e')}
+    </table>
+    ${infoBox('&#128274; For your security, your full card number and CVV are shown only inside the secure app — never in email. Manage freeze, ATM, domestic &amp; international controls anytime from your Cards dashboard.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — Your ${tier || ''} Card is Active`, html });
+};
+
+/**
+ * Card rejected — sent on admin decline. Includes the reason and, when the
+ * issuance fee was refunded, confirms the credited amount.
+ */
+const sendCardRejectedEmail = async (email, name, { tier, reason, refundAmount }) => {
+  const refunded = Number(refundAmount) > 0;
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#10060; Application Declined')}
+    ${heading('Debit Card Application Declined')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`We're sorry — your <strong>${tier || ''}</strong> debit card application could not be approved at this time.`)}
+    ${infoBox(`<strong>Reason:</strong> ${reason || 'Your application did not meet the current issuance criteria.'}`)}
+    ${refunded
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+          ${detailRow('Issuance Fee Refunded', `₹${Number(refundAmount).toLocaleString('en-IN')}`, '#22c55e')}
+          ${detailRow('Credited To', 'Your Alister Bank account')}
+        </table>`
+      : ''}
+    ${para('You\'re welcome to re-apply once the noted criteria are met. Our support team is happy to help.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Debit Card Application Update', html });
+};
+
+/**
+ * Cheque-book rejected — specific legal reason mandated by ops:
+ * "Signature not updated in system records. Please update your signature to re-apply."
+ */
+const sendCheckbookRejectedEmail = async (email, name) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#10060; Request Declined')}
+    ${heading('Cheque Book Request Declined')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('We were unable to process your Cheque Book request.')}
+    ${infoBox('<strong>Reason:</strong> Signature not updated in system records. Please update your signature to re-apply.')}
+    ${para('Once your signature is updated in our records, you may submit a new Cheque Book request.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Cheque Book Request Declined', html });
+};
+
+/**
+ * Card-control modification alert — real-time fraud-prevention notice sent
+ * whenever a card control state changes. `changes` is an array of summary lines.
+ */
+const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, changes, time }) => {
+  const list = (changes || []).map((c) => `• ${c}`).join('<br/>');
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128272; Card Control Updated')}
+    ${heading('Your Card Settings Changed')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`A change was just made to your <strong>${tier || ''}</strong> card${maskedNumber ? ` (${maskedNumber})` : ''}:`)}
+    ${infoBox(list || 'Card controls were updated.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('When', time || new Date().toLocaleString('en-IN'))}
+    </table>
+    ${infoBox('&#9888;&#65039; If you did NOT make this change, freeze your card immediately and contact support — your account security may be at risk.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Card Control Updated', html });
+};
+
 module.exports = {
   sendEmail,
   sendOTPEmail,
@@ -342,4 +423,8 @@ module.exports = {
   sendTransferAlertEmail,
   sendPasswordResetEmail,
   sendServiceRequestEmail,
+  sendCardIssuedEmail,
+  sendCardRejectedEmail,
+  sendCheckbookRejectedEmail,
+  sendCardControlAlertEmail,
 };
