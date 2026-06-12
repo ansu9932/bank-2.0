@@ -16,7 +16,6 @@ const NAV_LINKS = [
 const MEGA = {
   accounts: [
     { label: 'Savings Account', to: '/accounts', icon: Wallet },
-    { label: 'Salary Account', to: '/accounts', icon: Wallet },
     { label: 'Current Account', to: '/accounts', icon: Landmark },
   ],
   cards: [

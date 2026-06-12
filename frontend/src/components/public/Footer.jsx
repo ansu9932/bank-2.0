@@ -1,10 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Twitter, Linkedin, Instagram, Youtube, ShieldCheck, Phone, Mail, MapPin, MessageCircle } from 'lucide-react';
+import { ShieldCheck, Phone, Mail, MapPin, MessageCircle } from 'lucide-react';
 
 const PRODUCTS = [
   ['Savings Account', '/accounts'],
-  ['Salary Account', '/accounts'],
   ['Current Account', '/accounts'],
   ['Fixed Deposit', '/investments'],
   ['Recurring Deposit', '/investments'],
@@ -25,12 +24,7 @@ const QUICK = [
   ['Grievance Redressal', '/contact'],
 ];
 
-const SOCIALS = [
-  { Icon: Twitter, label: 'Twitter' },
-  { Icon: Linkedin, label: 'LinkedIn' },
-  { Icon: Instagram, label: 'Instagram' },
-  { Icon: Youtube, label: 'YouTube' },
-];
+// Social media presence intentionally removed per brand policy.
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -54,22 +48,10 @@ export default function Footer() {
             <p className="text-sm italic mb-5" style={{ color: 'rgba(255,255,255,0.55)' }}>
               Banking Beyond Boundaries
             </p>
-            <div className="flex items-center gap-3 mb-6">
-              {SOCIALS.map(({ Icon, label }) => (
-                <a
-                  key={label}
-                  href="#"
-                  aria-label={label}
-                  className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/[0.05] text-white hover:bg-[#CC0000] transition-colors"
-                >
-                  <Icon size={16} />
-                </a>
-              ))}
-            </div>
             <div className="space-y-2 text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-              <p>Regulated by the Reserve Bank of India</p>
+              <p>US Federally Regulated | Serving India via Corporate Partnership</p>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10">
-                <ShieldCheck size={13} style={{ color: '#FF3333' }} /> DICGC Insured
+                <ShieldCheck size={13} style={{ color: '#FF3333' }} /> FDIC Insured | US Federal Reserve Member
               </span>
             </div>
           </div>
@@ -128,12 +110,17 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-12 pt-8 border-t border-white/[0.08] flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
-          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            © {year} Alister Bank. All rights reserved.
-          </p>
-          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            IFSC: ALST0000001 | SWIFT: ALSTINBB | Regulated by RBI | Member of DICGC
+        <div className="mt-12 pt-8 border-t border-white/[0.08] space-y-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              © {year} Alister Bank. All rights reserved.
+            </p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              Copyright © 2025 Alister Bank. SWIFT: ALSTUS33 | Regulated by the Federal Reserve &amp; FDIC | India Operations conducted under Corporate Service Agreement
+            </p>
+          </div>
+          <p className="text-[11px] leading-relaxed text-center md:text-left" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            Alister Bank is a US federally chartered bank. India-based services are provided solely to pre-approved corporate project participants. Not a public retail bank in India. Deposits governed by US federal law.
           </p>
         </div>
       </div>

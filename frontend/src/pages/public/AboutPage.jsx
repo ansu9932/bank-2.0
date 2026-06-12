@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Linkedin, Award, Target, Eye, HeartHandshake } from 'lucide-react';
+import { Award, Target, Eye, HeartHandshake, ShieldCheck } from 'lucide-react';
 
 import PageTransition from '../../components/public/PageTransition';
 import StatCounter from '../../components/public/StatCounter';
@@ -11,7 +11,7 @@ const TIMELINE = [
   { year: '2018', text: 'Alister Bank founded with a vision to make banking fair, fast and fully digital.' },
   { year: '2020', text: 'Launched mobile-first app and instant account opening with video KYC.' },
   { year: '2022', text: 'Crossed 1 million accounts and expanded into loans and investments.' },
-  { year: '2024', text: 'Recognised as one of India\'s fastest-growing digital banks.' },
+  { year: '2024', text: 'Recognised as one of the fastest-growing digital banks serving India under US federal oversight.' },
   { year: '2025', text: 'Surpassed 2.5 million customers and ₹50,000+ Cr in processed transactions.' },
 ];
 
@@ -21,7 +21,18 @@ const LEADERS = [
   { name: 'Rahul Iyer', role: 'Chief Technology Officer', initials: 'RI' },
 ];
 
-const AWARDS = ['ISO 27001', 'PCI DSS', 'RBI Regulated', 'DPDP Compliant'];
+const AWARDS = ['FDIC Insured', 'Federal Reserve Member', 'ISO 27001', 'PCI DSS Certified', 'FinCEN Registered', 'BSA/AML Compliant'];
+
+const COMPLIANCE = [
+  'Governed by US Federal Banking Law (12 U.S.C.)',
+  'Supervised by the Board of Governors of the Federal Reserve System',
+  'Deposits insured by the FDIC up to applicable limits',
+  'Compliant with the Bank Secrecy Act (BSA) and Anti-Money Laundering (AML) regulations',
+  'Registered with the Financial Crimes Enforcement Network (FinCEN)',
+  'Adheres to the Gramm-Leach-Bliley Act (GLBA) for customer data privacy',
+  'Compliant with the USA PATRIOT Act for identity verification',
+  'India operations conducted exclusively under a Corporate Service Agreement — not a direct retail banking license in India',
+];
 
 const STATS = [
   { value: 2.5, decimals: 1, suffix: 'M+', label: 'Customers' },
@@ -47,7 +58,7 @@ export default function AboutPage() {
       <Section className="grid md:grid-cols-2 gap-6">
         {[
           { icon: Target, title: 'Our Mission', text: 'To deliver fair, transparent and effortless banking to every Indian — with zero hidden charges and total digital convenience.' },
-          { icon: Eye, title: 'Our Vision', text: 'To be the most trusted digital bank in India, empowering financial freedom for 100 million people by 2030.' },
+          { icon: Eye, title: 'Our Vision', text: 'To be the most trusted US-chartered digital bank serving India, empowering financial freedom for 100 million people by 2030.' },
         ].map((c) => (
           <motion.div key={c.title} variants={fadeUp} initial="hidden" whileInView="show" viewport={inView} className="rounded-3xl al-glass border border-white/[0.08] p-8">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}>
@@ -104,10 +115,7 @@ export default function AboutPage() {
                 {l.initials}
               </div>
               <h3 className="text-white font-semibold text-lg">{l.name}</h3>
-              <p className="text-sm mb-4" style={{ color: 'rgba(255,255,255,0.55)' }}>{l.role}</p>
-              <a href="#" aria-label={`${l.name} on LinkedIn`} className="inline-flex w-9 h-9 rounded-lg items-center justify-center bg-white/[0.05] text-white hover:bg-[#CC0000] transition-colors">
-                <Linkedin size={16} />
-              </a>
+              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>{l.role}</p>
             </motion.div>
           ))}
         </motion.div>
@@ -116,11 +124,30 @@ export default function AboutPage() {
       {/* Awards */}
       <Section>
         <SectionTitle eyebrow="Trust & Compliance" title="Awards & Certifications" />
-        <motion.div variants={staggerContainer(0.08)} initial="hidden" whileInView="show" viewport={inView} className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+        <motion.div variants={staggerContainer(0.08)} initial="hidden" whileInView="show" viewport={inView} className="grid grid-cols-2 sm:grid-cols-3 gap-5">
           {AWARDS.map((a) => (
             <motion.div key={a} variants={fadeUp} className="rounded-2xl al-glass border border-white/[0.08] p-7 flex flex-col items-center gap-3 text-center">
               <Award size={32} style={{ color: '#FF3333' }} />
               <p className="text-white font-semibold text-sm">{a}</p>
+            </motion.div>
+          ))}
+        </motion.div>
+      </Section>
+
+      {/* Regulatory Compliance & Governing Law */}
+      <Section>
+        <SectionTitle eyebrow="Governing Law" title="Regulatory Compliance & Governing Law" />
+        <motion.div variants={staggerContainer(0.08)} initial="hidden" whileInView="show" viewport={inView} className="grid sm:grid-cols-2 gap-4">
+          {COMPLIANCE.map((item) => (
+            <motion.div
+              key={item}
+              variants={fadeUp}
+              className="rounded-2xl al-glass border border-white/[0.08] p-5 flex items-start gap-3.5"
+            >
+              <span className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}>
+                <ShieldCheck size={18} style={{ color: '#FF3333' }} />
+              </span>
+              <p className="text-sm leading-relaxed text-white">{item}</p>
             </motion.div>
           ))}
         </motion.div>

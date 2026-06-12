@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Check, X, Wallet, Briefcase, Building2 } from 'lucide-react';
+import { Check, X, Wallet, Building2, ShieldAlert } from 'lucide-react';
 
 import PageTransition from '../../components/public/PageTransition';
 import FAQAccordion from '../../components/public/FAQAccordion';
@@ -14,17 +14,9 @@ const ACCOUNTS = [
     badge: 'Most Popular',
     desc: 'Grow your money with attractive interest and everyday banking essentials.',
     benefits: ['Up to 7% interest p.a.', 'Free RuPay/VISA debit card', 'Free NetBanking & mobile app', 'UPI & instant transfers'],
-    eligibility: 'Indian resident, 18+ years, valid KYC',
-    cta: 'Open Savings Account',
-  },
-  {
-    icon: Briefcase,
-    name: 'Salary Account',
-    badge: 'Zero Balance',
-    desc: 'A premium zero-balance account designed for salaried professionals.',
-    benefits: ['No minimum balance', 'Premium debit card', 'Salary advance facility', 'Auto-sweep to FD'],
-    eligibility: 'Salaried individuals with employer tie-up',
-    cta: 'Apply for Salary Account',
+    minBalance: '₹5,00,000',
+    eligibility: 'India-based, invited under the Corporate Partnership Program',
+    cta: 'Request Account Access',
   },
   {
     icon: Building2,
@@ -32,19 +24,19 @@ const ACCOUNTS = [
     badge: 'For Business',
     desc: 'High-limit banking for businesses, with overdraft and bulk payments.',
     benefits: ['High transaction limits', 'Overdraft facility', 'Bulk & vendor payments', 'GST-ready statements'],
-    eligibility: 'Registered businesses & proprietors',
-    cta: 'Open Business Account',
+    minBalance: '₹10,00,000',
+    eligibility: 'India-based businesses, invited under the Corporate Partnership Program',
+    cta: 'Request Account Access',
   },
 ];
 
 const COMPARE_ROWS = [
-  ['Minimum Balance', '₹5,000', 'Zero', '₹25,000'],
-  ['Interest Rate', '4% – 7%', '4% – 7%', 'Nil'],
-  ['Debit Card', 'Free', 'Premium Free', 'Business'],
-  ['NetBanking', true, true, true],
-  ['Mobile App', true, true, true],
-  ['Overdraft', false, false, true],
-  ['Bulk Payments', false, false, true],
+  ['Eligible Users', 'India (Invited Only)', 'India (Invited Only)'],
+  ['Opening Deposit', '₹1,00,000', '₹1,00,000'],
+  ['Minimum Balance', '₹5,00,000', '₹10,00,000'],
+  ['Interest Rate', '4% – 7% p.a.', 'Non-interest bearing'],
+  ['Transaction Limits', 'Standard', 'High / Bulk supported'],
+  ['Overdraft Facility', false, true],
 ];
 
 const KYC_ITEMS = [
@@ -58,18 +50,49 @@ export default function AccountsPage() {
   return (
     <PageTransition
       title="Accounts — Alister Bank"
-      description="Choose between Savings, Salary and Current accounts with great rates, zero hidden fees and instant digital onboarding."
+      description="Savings and Current accounts offered to invited participants under the Alister Bank Corporate Partnership Program."
     >
       <PageHero
         eyebrow="Personal & Business"
         title="Choose Your"
         highlight="Account Type"
-        subtitle="Savings, salary or current — every Alister account comes with transparent pricing and 5-minute video KYC."
+        subtitle="Savings or current — every Alister account is offered under our US-regulated Corporate Partnership Program."
       />
 
+      {/* Restricted-access notice + minimum opening deposit */}
+      <Section className="!py-10 lg:!py-12 space-y-5">
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={inView}
+          className="rounded-2xl p-6 sm:p-7 flex items-start gap-4"
+          style={{ background: 'rgba(204,0,0,0.1)', border: '1px solid rgba(204,0,0,0.4)' }}
+        >
+          <span className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: 'rgba(204,0,0,0.2)' }}>
+            <ShieldAlert size={22} style={{ color: '#FF3333' }} />
+          </span>
+          <p className="text-sm sm:text-base font-semibold text-white leading-relaxed">
+            Account opening is restricted to selected users approved under the Alister Bank Corporate Partnership Program.
+            Public applications are not accepted. Please contact your project coordinator for access.
+          </p>
+        </motion.div>
+
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={inView}
+          className="rounded-2xl px-6 py-5 text-center"
+          style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}
+        >
+          <p className="text-white font-bold text-lg sm:text-xl">Minimum Account Opening Deposit: ₹1,00,000</p>
+        </motion.div>
+      </Section>
+
       {/* Account type cards */}
-      <Section>
-        <motion.div variants={staggerContainer(0.12)} initial="hidden" whileInView="show" viewport={inView} className="grid lg:grid-cols-3 gap-6">
+      <Section className="!pt-0">
+        <motion.div variants={staggerContainer(0.12)} initial="hidden" whileInView="show" viewport={inView} className="grid sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {ACCOUNTS.map((a) => (
             <motion.div
               key={a.name}
@@ -91,6 +114,10 @@ export default function AccountsPage() {
                   </li>
                 ))}
               </ul>
+              <div className="rounded-xl px-4 py-3 mb-4" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Minimum Balance Required</p>
+                <p className="text-base font-bold mt-0.5" style={{ color: '#FF3333' }}>{a.minBalance}</p>
+              </div>
               <p className="text-xs mb-5" style={{ color: 'rgba(255,255,255,0.45)' }}>
                 <span className="text-white/70 font-medium">Eligibility:</span> {a.eligibility}
               </p>
@@ -104,13 +131,12 @@ export default function AccountsPage() {
       <Section>
         <SectionTitle eyebrow="Side by Side" title="Compare All Accounts" />
         <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={inView} className="rounded-2xl overflow-hidden border border-white/[0.08] overflow-x-auto">
-          <table className="w-full text-left min-w-[560px]">
+          <table className="w-full text-left min-w-[480px]">
             <thead>
               <tr style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}>
                 <th className="px-5 py-4 text-white text-sm font-semibold">Feature</th>
-                <th className="px-5 py-4 text-white text-sm font-semibold">Savings</th>
-                <th className="px-5 py-4 text-white text-sm font-semibold">Salary</th>
-                <th className="px-5 py-4 text-white text-sm font-semibold">Current</th>
+                <th className="px-5 py-4 text-white text-sm font-semibold">Savings Account</th>
+                <th className="px-5 py-4 text-white text-sm font-semibold">Current Account</th>
               </tr>
             </thead>
             <tbody>
@@ -119,7 +145,7 @@ export default function AccountsPage() {
                   <td className="px-5 py-4 text-white text-sm font-medium">{row[0]}</td>
                   {row.slice(1).map((cell, j) => (
                     <td key={j} className="px-5 py-4 text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>
-                      {cell === true ? <Check size={18} style={{ color: '#FF3333' }} /> : cell === false ? <X size={18} className="text-white/25" /> : cell}
+                      {cell === true ? <span className="inline-flex items-center gap-1.5"><Check size={18} style={{ color: '#FF3333' }} /> Yes</span> : cell === false ? <span className="inline-flex items-center gap-1.5 text-white/40"><X size={18} className="text-white/25" /> No</span> : cell}
                     </td>
                   ))}
                 </tr>

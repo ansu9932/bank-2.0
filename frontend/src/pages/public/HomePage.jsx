@@ -93,6 +93,15 @@ function Hero() {
         }}
       />
 
+      {/* Invitation-only notice bar (Corporate Partner Project) */}
+      <div className="relative z-10 border-b" style={{ background: 'rgba(153,0,0,0.3)', borderColor: 'rgba(204,0,0,0.4)' }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-2.5">
+          <p className="text-center text-xs sm:text-sm font-medium text-white">
+            ⚠️ Alister Bank India services are exclusively available to pre-approved participants of our Corporate Partner Project. Access is by invitation only.
+          </p>
+        </div>
+      </div>
+
       <div className="relative max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 min-h-[calc(100vh-72px)] grid lg:grid-cols-5 gap-12 items-center py-16 lg:py-0">
         {/* Left */}
         <motion.div variants={heroText} initial="hidden" animate="show" className="lg:col-span-3">
@@ -102,7 +111,7 @@ function Hero() {
           >
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#FF3333' }} />
             <span className="text-[11px] font-medium tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.6)' }}>
-              🏦 India's Fastest Growing Digital Bank
+              🏦 US-Chartered Bank — Serving India
             </span>
           </motion.div>
 
@@ -123,7 +132,7 @@ function Hero() {
           </motion.p>
 
           <motion.div variants={heroLine} className="mt-9 flex flex-col sm:flex-row gap-4">
-            <RedButton to="/open-account" large>Open Account Free</RedButton>
+            <RedButton to="/open-account" large>Request Account Access</RedButton>
             <GhostButton to="/accounts" large>Explore Products</GhostButton>
           </motion.div>
 
@@ -311,9 +320,9 @@ function PhoneVisual() {
 /* ── Section 5: How It Works ─────────────────────────────────────────────── */
 function HowItWorks() {
   const steps = [
-    { icon: FileText, title: 'Fill KYC Form', text: 'Enter personal details and upload documents' },
-    { icon: Video, title: 'Video Verification', text: 'Quick 2-minute live video KYC' },
-    { icon: CheckCircle2, title: 'Account Active!', text: 'Start banking immediately' },
+    { icon: FileText, title: 'Receive Invitation', text: 'Get approved by your corporate project coordinator' },
+    { icon: Video, title: 'Complete KYC', text: 'Identity verification as per US federal requirements' },
+    { icon: CheckCircle2, title: 'Account Activated', text: 'Begin banking under the corporate program' },
   ];
   return (
     <Section style={{ background: 'linear-gradient(180deg, transparent, rgba(204,0,0,0.04), transparent)' }}>
