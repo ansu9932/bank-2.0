@@ -47,6 +47,25 @@ router.post('/forgot-password', authLimiter, [
   body('email').isEmail(),
 ], validate, authController.forgotPassword);
 
+// ─── Identity-verification password reset (3-step wizard) ────────────────────
+// Public, pre-login. All three steps are rate-limited with authLimiter to
+// throttle brute-forcing of account number / DOB combinations.
+router.post('/verify-userid', authLimiter, [
+  body('userId').notEmpty().withMessage('User ID is required'),
+], validate, authController.verifyUserId);
+
+router.post('/verify-account-details', authLimiter, [
+  body('userId').notEmpty(),
+  body('accountNumber').notEmpty().withMessage('Account number is required'),
+  body('dateOfBirth').isISO8601().withMessage('A valid date of birth is required'),
+], validate, authController.verifyAccountDetails);
+
+router.post('/send-reset-link', authLimiter, [
+  body('userId').notEmpty(),
+  body('accountNumber').notEmpty(),
+  body('dateOfBirth').isISO8601(),
+], validate, authController.sendResetLink);
+
 router.post('/reset-password', [
   body('token').notEmpty(),
   body('newPassword').isLength({ min: 8 }),

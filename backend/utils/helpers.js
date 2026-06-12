@@ -77,6 +77,18 @@ const maskAccountNumber = (accountNumber) => {
 };
 
 /**
+ * Mask an email address for safe display — keep the first 2 chars of the local
+ * part and mask the rest, e.g. `ar***@gmail.com`. Never exposes the full local
+ * part. Used by the identity-verification password reset flow.
+ */
+const maskEmail = (email) => {
+  const [local, domain] = String(email).split('@');
+  if (!domain) return email;
+  const visible = local.slice(0, 2);
+  return `${visible}${'*'.repeat(Math.max(local.length - 2, 3))}@${domain}`;
+};
+
+/**
  * Format currency
  */
 const formatCurrency = (amount, currency = 'INR') => {
@@ -290,6 +302,7 @@ module.exports = {
   generateSecureToken,
   hashValue,
   maskAccountNumber,
+  maskEmail,
   formatCurrency,
   getOTPExpiry,
   getSecureLinkExpiry,

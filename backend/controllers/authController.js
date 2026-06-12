@@ -7,7 +7,7 @@ const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendVideoKYCE
 const { createAuditLog } = require('../middleware/auditLogger');
 const {
   generateOTP, hashValue, getOTPExpiry, generateSecureToken,
-  getSecureLinkExpiry, getOnboardingLinkExpiry, detectDevice, isExpired,
+  getSecureLinkExpiry, getOnboardingLinkExpiry, detectDevice, isExpired, maskEmail,
 } = require('../utils/helpers');
 const { success, error, badRequest, unauthorized, notFound, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -354,6 +354,128 @@ exports.forgotPassword = async (req, res) => {
   } catch (err) {
     logger.error(`Forgot password error: ${err.message}`);
     return error(res, 'Failed to process request.');
+  }
+};
+
+// ─── Identity-Verification Password Reset (3-step wizard) ────────────────────
+// A self-service alternative to the email-only forgotPassword flow. The user
+// proves identity across three discrete requests (User ID → account number +
+// DOB → send link). Only after a fresh, full re-verification is a single-use
+// password_reset SecureLink minted and emailed. The existing /reset-password
+// endpoint consumes that link unchanged.
+//
+// Anti-enumeration: steps 2 and 3 return ONE generic error on ANY mismatch and
+// never reveal which field failed. Sensitive values (account number, DOB, full
+// email) are never logged or returned in plaintext.
+const GENERIC_VERIFY_ERROR =
+  "We couldn't verify your details. Please check your User ID, account number, and date of birth.";
+
+// Re-usable strict identity check for steps 2 and 3. Returns the matched User
+// (with `account` included) on a full match, or null otherwise. A closed
+// account (on either the User or the Account record) is treated as a non-match.
+const verifyResetIdentity = async ({ userId, accountNumber, dateOfBirth }) => {
+  const user = await User.findOne({
+    where: { username: String(userId).trim() },
+    include: [{ model: Account, as: 'account' }],
+  });
+
+  const matches = Boolean(
+    user &&
+    user.account &&
+    user.account.account_number === String(accountNumber).trim() &&
+    // date_of_birth is a Sequelize DATEONLY → already a 'YYYY-MM-DD' string.
+    String(user.date_of_birth) === String(dateOfBirth).trim() &&
+    user.account.status !== 'closed' &&
+    user.account_status !== 'closed'
+  );
+
+  return matches ? user : null;
+};
+
+// ─── Step 1: Verify User ID ──────────────────────────────────────────────────
+exports.verifyUserId = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return badRequest(res, 'User ID is required.');
+
+    const user = await User.findOne({ where: { username: String(userId).trim() } });
+    if (!user) {
+      return notFound(res, 'User ID not found. Please check and try again.');
+    }
+
+    return success(res, {}, 'User ID verified.');
+  } catch (err) {
+    logger.error(`Verify userId error: ${err.message}`);
+    return error(res, 'Could not process your request right now. Please try again shortly.');
+  }
+};
+
+// ─── Step 2: Verify Account Number + Date of Birth ───────────────────────────
+exports.verifyAccountDetails = async (req, res) => {
+  try {
+    const { userId, accountNumber, dateOfBirth } = req.body;
+    if (!userId || !accountNumber || !dateOfBirth) {
+      return badRequest(res, GENERIC_VERIFY_ERROR);
+    }
+
+    const user = await verifyResetIdentity({ userId, accountNumber, dateOfBirth });
+    if (!user) {
+      // Generic, field-agnostic failure → no enumeration.
+      return badRequest(res, GENERIC_VERIFY_ERROR);
+    }
+
+    // Confirm where the reset link will be sent WITHOUT revealing the full email.
+    return success(res, { maskedEmail: maskEmail(user.email) }, 'Identity verified successfully.');
+  } catch (err) {
+    logger.error(`Verify account details error: ${err.message}`);
+    return error(res, 'Could not process your request right now. Please try again shortly.');
+  }
+};
+
+// ─── Step 3: Send Reset Link ─────────────────────────────────────────────────
+exports.sendResetLink = async (req, res) => {
+  try {
+    const { userId, accountNumber, dateOfBirth } = req.body;
+    if (!userId || !accountNumber || !dateOfBirth) {
+      return badRequest(res, GENERIC_VERIFY_ERROR);
+    }
+
+    // Never trust step 2's success — re-verify identity from scratch.
+    const user = await verifyResetIdentity({ userId, accountNumber, dateOfBirth });
+    if (!user) {
+      return badRequest(res, GENERIC_VERIFY_ERROR);
+    }
+
+    // Always mint a fresh, single-use 5-minute reset link (mirrors forgotPassword).
+    const token = generateSecureToken();
+    const expiresAt = getSecureLinkExpiry(5);
+
+    await SecureLink.create({
+      user_id: user.id,
+      token,
+      purpose: 'password_reset',
+      expires_at: expiresAt,
+      ip_address: req.ip,
+    });
+
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    await sendPasswordResetEmail(user.email, user.first_name, resetLink);
+
+    await createAuditLog({
+      userId: user.id,
+      action: 'PASSWORD_RESET_REQUESTED',
+      entityType: 'SecureLink',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      status: 'success',
+      description: 'Password reset link issued via identity-verification flow (expires in 5 minutes).',
+    });
+
+    // Generic success — email already shown masked in step 2.
+    return success(res, {}, 'Password reset link sent to your registered email (expires in 5 minutes).');
+  } catch (err) {
+    logger.error(`Send reset link error: ${err.message}`);
+    return error(res, 'Could not process your request right now. Please try again shortly.');
   }
 };
 
