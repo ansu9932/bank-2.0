@@ -7,9 +7,12 @@ import { fadeUp, inView } from './ui';
 // ── Reusable page primitives shared across all public pages ──────────────────
 
 // Standard section wrapper with consistent responsive padding.
+// `relative z-10` ensures content sections always paint above the hero's
+// isolated layer on mobile (prevents cross-section paint bleed); it does not
+// affect layout or desktop appearance.
 export function Section({ children, className = '', id, style }) {
   return (
-    <section id={id} className={`max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-12 lg:py-24 ${className}`} style={style}>
+    <section id={id} className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-12 lg:py-24 ${className}`} style={style}>
       {children}
     </section>
   );

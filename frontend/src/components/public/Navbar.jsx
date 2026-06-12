@@ -180,15 +180,23 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Mobile hamburger */}
-        <button
-          className="lg:hidden p-2 -mr-2"
-          style={{ color: '#FF3333' }}
-          onClick={() => setMenuOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu size={28} />
-        </button>
+        {/* Mobile actions: persistent Login button + hamburger */}
+        <div className="lg:hidden flex items-center gap-2">
+          <Link
+            to="/login"
+            className="px-3.5 py-2 rounded-lg text-xs font-semibold text-white border border-white/20 hover:border-[#CC0000] hover:text-[#FF3333] transition-all"
+          >
+            Login
+          </Link>
+          <button
+            className="p-2 -mr-2"
+            style={{ color: '#FF3333' }}
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu size={28} />
+          </button>
+        </div>
       </nav>
 
       {/* Mobile full-screen overlay */}

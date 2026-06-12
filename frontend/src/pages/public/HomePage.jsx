@@ -76,7 +76,10 @@ export default function HomePage() {
 /* ── Section 1: Hero ─────────────────────────────────────────────────────── */
 function Hero() {
   return (
-    <section className="relative overflow-hidden al-hero-bg">
+    // `isolate` forces the hero into its own stacking/compositing context so
+    // `overflow-hidden` reliably clips the animated (transform: scale) glow on
+    // mobile and the hero's paint can't bleed into the sections below.
+    <section className="relative isolate overflow-hidden al-hero-bg">
       {/* Animated red glow + grid */}
       <div
         className="pointer-events-none absolute -top-48 left-1/3 w-[760px] h-[760px] rounded-full blur-[170px] al-glow-pulse"
@@ -102,7 +105,7 @@ function Hero() {
         </div>
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 min-h-[calc(100vh-72px)] grid lg:grid-cols-5 gap-12 items-center py-16 lg:py-0">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 min-h-[calc(100vh-72px)] grid lg:grid-cols-5 gap-12 items-center py-16 lg:py-0">
         {/* Left */}
         <motion.div variants={heroText} initial="hidden" animate="show" className="lg:col-span-3">
           <motion.div
@@ -161,7 +164,7 @@ function Hero() {
 /* ── Section 2: Stats Bar ────────────────────────────────────────────────── */
 function StatsBar() {
   return (
-    <div className="relative border-y border-white/[0.08]" style={{ background: 'linear-gradient(90deg, #1A0000, #0A0A0A, #1A0000)' }}>
+    <div className="relative z-10 border-y border-white/[0.08]" style={{ background: 'linear-gradient(90deg, #1A0000, #0A0A0A, #1A0000)' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-12 grid grid-cols-2 lg:grid-cols-4 gap-8">
         {STATS.map((s) => (
           <div key={s.label} className="text-center">
