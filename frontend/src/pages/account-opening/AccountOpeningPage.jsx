@@ -96,6 +96,39 @@ const initForm = {
   files: {},
 };
 
+// Decorative, non-interactive red glow orbs sitting behind all page content.
+function GlowOrbs() {
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed rounded-full"
+        style={{ width: 500, height: 500, top: -100, right: -100, background: 'rgba(204,0,0,0.10)', filter: 'blur(100px)', zIndex: 0 }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed rounded-full"
+        style={{ width: 400, height: 400, bottom: -80, left: -80, background: 'rgba(204,0,0,0.07)', filter: 'blur(120px)', zIndex: 0 }}
+      />
+    </>
+  );
+}
+
+const PAGE_BG = { background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 50%, #2D0000 100%)' };
+
+// Reusable button class strings (Alister Bank design system).
+const PRIMARY_BTN =
+  'min-w-[140px] w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-[14px] rounded-[12px] ' +
+  'text-white font-semibold text-[15px] cursor-pointer transition-colors duration-200 ' +
+  'disabled:opacity-40 disabled:cursor-not-allowed ' +
+  'bg-[linear-gradient(135deg,#CC0000,#FF3333)] hover:bg-[linear-gradient(135deg,#990000,#CC0000)]';
+
+const SECONDARY_BTN =
+  'w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-[13px] rounded-[12px] ' +
+  'text-[15px] font-medium cursor-pointer transition-colors duration-200 bg-transparent ' +
+  'border border-white/[0.15] text-white/70 hover:border-white/[0.35] hover:text-white ' +
+  'disabled:opacity-30 disabled:cursor-not-allowed';
+
 export default function AccountOpeningPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -273,154 +306,230 @@ export default function AccountOpeningPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-dark-900 p-6">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-10 text-center max-w-md w-full">
+      <div className="min-h-screen flex items-center justify-center p-6 relative" style={PAGE_BG}>
+        <GlowOrbs />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+          className="relative z-[1] w-full max-w-md rounded-[20px] border border-white/[0.07] sm:backdrop-blur-[20px] text-center px-8 sm:px-10 py-14"
+          style={{ background: 'rgba(255,255,255,0.03)', borderTop: '2px solid rgba(204,0,0,0.5)', boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(204,0,0,0.06)' }}
+        >
           <motion.div
-            initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: 'spring' }}
-            className="w-20 h-20 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center mx-auto mb-6"
+            initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.15 }}
+            className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-6"
+            style={{ background: 'linear-gradient(135deg, #CC0000, #FF3333)', boxShadow: '0 0 30px rgba(204,0,0,0.4)' }}
           >
-            <span className="text-4xl">🎉</span>
+            <RiCheckLine className="text-white text-[32px]" />
           </motion.div>
-          <h2 className="font-display text-2xl font-700 text-white mb-3">Application Submitted!</h2>
-          <p className="text-dark-200 text-sm mb-4 leading-relaxed">
+          <h2 className="text-2xl font-bold text-white mb-2">Application Submitted!</h2>
+          <p className="text-[15px] mb-5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
             Your application is under review. Check your email for updates.
           </p>
-          <div className="bg-dark-700 rounded-xl p-4 mb-6">
-            <p className="text-dark-300 text-xs mb-1">Your Customer ID</p>
-            <p className="font-display text-2xl font-700 text-brand-400 tracking-widest">{customerId}</p>
-            <p className="text-dark-400 text-xs mt-1">Save this for future reference</p>
+          <div className="rounded-xl p-4 mb-6" style={{ background: 'rgba(204,0,0,0.08)', border: '1px solid rgba(204,0,0,0.25)' }}>
+            <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>Your Customer ID</p>
+            <p className="text-2xl font-bold tracking-widest" style={{ color: '#FF3333' }}>{customerId}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>Save this for future reference</p>
           </div>
-          <div className="text-left bg-dark-700/50 rounded-xl p-4 mb-6 space-y-2">
+          <div className="text-left rounded-xl p-4 mb-6 space-y-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
             {[
               { icon: '📧', text: 'KYC review email sent to your inbox' },
               { icon: '🎥', text: 'Video KYC link will arrive in ~10 minutes' },
               { icon: '✅', text: 'Account approved & setup link within 20 min' },
             ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2.5 text-sm text-dark-200">
+              <div key={i} className="flex items-center gap-2.5 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
                 <span>{item.icon}</span><span>{item.text}</span>
               </div>
             ))}
           </div>
-          <Link to="/login" className="btn-primary w-full justify-center">Go to Login</Link>
+          <Link to="/login" className={`${PRIMARY_BTN} w-full`}>Go to Login</Link>
         </motion.div>
       </div>
     );
   }
 
+  // Filled width of the progress track, derived from the existing step state.
+  const progressPct = ((step - 1) / (STEPS.length - 1)) * 100;
+
   return (
-    <div className="min-h-screen bg-dark-900 py-8 px-4">
-      {/* Header */}
-      <div className="max-w-3xl mx-auto mb-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center">
-              <RiBankLine className="text-white text-lg" />
-            </div>
-            <p className="font-display font-700 text-white">ALISTER BANK</p>
-          </div>
-          <Link to="/login" className="text-dark-300 hover:text-white text-sm transition-colors flex items-center gap-1.5">
-            <RiArrowLeftLine /> Back to Login
-          </Link>
-        </div>
-        <div className="mt-6">
-          <h1 className="font-display text-2xl font-700 text-white">Open Your Account</h1>
-          <p className="text-dark-200 text-sm mt-1">Complete in 5 simple steps — takes about 5 minutes</p>
-        </div>
-      </div>
+    <div className="min-h-screen py-8 px-4 relative" style={PAGE_BG}>
+      <GlowOrbs />
 
-      {/* Progress bar */}
-      <div className="max-w-3xl mx-auto mb-6">
-        <div className="flex items-center gap-0">
-          {STEPS.map((s, idx) => (
-            <React.Fragment key={s.id}>
-              <div className="flex flex-col items-center">
-                <motion.div
-                  animate={{
-                    backgroundColor: step > s.id ? '#22c55e' : step === s.id ? '#c8102e' : '#1e1e2e',
-                    borderColor: step >= s.id ? (step > s.id ? '#22c55e' : '#c8102e') : 'rgba(255,255,255,0.1)',
-                  }}
-                  className="w-10 h-10 rounded-full border-2 flex items-center justify-center text-sm font-bold text-white"
-                >
-                  {step > s.id ? <RiCheckLine /> : <span>{s.icon}</span>}
-                </motion.div>
-                <p className={`text-xs mt-1.5 hidden sm:block transition-colors ${step >= s.id ? 'text-white' : 'text-dark-400'}`}>
-                  {s.label}
-                </p>
-              </div>
-              {idx < STEPS.length - 1 && (
-                <div className="flex-1 h-0.5 mx-1 mb-4 rounded-full transition-colors duration-500"
-                  style={{ backgroundColor: step > s.id ? '#22c55e' : 'rgba(255,255,255,0.08)' }} />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      {/* Step content */}
-      <div className="max-w-3xl mx-auto">
-        <div className="glass-card p-6 sm:p-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}
-            >
-              {step === 1 && (
-                <StepPersonal
-                  form={form} update={updateForm}
-                  errors={showErrors ? errors : {}}
-                  nameLocked={nameLocked}
-                />
-              )}
-              {step === 2 && (
-                <StepAddress
-                  form={form} update={updateForm}
-                  errors={showErrors ? errors : {}}
-                />
-              )}
-              {step === 3 && (
-                <StepDocuments
-                  form={form} update={updateForm}
-                  errors={showErrors ? errors : {}}
-                  nameLocked={nameLocked}
-                  setNameLocked={setNameLocked}
-                />
-              )}
-              {step === 4 && (
-                <StepOTPVerify
-                  email={form.email}
-                  verified={otpVerified}
-                  onVerified={() => setOtpVerified(true)}
-                />
-              )}
-              {step === 5 && <StepReview form={form} />}
-            </motion.div>
-          </AnimatePresence>
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/[0.05]">
-            <button
-              onClick={prev} disabled={step === 1}
-              className="btn-secondary disabled:opacity-30"
-            >
-              <RiArrowLeftLine /> Previous
-            </button>
-
-            {step < 5 ? (
-              <button
-                onClick={next}
-                disabled={!currentStepValid}
-                title={currentStepValid ? '' : 'Complete the required fields to continue'}
-                className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+      <div className="relative z-[1]">
+        {/* Top bar — brand + back link */}
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #CC0000, #FF3333)', boxShadow: '0 0 18px rgba(204,0,0,0.4)' }}
               >
-                Next <RiArrowRightLine />
-              </button>
-            ) : (
-              <button onClick={handleSubmit} disabled={loading || !otpVerified} className="btn-primary">
-                {loading ? <><div className="spinner w-4 h-4" /> Submitting...</> : '🚀 Submit Application'}
-              </button>
-            )}
+                <RiBankLine className="text-white text-lg" />
+              </div>
+              <p className="font-700 text-white tracking-wide">ALISTER BANK</p>
+            </div>
+            <Link to="/login" className="text-white/50 hover:text-white text-sm transition-colors flex items-center gap-1.5">
+              <RiArrowLeftLine /> Back to Login
+            </Link>
+          </div>
+        </div>
+
+        {/* Page header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          className="text-center pt-8 sm:pt-12 mb-8"
+        >
+          <span
+            className="inline-block rounded-full text-xs font-medium mb-3 px-3.5 py-1"
+            style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)', color: '#CC0000' }}
+          >
+            🏦 Invitation-Only Program
+          </span>
+          <h1 className="text-[22px] sm:text-[32px] font-bold text-white leading-tight">
+            Open Your{' '}
+            <span style={{ background: 'linear-gradient(135deg, #CC0000, #FF3333)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Account
+            </span>
+          </h1>
+          <p className="text-[15px] mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            Complete in 5 simple steps — takes about 5 minutes
+          </p>
+        </motion.div>
+
+        {/* Step indicators */}
+        <div className="max-w-[600px] mx-auto mb-4 px-2">
+          <div className="flex items-start justify-between">
+            {STEPS.map((s) => {
+              const isCompleted = step > s.id;
+              const isActive = step === s.id;
+              const circleStyle = isCompleted
+                ? { background: 'linear-gradient(135deg, #CC0000, #FF3333)', color: '#fff', border: '2px solid transparent', boxShadow: '0 0 12px rgba(204,0,0,0.5)' }
+                : isActive
+                ? { background: 'transparent', border: '2px solid #CC0000', color: '#CC0000', boxShadow: '0 0 0 4px rgba(204,0,0,0.15)' }
+                : { background: 'rgba(255,255,255,0.05)', border: '2px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.3)' };
+              return (
+                <div key={s.id} className="flex flex-col items-center">
+                  <div
+                    className="w-[30px] h-[30px] sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] sm:text-[13px] font-semibold transition-all duration-300"
+                    style={circleStyle}
+                  >
+                    {isCompleted ? <RiCheckLine /> : <span>{s.id}</span>}
+                  </div>
+                  <p
+                    className="text-[11px] mt-1.5 hidden sm:block transition-colors"
+                    style={{ color: isActive ? '#CC0000' : 'rgba(255,255,255,0.4)' }}
+                  >
+                    {s.label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="max-w-[600px] mx-auto mb-8 px-2">
+          <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: 'linear-gradient(90deg, #CC0000, #FF3333)' }}
+              animate={{ width: `${progressPct}%` }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+
+        {/* Step content */}
+        <div className="max-w-[680px] mx-auto">
+          <div
+            className="rounded-[20px] p-6 sm:p-10 sm:backdrop-blur-[20px]"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderTop: '2px solid rgba(204,0,0,0.5)', boxShadow: '0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(204,0,0,0.06)' }}
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}
+              >
+                {step === 1 && (
+                  <StepPersonal
+                    form={form} update={updateForm}
+                    errors={showErrors ? errors : {}}
+                    nameLocked={nameLocked}
+                  />
+                )}
+                {step === 2 && (
+                  <StepAddress
+                    form={form} update={updateForm}
+                    errors={showErrors ? errors : {}}
+                  />
+                )}
+                {step === 3 && (
+                  <StepDocuments
+                    form={form} update={updateForm}
+                    errors={showErrors ? errors : {}}
+                    nameLocked={nameLocked}
+                    setNameLocked={setNameLocked}
+                  />
+                )}
+                {step === 4 && (
+                  <StepOTPVerify
+                    email={form.email}
+                    verified={otpVerified}
+                    onVerified={() => setOtpVerified(true)}
+                  />
+                )}
+                {step === 5 && <StepReview form={form} />}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Navigation */}
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-8 pt-6 border-t border-white/[0.07]">
+              <motion.button
+                onClick={prev} disabled={step === 1}
+                whileTap={{ scale: 0.98 }}
+                className={SECONDARY_BTN}
+              >
+                <RiArrowLeftLine /> Previous
+              </motion.button>
+
+              {step < 5 ? (
+                <motion.button
+                  onClick={next}
+                  disabled={!currentStepValid}
+                  title={currentStepValid ? '' : 'Complete the required fields to continue'}
+                  whileHover={{ y: -2, boxShadow: '0 8px 25px rgba(204,0,0,0.35)' }}
+                  whileTap={{ scale: 0.97 }}
+                  className={PRIMARY_BTN}
+                >
+                  Next <RiArrowRightLine />
+                </motion.button>
+              ) : (
+                <motion.button
+                  onClick={handleSubmit} disabled={loading || !otpVerified}
+                  whileHover={{ y: -2, boxShadow: '0 8px 25px rgba(204,0,0,0.35)' }}
+                  whileTap={{ scale: 0.97 }}
+                  className={PRIMARY_BTN}
+                >
+                  {loading ? <><div className="spinner w-4 h-4" /> Submitting...</> : '🚀 Submit Application'}
+                </motion.button>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom security trust bar (cosmetic) */}
+          <div className="mt-6 flex justify-center gap-3 flex-wrap">
+            {[
+              ['🔒', '256-bit Encrypted'],
+              ['🏛️', 'FDIC Regulated'],
+              ['🛡️', 'OCC Supervised'],
+            ].map(([icon, label]) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}
+              >
+                <span>{icon}</span> {label}
+              </span>
+            ))}
           </div>
         </div>
       </div>
