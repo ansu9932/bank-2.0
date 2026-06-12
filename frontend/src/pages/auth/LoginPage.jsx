@@ -14,6 +14,17 @@ import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 // state and bounce to the public homepage.
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 
+// Shared input styling (Alister Bank design system). Logic/attributes on the
+// inputs themselves are untouched — this only controls appearance + focus state.
+const INPUT_CLASS =
+  'w-full bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] rounded-[10px] ' +
+  'text-white text-[15px] py-3 sm:py-[13px] transition-all duration-200 placeholder:text-white/30 ' +
+  'focus:outline-none focus:border-[#CC0000] focus:border-l-[3px] focus:shadow-[0_0_0_3px_rgba(204,0,0,0.15)]';
+
+const LABEL_CLASS = 'block text-[13px] font-medium text-white/50 mb-1.5';
+
+const LINK_CLASS = 'text-[#CC0000] font-medium hover:text-[#FF3333] hover:underline transition-colors';
+
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -111,25 +122,31 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-dark-900 overflow-hidden">
+    <div
+      className="min-h-screen flex overflow-hidden relative"
+      style={{ background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 50%, #2D0000 100%)' }}
+    >
       {/* Left — branding panel */}
       <motion.div
         initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}
-        className="hidden lg:flex flex-col justify-between w-[480px] bg-dark-800 border-r border-white/[0.05] p-12 relative overflow-hidden flex-shrink-0"
+        className="hidden lg:flex flex-col justify-between w-[480px] bg-[#1A1A1A]/70 border-r border-white/[0.05] p-12 relative overflow-hidden flex-shrink-0"
       >
         {/* Background decorations */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-brand-500/10 blur-3xl" />
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-brand-500/5 blur-3xl" />
+        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#CC0000]/10 blur-3xl" />
+        <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-[#CC0000]/5 blur-3xl" />
 
         {/* Logo */}
-        <div>
+        <div className="relative z-10">
           <div className="flex items-center gap-3 mb-16">
-            <div className="w-11 h-11 rounded-2xl bg-brand-500 flex items-center justify-center shadow-glow">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #CC0000, #FF3333)', boxShadow: '0 0 22px rgba(204,0,0,0.45)' }}
+            >
               <RiBankLine className="text-white text-2xl" />
             </div>
             <div>
               <p className="font-display font-700 text-white text-xl tracking-wide">ALISTER BANK</p>
-              <p className="text-dark-300 text-xs tracking-widest uppercase">Digital Banking</p>
+              <p className="text-white/40 text-xs tracking-widest uppercase">Digital Banking</p>
             </div>
           </div>
 
@@ -137,13 +154,13 @@ export default function LoginPage() {
             Banking that<br />
             <span className="text-gradient-red">works for you.</span>
           </h1>
-          <p className="text-dark-200 text-base leading-relaxed">
+          <p className="text-white/50 text-base leading-relaxed">
             Secure, modern digital banking with real-time transactions, instant transfers, and powerful financial insights.
           </p>
         </div>
 
         {/* Features */}
-        <div className="space-y-4">
+        <div className="space-y-4 relative z-10">
           {[
             { icon: '🔒', label: 'Bank-grade 256-bit encryption' },
             { icon: '⚡', label: 'Instant IMPS/NEFT/RTGS transfers' },
@@ -156,96 +173,129 @@ export default function LoginPage() {
               className="flex items-center gap-3"
             >
               <span className="text-lg">{f.icon}</span>
-              <p className="text-dark-200 text-sm">{f.label}</p>
+              <p className="text-white/50 text-sm">{f.label}</p>
             </motion.div>
           ))}
         </div>
 
-        <p className="text-dark-400 text-xs">© 2024 Alister Bank. IFSC: ALST0000001 · SWIFT: ALSTINBB</p>
+        <p className="text-white/30 text-xs relative z-10">© 2024 Alister Bank. IFSC: ALST0000001 · SWIFT: ALSTINBB</p>
       </motion.div>
 
       {/* Right — login form */}
-      <div className="flex-1 flex items-center justify-center p-6">
+      <div className="flex-1 flex items-center justify-center p-6 relative">
+        {/* Blurred red glow orb behind the card */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ width: 400, height: 400, background: 'rgba(204,0,0,0.12)', filter: 'blur(80px)', zIndex: 0 }}
+        />
+
         <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
+          initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="relative z-10 w-full max-w-[440px]"
         >
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #CC0000, #FF3333)' }}
+            >
               <RiBankLine className="text-white text-lg" />
             </div>
             <p className="font-display font-700 text-white text-lg">ALISTER BANK</p>
           </div>
 
-          <div className="glass-card p-8">
-            <div className="mb-7">
-              <h2 className="font-display text-2xl font-700 text-white mb-1">Welcome back</h2>
-              <p className="text-dark-200 text-sm">Sign in to your account to continue</p>
+          <motion.div
+            whileHover={{ boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 30px rgba(204,0,0,0.08)' }}
+            transition={{ duration: 0.3 }}
+            className="w-full rounded-[20px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] sm:backdrop-blur-[20px] p-6 sm:p-10"
+            style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(204,0,0,0.08)' }}
+          >
+            {/* Card header */}
+            <div className="text-center mb-5">
+              <div
+                className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}
+              >
+                <RiShieldCheckLine className="text-[26px]" style={{ color: '#FF3333' }} />
+              </div>
+              <h2 className="text-white font-bold text-[24px]" style={{ fontFamily: 'Inter, sans-serif' }}>Welcome back</h2>
+              <p className="text-[14px] font-medium mt-1" style={{ color: '#CC0000' }}>Sign in to your account to continue</p>
             </div>
+            <div className="border-b border-white/[0.07] mb-6" />
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="form-label">Username or Email</label>
+                <label className={LABEL_CLASS}>Username or Email</label>
                 <div className="relative">
-                  <RiUserLine className="absolute left-3.5 top-1/2 -translate-y-1/2 text-dark-300 text-base" />
+                  <RiUserLine className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 text-base" />
                   <input
                     type="text"
                     value={form.username}
                     onChange={e => setForm({ ...form, username: e.target.value })}
                     placeholder="Enter username or email"
-                    className="input-field pl-10"
+                    className={`${INPUT_CLASS} pl-10 pr-4`}
                     autoComplete="username"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="form-label">Password</label>
+                <label className={LABEL_CLASS}>Password</label>
                 <div className="relative">
-                  <RiLockLine className="absolute left-3.5 top-1/2 -translate-y-1/2 text-dark-300 text-base" />
+                  <RiLockLine className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 text-base" />
                   <input
                     type={showPwd ? 'text' : 'password'}
                     value={form.password}
                     onChange={e => setForm({ ...form, password: e.target.value })}
                     placeholder="Enter your password"
-                    className="input-field pl-10 pr-10"
+                    className={`${INPUT_CLASS} pl-10 pr-10`}
                     autoComplete="current-password"
                   />
                   <button type="button" onClick={() => setShowPwd(!showPwd)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-dark-300 hover:text-white transition-colors">
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/90 transition-colors">
                     {showPwd ? <RiEyeOffLine /> : <RiEyeLine />}
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                
-                <Link to="/forgot-password" className="text-brand-400 hover:text-brand-300 text-sm transition-colors">
+              <div className="flex items-center justify-end">
+                <Link to="/forgot-password" className={`${LINK_CLASS} text-sm`}>
                   Forgot password?
                 </Link>
               </div>
 
               {/* Cloudflare Turnstile removed — direct submission to core endpoints. */}
 
-              <button type="submit" disabled={loading} className="btn-primary w-full py-3.5 mt-2">
+              <motion.button
+                type="submit"
+                disabled={loading}
+                whileHover={{ y: -2, boxShadow: '0 8px 25px rgba(204,0,0,0.35)' }}
+                whileTap={{ scale: 0.97 }}
+                className="w-full min-h-[50px] py-[14px] mt-2 rounded-[12px] text-white font-semibold text-[16px] cursor-pointer flex items-center justify-center gap-2 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed bg-[linear-gradient(135deg,#CC0000,#FF3333)] hover:bg-[linear-gradient(135deg,#990000,#CC0000)]"
+              >
                 {loading ? <><div className="spinner w-4 h-4" /> Signing in...</> : 'Sign In'}
-              </button>
+              </motion.button>
+
+              {/* Cosmetic security note */}
+              <p className="text-center mt-4" style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                🔒 Secured with 256-bit encryption
+              </p>
             </form>
 
             <div className="mt-5 text-center">
-              <p className="text-dark-300 text-sm">
+              <p className="text-white/50 text-sm">
                 Don't have an account?{' '}
-                <Link to="/open-account" className="text-brand-400 hover:text-brand-300 font-medium transition-colors">
+                <Link to="/open-account" className={LINK_CLASS}>
                   Open Account
                 </Link>
               </p>
             </div>
-          </div>
+          </motion.div>
 
           {/* Security note */}
-          <div className="flex items-center justify-center gap-2 mt-6 text-dark-400 text-xs">
-            <RiShieldCheckLine className="text-brand-500 text-base" />
+          <div className="flex items-center justify-center gap-2 mt-6 text-white/30 text-xs">
+            <RiShieldCheckLine className="text-[#CC0000] text-base" />
             <span>Your connection is encrypted with bank-grade TLS security</span>
           </div>
         </motion.div>
