@@ -5,6 +5,7 @@ import { RiBankLine, RiCheckLine, RiArrowLeftLine, RiArrowRightLine } from 'reac
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
+import BackToHome from '../../components/common/BackToHome';
 
 // Step components
 import StepPersonal from './steps/StepPersonal';
@@ -307,6 +308,7 @@ export default function AccountOpeningPage() {
   if (submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 relative" style={PAGE_BG}>
+        <BackToHome />
         <GlowOrbs />
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
@@ -351,6 +353,7 @@ export default function AccountOpeningPage() {
 
   return (
     <div className="min-h-screen py-8 px-4 relative" style={PAGE_BG}>
+      <BackToHome />
       <GlowOrbs />
 
       <div className="relative z-[1]">

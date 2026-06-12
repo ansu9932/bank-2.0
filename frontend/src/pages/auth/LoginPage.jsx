@@ -7,6 +7,7 @@ import { login, clearError } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
+import BackToHome from '../../components/common/BackToHome';
 
 // Absolute lifespan of the login screen, mirroring the backend login handshake
 // TTL (exactly 10 minutes). If the page sits open/idle past this window, the
@@ -126,6 +127,9 @@ export default function LoginPage() {
       className="min-h-screen flex overflow-hidden relative"
       style={{ background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 50%, #2D0000 100%)' }}
     >
+      {/* Back to Home (fixed top-left) */}
+      <BackToHome />
+
       {/* Left — branding panel */}
       <motion.div
         initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}
