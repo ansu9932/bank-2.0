@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
@@ -9,8 +9,16 @@ import LoginPage from './pages/auth/LoginPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 
-// Public landing
-import HomePage from './pages/public/HomePage';
+// Public marketing site (lazy-loaded for fast initial paint)
+import PublicLayout from './components/public/PublicLayout';
+const HomePage = lazy(() => import('./pages/public/HomePage'));
+const AccountsPage = lazy(() => import('./pages/public/AccountsPage'));
+const CardsPublicPage = lazy(() => import('./pages/public/CardsPage'));
+const LoansPage = lazy(() => import('./pages/public/LoansPage'));
+const InvestmentsPage = lazy(() => import('./pages/public/InvestmentsPage'));
+const PaymentsPage = lazy(() => import('./pages/public/PaymentsPage'));
+const AboutPage = lazy(() => import('./pages/public/AboutPage'));
+const ContactPage = lazy(() => import('./pages/public/ContactPage'));
 
 // Account opening flow
 import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
@@ -89,8 +97,17 @@ export default function App() {
       />
 
       <Routes>
-        {/* Public landing page */}
-        <Route path="/" element={<HomePage />} />
+        {/* Public marketing site (Navbar + Footer shell) */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/cards" element={<CardsPublicPage />} />
+          <Route path="/loans" element={<LoansPage />} />
+          <Route path="/investments" element={<InvestmentsPage />} />
+          <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+        </Route>
 
         {/* Auth */}
         <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />

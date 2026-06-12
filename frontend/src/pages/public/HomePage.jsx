@@ -1,381 +1,506 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  ShieldCheck, Zap, Fingerprint, ArrowRight, Lock, Menu, X,
-  CheckCircle2, Banknote, Globe2,
+  ArrowRight, ShieldCheck, Zap, Smartphone, Send,
+  FileText, Video, CheckCircle2,
 } from 'lucide-react';
 
-/* ──────────────────────────────────────────────────────────────────────────
-   ALISTER BANK · PUBLIC LANDING PAGE
-   An ultra-modern, minimal public homepage for a luxury digital neobank.
-   Theme: matte-black #0d0e12 · deep-crimson accents · crisp modern type.
-   Blocks: sticky nav · hero grid · 3-column features · compliance footer.
-   ────────────────────────────────────────────────────────────────────────── */
+import PageTransition from '../../components/public/PageTransition';
+import HeroCard3D from '../../components/public/HeroCard3D';
+import StatCounter from '../../components/public/StatCounter';
+import ProductCard from '../../components/public/ProductCard';
+import Testimonial from '../../components/public/Testimonial';
+import TiltCard from '../../components/public/TiltCard';
+import { Section, SectionTitle, RedButton, GhostButton } from '../../components/public/sections';
+import { staggerContainer, fadeUp, fadeLeft, fadeRight, inView } from '../../components/public/ui';
 
-const CRIMSON = '#c8102e';
-const MATTE = '#0d0e12';
-
-const NAV_LINKS = [
-  { label: 'Features', href: '#features' },
-  { label: 'Security', href: '#security' },
-  { label: 'Wealth', href: '#wealth' },
+const STATS = [
+  { value: 50000, prefix: '₹', suffix: '+ Cr', label: 'Transactions Processed' },
+  { value: 2.5, decimals: 1, suffix: 'M+', label: 'Happy Customers' },
+  { value: 99.9, decimals: 1, suffix: '%', label: 'Uptime Guaranteed' },
+  { value: 2, prefix: '< ', suffix: ' Sec', label: 'Average Transfer Time' },
 ];
 
-const FEATURES = [
-  {
-    icon: Zap,
-    title: 'Instant Valet Clearing',
-    desc: 'Settlements clear in milliseconds across IMPS, NEFT and RTGS rails — your money moves the instant you do.',
-  },
-  {
-    icon: Lock,
-    title: 'Cryptographic Vaults',
-    desc: 'Every balance is sealed behind AES-256 vaults and segregated custody, audited continuously around the clock.',
-  },
-  {
-    icon: Fingerprint,
-    title: 'Biometric Safeguards',
-    desc: 'Liveness-verified onboarding and device-bound biometrics keep your identity exclusively yours.',
-  },
+const PRODUCTS = [
+  { emoji: '💳', title: 'Savings Account', subtitle: 'Earn up to 7% interest p.a.', to: '/accounts' },
+  { emoji: '🏠', title: 'Home Loan', subtitle: 'Starting at 8.5% p.a.', to: '/loans' },
+  { emoji: '🚗', title: 'Car Loan', subtitle: 'Quick approval in 24 hrs', to: '/loans' },
+  { emoji: '💰', title: 'Fixed Deposit', subtitle: 'Up to 8.2% assured returns', to: '/investments' },
+  { emoji: '📊', title: 'Mutual Funds', subtitle: 'Start a SIP from just ₹500', to: '/investments' },
+  { emoji: '🛡️', title: 'Insurance', subtitle: 'Comprehensive coverage plans', to: '/investments' },
 ];
 
-// ─── Brand mark ───────────────────────────────────────────────────────────────
-function BrandLogo() {
+const RATES = [
+  ['Savings Account', '4% – 7% p.a.', 'Ongoing'],
+  ['Fixed Deposit', '6.5% – 8.2% p.a.', '7 days – 10 yrs'],
+  ['Recurring Deposit', '6.5% – 7.5% p.a.', '6 months – 10 yrs'],
+  ['Home Loan', '8.5% p.a. onwards', '5 – 30 yrs'],
+  ['Personal Loan', '10.99% p.a. onwards', '1 – 5 yrs'],
+];
+
+const NEWS = [
+  { tag: 'Milestone', title: 'Alister Bank Crosses 1 Million Customers', excerpt: 'We are humbled to welcome our millionth customer to a fairer, faster way to bank.', date: 'June 2025' },
+  { tag: 'Product', title: 'New Feature: Scheduled Transfers Now Live', excerpt: 'Automate rent, EMIs and savings with recurring scheduled transfers, free of charge.', date: 'May 2025' },
+  { tag: 'Onboarding', title: 'Introducing Video KYC — Open Account from Home', excerpt: 'Complete your verification in minutes with secure live video KYC, no branch visit.', date: 'April 2025' },
+];
+
+const heroText = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.18 } },
+};
+const heroLine = {
+  hidden: { opacity: 0, y: 24 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+};
+
+export default function HomePage() {
   return (
-    <Link to="/" className="flex items-center gap-2.5 group">
-      <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center border border-red-500/40 transition-shadow"
-        style={{ background: 'rgba(255,255,255,0.04)', boxShadow: `0 0 18px ${CRIMSON}55` }}
-      >
-        <Banknote size={18} style={{ color: '#ff4060' }} />
-      </div>
-      <div className="leading-none">
-        <p className="font-display font-bold tracking-tight text-white text-[17px]">
-          ALISTER<span style={{ color: '#ff4060' }}> BANK</span>
-        </p>
-        <p className="text-[9px] tracking-[0.32em] text-white/40 uppercase mt-0.5">Private Digital</p>
-      </div>
-    </Link>
-  );
-}
-
-// ─── Sticky navigation header ──────────────────────────────────────────────────
-function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    window.addEventListener('scroll', onScroll);
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  return (
-    <header
-      className="sticky top-0 z-50 w-full transition-all duration-300"
-      style={{
-        background: scrolled ? 'rgba(13,14,18,0.82)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(14px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
-      }}
+    <PageTransition
+      title="Alister Bank — Banking Beyond Boundaries"
+      description="Experience next-generation digital banking with instant transfers, zero hidden charges and 24/7 support. Open your account in 5 minutes."
     >
-      <nav className="max-w-7xl mx-auto flex items-center justify-between px-5 sm:px-8 py-4">
-        {/* Left — brand logo */}
-        <BrandLogo />
-
-        {/* Center — section links */}
-        <div className="hidden md:flex items-center gap-9 absolute left-1/2 -translate-x-1/2">
-          {NAV_LINKS.map((l) => (
-            <a key={l.label} href={l.href}
-              className="text-sm font-medium text-white/65 hover:text-white transition-colors relative group">
-              {l.label}
-              <span className="absolute -bottom-1.5 left-0 h-px w-0 group-hover:w-full transition-all duration-300"
-                style={{ background: CRIMSON }} />
-            </a>
-          ))}
-        </div>
-
-        {/* Right — login + open account */}
-        <div className="hidden md:flex items-center gap-5">
-          <Link to="/login" className="text-sm font-semibold text-white/80 hover:text-white transition-colors">
-            Login
-          </Link>
-          <Link to="/open-account"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-95"
-            style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 24px ${CRIMSON}55` }}>
-            Open Account <ArrowRight size={15} />
-          </Link>
-        </div>
-
-        {/* Mobile toggle */}
-        <button className="md:hidden text-white p-1" onClick={() => setMenuOpen((o) => !o)} aria-label="Toggle menu">
-          {menuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </nav>
-
-      {/* Mobile dropdown */}
-      {menuOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="md:hidden px-5 pb-5 pt-1 space-y-3 border-t border-white/[0.06]"
-          style={{ background: 'rgba(13,14,18,0.96)' }}>
-          {NAV_LINKS.map((l) => (
-            <a key={l.label} href={l.href} onClick={() => setMenuOpen(false)}
-              className="block text-sm font-medium text-white/70 hover:text-white py-1.5">
-              {l.label}
-            </a>
-          ))}
-          <div className="flex items-center gap-3 pt-2">
-            <Link to="/login" onClick={() => setMenuOpen(false)}
-              className="flex-1 text-center text-sm font-semibold text-white/80 py-2.5 rounded-xl border border-white/[0.12]">
-              Login
-            </Link>
-            <Link to="/open-account" onClick={() => setMenuOpen(false)}
-              className="flex-1 text-center text-sm font-semibold text-white py-2.5 rounded-xl"
-              style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)` }}>
-              Open Account
-            </Link>
-          </div>
-        </motion.div>
-      )}
-    </header>
+      <Hero />
+      <StatsBar />
+      <Products />
+      <WhyChoose />
+      <HowItWorks />
+      <RatesTable />
+      <Testimonials />
+      <AppBanner />
+      <News />
+    </PageTransition>
   );
 }
 
-// ─── Hero block ────────────────────────────────────────────────────────────────
+/* ── Section 1: Hero ─────────────────────────────────────────────────────── */
 function Hero() {
   return (
-    <section className="relative overflow-hidden" id="wealth">
-      {/* Ambient crimson glows */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[760px] h-[760px] rounded-full blur-[170px]"
-        style={{ background: 'radial-gradient(circle, rgba(200,16,46,0.16), transparent 70%)' }} />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.05]"
+    <section className="relative overflow-hidden al-hero-bg">
+      {/* Animated red glow + grid */}
+      <div
+        className="pointer-events-none absolute -top-48 left-1/3 w-[760px] h-[760px] rounded-full blur-[170px] al-glow-pulse"
+        style={{ background: 'radial-gradient(circle, rgba(204,0,0,0.22), transparent 70%)' }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(200,16,46,0.5) 1px, transparent 1px),linear-gradient(90deg, rgba(200,16,46,0.5) 1px, transparent 1px)',
-          backgroundSize: '52px 52px',
-          maskImage: 'radial-gradient(ellipse 70% 55% at 50% 30%, #000 30%, transparent 80%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 70% 55% at 50% 30%, #000 30%, transparent 80%)',
-        }} />
+            'linear-gradient(rgba(204,0,0,0.6) 1px, transparent 1px),linear-gradient(90deg, rgba(204,0,0,0.6) 1px, transparent 1px)',
+          backgroundSize: '54px 54px',
+          maskImage: 'radial-gradient(ellipse 70% 60% at 50% 35%, #000 30%, transparent 80%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 50% 35%, #000 30%, transparent 80%)',
+        }}
+      />
 
-      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-20 pb-24 sm:pt-28 sm:pb-32 grid lg:grid-cols-12 gap-12 items-center">
-        {/* Left — headline + CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
-          className="lg:col-span-7">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-white/[0.1] bg-white/[0.03] mb-7">
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: CRIMSON }} />
-            <span className="text-[11px] font-medium tracking-widest uppercase text-white/55">
-              Now onboarding private members
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 min-h-[calc(100vh-72px)] grid lg:grid-cols-5 gap-12 items-center py-16 lg:py-0">
+        {/* Left */}
+        <motion.div variants={heroText} initial="hidden" animate="show" className="lg:col-span-3">
+          <motion.div
+            variants={heroLine}
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-white/10 bg-white/[0.03] mb-7"
+          >
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#FF3333' }} />
+            <span className="text-[11px] font-medium tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              🏦 India's Fastest Growing Digital Bank
             </span>
-          </div>
+          </motion.div>
 
-          <h1 className="font-display font-bold text-white tracking-tight leading-[1.05] text-5xl sm:text-6xl lg:text-7xl">
-            The Future of Wealth.
-            <br />
-            <span className="text-gradient-red">Redefined.</span>
+          <h1 className="font-serif-display font-bold text-white leading-[1.05] text-4xl sm:text-6xl lg:text-7xl">
+            <motion.span variants={heroLine} className="block">Bank Smarter,</motion.span>
+            <motion.span variants={heroLine} className="block">
+              Live <span className="text-al-gradient">Better</span>
+            </motion.span>
           </h1>
 
-          <p className="mt-7 text-base sm:text-lg text-white/55 leading-relaxed max-w-xl">
-            Banking engineered for the next era — <span className="text-white/85">zero hidden fees</span>,
-            transparent by design, and protected by <span className="text-white/85">enterprise-grade security
-            frameworks</span> trusted across global markets.
-          </p>
+          <motion.p
+            variants={heroLine}
+            className="mt-7 text-base sm:text-lg leading-relaxed max-w-xl"
+            style={{ color: 'rgba(255,255,255,0.6)' }}
+          >
+            Experience next-generation banking with instant transfers, zero hidden charges,
+            and 24/7 support. Open your account in just <span className="text-white font-semibold">5 minutes</span>.
+          </motion.p>
 
-          <div className="mt-9 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <Link to="/open-account"
-              className="inline-flex items-center justify-center gap-2 px-7 py-4 rounded-2xl text-sm font-semibold tracking-wide uppercase text-white transition-all active:scale-95"
-              style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 34px ${CRIMSON}66` }}>
-              Open Your Account <ArrowRight size={17} />
-            </Link>
-            <Link to="/login"
-              className="inline-flex items-center justify-center gap-2 px-7 py-4 rounded-2xl text-sm font-semibold tracking-wide uppercase text-white/80 border border-white/[0.12] hover:border-white/[0.24] hover:bg-white/[0.04] transition-all">
-              Member Login
-            </Link>
-          </div>
+          <motion.div variants={heroLine} className="mt-9 flex flex-col sm:flex-row gap-4">
+            <RedButton to="/open-account" large>Open Account Free</RedButton>
+            <GhostButton to="/accounts" large>Explore Products</GhostButton>
+          </motion.div>
 
-          {/* Trust badges */}
-          <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-3">
-            {['Zero hidden fees', 'Enterprise protection', 'Insured deposits'].map((t) => (
-              <div key={t} className="flex items-center gap-2 text-white/55 text-sm">
-                <CheckCircle2 size={16} style={{ color: '#ff4060' }} /> {t}
+          <motion.div variants={heroLine} className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-3">
+            {[
+              ['🔒', 'Bank-Grade Security'],
+              ['⚡', 'Instant Transfers'],
+              ['📱', 'Always Online'],
+            ].map(([icon, text]) => (
+              <div key={text} className="flex items-center gap-2 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                <span>{icon}</span> {text}
               </div>
             ))}
-          </div>
-        </motion.div>
-
-        {/* Right — floating premium card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9, rotate: -3 }} animate={{ opacity: 1, scale: 1, rotate: -4 }}
-          transition={{ duration: 0.7, delay: 0.15 }}
-          className="lg:col-span-5 flex justify-center lg:justify-end">
-          <motion.div
-            animate={{ y: [0, -12, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-            className="relative w-[330px] h-[210px] rounded-3xl p-6 flex flex-col justify-between overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, #c8102e 0%, #8b0000 50%, #3d0010 100%)',
-              boxShadow: '0 30px 80px rgba(200,16,46,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-            }}>
-            <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
-            <div className="relative flex items-center justify-between">
-              <span className="font-display font-bold tracking-wide text-white text-lg">ALISTER</span>
-              <Globe2 size={22} className="text-white/80" />
-            </div>
-            <div className="relative">
-              <div className="w-11 h-8 rounded-md bg-yellow-400/80 mb-4" />
-              <p className="font-mono tracking-[0.22em] text-white text-lg balance-display">4141 •••• •••• 2030</p>
-            </div>
-            <div className="relative flex items-center justify-between text-white/80 text-xs">
-              <span className="tracking-widest uppercase">Private Member</span>
-              <span className="font-semibold tracking-wide">VISA INFINITE</span>
-            </div>
           </motion.div>
         </motion.div>
+
+        {/* Right — 3D card */}
+        <div className="lg:col-span-2 flex justify-center lg:justify-end">
+          <HeroCard3D />
+        </div>
       </div>
     </section>
   );
 }
 
-// ─── Features block (3-column with crimson hover glow) ─────────────────────────
-function Features() {
+/* ── Section 2: Stats Bar ────────────────────────────────────────────────── */
+function StatsBar() {
   return (
-    <section id="features" className="relative max-w-7xl mx-auto px-5 sm:px-8 py-20 sm:py-24">
-      <div className="text-center max-w-2xl mx-auto mb-14">
-        <p className="text-[11px] font-semibold tracking-[0.3em] uppercase mb-3" style={{ color: '#ff4060' }}>
-          Core Capabilities
-        </p>
-        <h2 className="font-display font-bold text-white text-3xl sm:text-4xl tracking-tight">
-          Built for the discerning few
-        </h2>
-        <p className="mt-4 text-white/50 text-base">
-          Precision-engineered primitives that make modern private banking effortless and absolute.
-        </p>
+    <div className="relative border-y border-white/[0.08]" style={{ background: 'linear-gradient(90deg, #1A0000, #0A0A0A, #1A0000)' }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-12 grid grid-cols-2 lg:grid-cols-4 gap-8">
+        {STATS.map((s) => (
+          <div key={s.label} className="text-center">
+            <p className="font-serif-display font-bold text-3xl sm:text-4xl text-al-gradient">
+              <StatCounter value={s.value} decimals={s.decimals || 0} prefix={s.prefix || ''} suffix={s.suffix || ''} />
+            </p>
+            <p className="mt-2 text-xs sm:text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>{s.label}</p>
+          </div>
+        ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {FEATURES.map(({ icon: Icon, title, desc }, i) => (
-          <motion.div key={title}
-            initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: i * 0.1 }}
-            className="feature-card group relative rounded-2xl p-7 border transition-all duration-300"
-            style={{ background: 'linear-gradient(135deg, rgba(21,22,28,0.9) 0%, rgba(13,14,18,0.95) 100%)', borderColor: 'rgba(255,255,255,0.07)' }}>
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 border transition-all duration-300"
-              style={{ borderColor: `${CRIMSON}40`, background: `${CRIMSON}14` }}>
-              <Icon size={22} style={{ color: '#ff4060' }} />
+/* ── Section 3: Products Grid ────────────────────────────────────────────── */
+function Products() {
+  return (
+    <Section>
+      <SectionTitle
+        eyebrow="Our Products"
+        title="Everything You Need, In One Place"
+        subtitle="A full suite of accounts, loans and investments — thoughtfully designed and transparently priced."
+      />
+      <motion.div
+        variants={staggerContainer(0.1)}
+        initial="hidden"
+        whileInView="show"
+        viewport={inView}
+        className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6"
+      >
+        {PRODUCTS.map((p) => (
+          <ProductCard key={p.title} {...p} />
+        ))}
+      </motion.div>
+    </Section>
+  );
+}
+
+/* ── Section 4: Why Choose ───────────────────────────────────────────────── */
+function WhyChoose() {
+  const features = [
+    {
+      title: 'Instant NEFT / RTGS / IMPS Transfers',
+      text: 'Transfer money 24/7 with zero delays. IMPS settlements under 2 seconds, guaranteed across all rails.',
+      visual: <TransferVisual />,
+    },
+    {
+      title: 'Military-Grade Security',
+      text: 'JWT authentication, bcrypt encryption, real-time fraud detection and instant account lock keep you protected.',
+      visual: <ShieldVisual />,
+    },
+    {
+      title: 'Video KYC — Open Account in 5 Minutes',
+      text: 'No branch visits. No paperwork. Complete your KYC from home with secure live video verification.',
+      visual: <PhoneVisual />,
+    },
+  ];
+
+  return (
+    <Section>
+      <SectionTitle eyebrow="Why Alister Bank" title="Built Different. Built for You." />
+      <div className="space-y-16 lg:space-y-28">
+        {features.map((f, i) => {
+          const flip = i % 2 === 1;
+          return (
+            <div key={f.title} className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+              <motion.div
+                variants={flip ? fadeRight : fadeLeft}
+                initial="hidden"
+                whileInView="show"
+                viewport={inView}
+                className={flip ? 'lg:order-2' : ''}
+              >
+                {f.visual}
+              </motion.div>
+              <motion.div
+                variants={flip ? fadeLeft : fadeRight}
+                initial="hidden"
+                whileInView="show"
+                viewport={inView}
+                className={flip ? 'lg:order-1' : ''}
+              >
+                <h3 className="font-serif-display font-bold text-white text-2xl sm:text-3xl mb-4">{f.title}</h3>
+                <p className="text-base sm:text-lg leading-relaxed" style={{ color: 'rgba(255,255,255,0.6)' }}>{f.text}</p>
+                <Link to="/about" className="inline-flex items-center gap-1.5 mt-5 text-sm font-semibold" style={{ color: '#FF3333' }}>
+                  Learn more <ArrowRight size={15} />
+                </Link>
+              </motion.div>
             </div>
-            <h3 className="font-display font-bold text-white text-xl tracking-tight mb-2.5">{title}</h3>
-            <p className="text-white/50 text-sm leading-relaxed">{desc}</p>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function TransferVisual() {
+  return (
+    <div className="rounded-3xl al-glass border border-white/[0.08] p-8 flex items-center justify-between gap-3">
+      <Node label="Account A" />
+      <div className="flex-1 relative h-px mx-1" style={{ background: 'rgba(255,255,255,0.12)' }}>
+        <motion.div
+          animate={{ left: ['0%', '100%'] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -top-1.5 w-3 h-3 rounded-full"
+          style={{ background: '#FF3333', boxShadow: '0 0 12px #CC0000' }}
+        />
+        <Send size={16} className="absolute left-1/2 -translate-x-1/2 -top-7" style={{ color: '#CC0000' }} />
+      </div>
+      <Node label="Account B" />
+    </div>
+  );
+}
+function Node({ label }) {
+  return (
+    <div className="text-center">
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-2" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}>
+        <Zap size={24} style={{ color: '#FF3333' }} />
+      </div>
+      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>{label}</p>
+    </div>
+  );
+}
+function ShieldVisual() {
+  return (
+    <div className="rounded-3xl al-glass border border-white/[0.08] p-12 flex items-center justify-center">
+      <div className="relative">
+        <div className="absolute inset-0 rounded-full al-pulse-ring" />
+        <div className="w-32 h-32 rounded-full flex items-center justify-center" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.4)' }}>
+          <ShieldCheck size={56} style={{ color: '#FF3333' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+function PhoneVisual() {
+  return (
+    <div className="rounded-3xl al-glass border border-white/[0.08] p-8 flex items-center justify-center">
+      <div className="w-44 h-80 rounded-[2rem] border-4 p-3 flex flex-col gap-3" style={{ borderColor: '#2D2D2D', background: '#0A0A0A' }}>
+        <div className="h-1.5 w-12 mx-auto rounded-full bg-white/20" />
+        <div className="flex-1 rounded-2xl p-3 flex flex-col gap-2.5" style={{ background: 'rgba(204,0,0,0.08)' }}>
+          {['Personal Details', 'Upload Documents', 'Live Video KYC', 'Account Active'].map((s, i) => (
+            <div key={s} className="flex items-center gap-2 rounded-lg px-2 py-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white" style={{ background: i < 3 ? '#CC0000' : '#2D2D2D' }}>
+                {i < 3 ? '✓' : i + 1}
+              </span>
+              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.7)' }}>{s}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Section 5: How It Works ─────────────────────────────────────────────── */
+function HowItWorks() {
+  const steps = [
+    { icon: FileText, title: 'Fill KYC Form', text: 'Enter personal details and upload documents' },
+    { icon: Video, title: 'Video Verification', text: 'Quick 2-minute live video KYC' },
+    { icon: CheckCircle2, title: 'Account Active!', text: 'Start banking immediately' },
+  ];
+  return (
+    <Section style={{ background: 'linear-gradient(180deg, transparent, rgba(204,0,0,0.04), transparent)' }}>
+      <SectionTitle eyebrow="Getting Started" title="Open Your Account in 3 Simple Steps" />
+      <div className="relative grid md:grid-cols-3 gap-10 md:gap-6">
+        {/* Connector line (desktop) */}
+        <div className="hidden md:block absolute top-10 left-[16%] right-[16%] h-px">
+          <svg width="100%" height="2"><line x1="0" y1="1" x2="100%" y2="1" stroke="#CC0000" strokeWidth="2" className="al-dash-line" /></svg>
+        </div>
+        {steps.map((s, i) => (
+          <motion.div
+            key={s.title}
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="show"
+            viewport={inView}
+            transition={{ delay: i * 0.15 }}
+            className="relative text-center flex flex-col items-center"
+          >
+            <div className="relative mb-5">
+              <div className="absolute inset-0 rounded-full al-pulse-ring" />
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-white" style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}>
+                <s.icon size={30} />
+              </div>
+              <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: '#0A0A0A', borderColor: '#FF3333', color: '#FF3333' }}>
+                {i + 1}
+              </span>
+            </div>
+            <h3 className="text-white font-semibold text-lg mb-1.5">{s.title}</h3>
+            <p className="text-sm max-w-[220px]" style={{ color: 'rgba(255,255,255,0.6)' }}>{s.text}</p>
           </motion.div>
         ))}
       </div>
-
-      {/* Security strip */}
-      <div id="security"
-        className="mt-16 rounded-3xl border border-white/[0.07] p-8 sm:p-10 flex flex-col sm:flex-row items-center gap-6 sm:gap-10"
-        style={{ background: 'linear-gradient(135deg, rgba(200,16,46,0.08), rgba(13,14,18,0.6))' }}>
-        <div className="w-16 h-16 shrink-0 rounded-2xl flex items-center justify-center border"
-          style={{ borderColor: `${CRIMSON}55`, background: `${CRIMSON}16`, boxShadow: `0 0 30px ${CRIMSON}44` }}>
-          <ShieldCheck size={30} style={{ color: '#ff4060' }} />
-        </div>
-        <div className="text-center sm:text-left">
-          <h3 className="font-display font-bold text-white text-2xl tracking-tight">Security without compromise</h3>
-          <p className="mt-2 text-white/55 text-sm sm:text-base max-w-2xl">
-            Hardware-isolated key custody, continuous fraud surveillance and TLS 1.3 transport secure every interaction —
-            so your wealth stays untouchable.
-          </p>
-        </div>
+      <div className="text-center mt-12">
+        <RedButton to="/open-account" large>Get Started Now</RedButton>
       </div>
-    </section>
+    </Section>
   );
 }
 
-// ─── Compliance footer ──────────────────────────────────────────────────────────
-function Footer() {
+/* ── Section 6: Rates Table ──────────────────────────────────────────────── */
+function RatesTable() {
   return (
-    <footer className="relative border-t border-white/[0.06]" style={{ background: 'rgba(8,9,12,0.6)' }}>
-      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-14">
-        <div className="grid gap-10 md:grid-cols-4">
-          {/* Brand + declaration */}
-          <div className="md:col-span-2">
-            <BrandLogo />
-            <p className="mt-5 text-white/45 text-sm leading-relaxed max-w-md">
-              Alister Bank is a digital-first private banking platform. All deposits are held in segregated,
-              insured custody accounts in accordance with applicable banking regulations.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2.5">
-              {['IFSC: ALST0000001', 'SWIFT: ALSTINBB', 'License No. NBFC-2024-0099'].map((b) => (
-                <span key={b} className="text-[11px] font-mono tracking-wide text-white/55 px-3 py-1.5 rounded-full border border-white/[0.08] bg-white/[0.02]">
-                  {b}
-                </span>
+    <Section>
+      <SectionTitle eyebrow="Transparent Pricing" title="Best Rates In The Market" />
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        whileInView="show"
+        viewport={inView}
+        className="rounded-2xl overflow-hidden border border-white/[0.08]"
+      >
+        <table className="w-full text-left">
+          <thead>
+            <tr style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}>
+              <th className="px-5 sm:px-6 py-4 text-white text-sm font-semibold">Product</th>
+              <th className="px-5 sm:px-6 py-4 text-white text-sm font-semibold">Rate</th>
+              <th className="px-5 sm:px-6 py-4 text-white text-sm font-semibold">Tenure</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RATES.map((r, i) => (
+              <tr
+                key={r[0]}
+                className="transition-colors hover:bg-[rgba(204,0,0,0.08)]"
+                style={{ background: i % 2 ? 'rgba(255,255,255,0.02)' : 'transparent', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <td className="px-5 sm:px-6 py-4 text-white text-sm font-medium">{r[0]}</td>
+                <td className="px-5 sm:px-6 py-4 text-sm font-semibold" style={{ color: '#FF3333' }}>{r[1]}</td>
+                <td className="px-5 sm:px-6 py-4 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>{r[2]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </motion.div>
+    </Section>
+  );
+}
+
+/* ── Section 7: Testimonials ─────────────────────────────────────────────── */
+function Testimonials() {
+  return (
+    <Section>
+      <SectionTitle eyebrow="Testimonials" title="What Our Customers Say" />
+      <Testimonial />
+    </Section>
+  );
+}
+
+/* ── Section 8: App Banner ───────────────────────────────────────────────── */
+function AppBanner() {
+  return (
+    <Section>
+      <div
+        className="rounded-3xl overflow-hidden border border-white/[0.08] p-8 sm:p-12 grid lg:grid-cols-2 gap-10 items-center"
+        style={{ background: 'linear-gradient(135deg, #1A0000, #0A0A0A 60%, #2D0000)' }}
+      >
+        <div>
+          <h2 className="font-serif-display font-bold text-white text-3xl sm:text-4xl leading-tight">
+            Bank on the Go — Download the <span className="text-al-gradient">Alister Bank</span> App
+          </h2>
+          <p className="mt-4 text-base" style={{ color: 'rgba(255,255,255,0.6)' }}>
+            Manage accounts, transfer instantly, pay bills and invest — all from your pocket.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-5">
+            <div className="w-28 h-28 rounded-2xl grid place-items-center bg-white p-2.5">
+              <QRCode />
+            </div>
+            <div className="flex flex-col gap-3">
+              <StoreButton sub="Download on the" main="App Store" />
+              <StoreButton sub="Get it on" main="Google Play" />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-center lg:justify-end">
+          <div className="w-52 h-96 rounded-[2.5rem] border-4 flex flex-col p-3" style={{ borderColor: '#2D2D2D', background: '#0A0A0A' }}>
+            <div className="h-1.5 w-14 mx-auto rounded-full bg-white/20 mb-3" />
+            <div className="flex-1 rounded-3xl p-4 flex flex-col gap-3" style={{ background: 'linear-gradient(160deg, rgba(204,0,0,0.18), rgba(10,10,10,0.6))' }}>
+              <p className="text-[11px] uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Total Balance</p>
+              <p className="font-serif-display font-bold text-2xl text-white">₹12,84,500</p>
+              <div className="h-px bg-white/10 my-1" />
+              {['Transfer', 'Pay Bills', 'Invest'].map((a) => (
+                <div key={a} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <span className="text-xs text-white">{a}</span>
+                  <ArrowRight size={13} style={{ color: '#FF3333' }} />
+                </div>
               ))}
             </div>
           </div>
-
-          {/* Product links */}
-          <div>
-            <p className="text-white font-semibold text-sm mb-4">Platform</p>
-            <ul className="space-y-3 text-sm text-white/50">
-              <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-              <li><a href="#security" className="hover:text-white transition-colors">Security</a></li>
-              <li><Link to="/open-account" className="hover:text-white transition-colors">Open Account</Link></li>
-              <li><Link to="/login" className="hover:text-white transition-colors">Member Login</Link></li>
-            </ul>
-          </div>
-
-          {/* Legal links */}
-          <div>
-            <p className="text-white font-semibold text-sm mb-4">Regulatory</p>
-            <ul className="space-y-3 text-sm text-white/50">
-              <li><a href="#" className="hover:text-white transition-colors">Terms of Service</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Deposit Insurance</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Grievance Redressal</a></li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Disclosures */}
-        <div className="mt-12 pt-8 border-t border-white/[0.06] space-y-4">
-          <p className="text-white/35 text-xs leading-relaxed">
-            Disclosures: Alister Bank Ltd. is regulated under the Banking Regulation Act. Deposits are insured up to the
-            statutory limit per depositor through the Deposit Insurance and Credit Guarantee framework. Investment and
-            wealth products are subject to market risk; past performance is not indicative of future results. Annual
-            Percentage Yields are variable and may change without notice. This site is a fictional demonstration and not
-            a solicitation for actual banking services.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-white/40 text-xs">© {new Date().getFullYear()} Alister Bank. All rights reserved.</p>
-            <div className="flex items-center gap-2 text-white/40 text-xs">
-              <Lock size={13} style={{ color: '#ff4060' }} />
-              <span>Secured with bank-grade TLS 1.3 encryption</span>
-            </div>
-          </div>
         </div>
       </div>
-    </footer>
+    </Section>
+  );
+}
+function StoreButton({ sub, main }) {
+  return (
+    <a href="#" className="flex items-center gap-3 px-5 py-2.5 rounded-xl border border-white/15 hover:border-[#CC0000] transition-colors">
+      <Smartphone size={22} className="text-white" />
+      <div className="leading-tight text-left">
+        <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{sub}</p>
+        <p className="text-sm font-semibold text-white">{main}</p>
+      </div>
+    </a>
+  );
+}
+function QRCode() {
+  // Pure-CSS decorative QR grid (no external image).
+  const cells = Array.from({ length: 49 });
+  return (
+    <div className="grid grid-cols-7 gap-0.5 w-full h-full">
+      {cells.map((_, i) => (
+        <div key={i} className="rounded-[1px]" style={{ background: (i * 7 + ((i * 13) % 5)) % 3 === 0 ? '#0A0A0A' : 'transparent' }} />
+      ))}
+    </div>
   );
 }
 
-// ─── Page ───────────────────────────────────────────────────────────────────────
-export default function HomePage() {
+/* ── Section 9: News ─────────────────────────────────────────────────────── */
+function News() {
   return (
-    <div className="min-h-screen w-full text-white" style={{ background: MATTE }}>
-      {/* Scoped hover glow for feature cards */}
-      <style>{`
-        .feature-card:hover {
-          border-color: ${CRIMSON} !important;
-          box-shadow: 0 0 0 1px ${CRIMSON}, 0 18px 50px rgba(200,16,46,0.28);
-          transform: translateY(-4px);
-        }
-      `}</style>
-
-      <Navbar />
-      <main>
-        <Hero />
-        <Features />
-      </main>
-      <Footer />
-    </div>
+    <Section>
+      <SectionTitle eyebrow="Newsroom" title="Latest from Alister Bank" />
+      <motion.div
+        variants={staggerContainer(0.1)}
+        initial="hidden"
+        whileInView="show"
+        viewport={inView}
+        className="grid md:grid-cols-3 gap-6"
+      >
+        {NEWS.map((n) => (
+          <motion.div key={n.title} variants={fadeUp}>
+            <TiltCard max={6} className="h-full rounded-2xl al-glass border border-white/[0.08] p-6 hover:border-[#CC0000] transition-colors">
+              <span className="inline-block text-[11px] font-semibold uppercase tracking-wider px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(204,0,0,0.15)', color: '#FF3333' }}>
+                {n.tag}
+              </span>
+              <h3 className="text-white font-semibold text-lg leading-snug mb-2">{n.title}</h3>
+              <p className="text-sm mb-5" style={{ color: 'rgba(255,255,255,0.6)' }}>{n.excerpt}</p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{n.date}</span>
+                <span className="inline-flex items-center gap-1 text-sm font-semibold" style={{ color: '#FF3333' }}>
+                  Read More <ArrowRight size={14} />
+                </span>
+              </div>
+            </TiltCard>
+          </motion.div>
+        ))}
+      </motion.div>
+    </Section>
   );
 }
