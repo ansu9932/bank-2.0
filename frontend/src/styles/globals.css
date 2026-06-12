@@ -175,3 +175,138 @@
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ALISTER BANK · PUBLIC MARKETING SITE UTILITIES
+   Strict palette: red (#CC0000 / #990000 / #FF3333) · black (#0A0A0A) · white
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --al-red: #CC0000;
+  --al-red-dark: #990000;
+  --al-red-light: #FF3333;
+  --al-red-glow: rgba(204, 0, 0, 0.15);
+  --al-black: #0A0A0A;
+  --al-black-soft: #1A1A1A;
+  --al-black-medium: #2D2D2D;
+}
+
+/* Heading font for the public site */
+.font-serif-display {
+  font-family: 'Playfair Display', serif;
+}
+
+/* Red gradient text */
+.text-al-gradient {
+  background: linear-gradient(135deg, #FF3333, #CC0000);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass card used across the public site */
+.al-glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Hero gradient background */
+.al-hero-bg {
+  background: linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 50%, #2D0000 100%);
+}
+
+/* Red accent gradient */
+.al-red-gradient {
+  background: linear-gradient(135deg, #CC0000, #FF3333);
+}
+
+/* Dark card gradient */
+.al-card-dark {
+  background: linear-gradient(145deg, #1A1A1A, #0A0A0A);
+}
+
+/* Floating animation */
+@keyframes al-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
+}
+.al-float { animation: al-float 4s ease-in-out infinite; }
+
+/* Shimmer sweep for premium cards */
+@keyframes al-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.al-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(204,0,0,0.18) 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: al-shimmer 3s linear infinite;
+}
+
+/* Pulsing red ring (used on step icons) */
+@keyframes al-pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(204,0,0,0.5); }
+  70% { box-shadow: 0 0 0 14px rgba(204,0,0,0); }
+  100% { box-shadow: 0 0 0 0 rgba(204,0,0,0); }
+}
+.al-pulse-ring { animation: al-pulse-ring 2.2s ease-out infinite; }
+
+/* Slow radial pulse for hero background */
+@keyframes al-glow-pulse {
+  0%, 100% { opacity: 0.12; transform: scale(1); }
+  50% { opacity: 0.22; transform: scale(1.08); }
+}
+.al-glow-pulse { animation: al-glow-pulse 7s ease-in-out infinite; }
+
+/* Animated dashed connector for the "How it works" steps */
+@keyframes al-dash {
+  to { stroke-dashoffset: -40; }
+}
+.al-dash-line { stroke-dasharray: 8 8; animation: al-dash 1.2s linear infinite; }
+
+/* 3D tilt smoothing - applied to card wrappers */
+.al-tilt {
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+/* Range slider styling (EMI / SIP calculators) */
+.al-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  background: #2D2D2D;
+  outline: none;
+}
+.al-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #CC0000;
+  border: 3px solid #FF3333;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(204,0,0,0.6);
+}
+.al-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #CC0000;
+  border: 3px solid #FF3333;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(204,0,0,0.6);
+}
+
+/* Public site hides the global red body radial glow override (kept dark) */
+.al-public-root {
+  background: #0A0A0A;
+  min-height: 100vh;
+}

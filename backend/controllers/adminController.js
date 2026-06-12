@@ -1,15 +1,27 @@
+const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink } = require('../models');
+const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest } = require('../models');
 const { generateAdminToken } = require('../middleware/auth');
 const {
-  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry,
+  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
 } = require('../utils/helpers');
-const { sendAccountApprovedEmail, sendVideoKYCEmail } = require('../services/emailService');
+const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { paginate } = require('../utils/helpers');
+
+// ─── Shared: map a stored document path to a public /uploads web path ─────────
+// Normalizes Windows separators and slices from "uploads/…" so the value works
+// with the express.static('/uploads') mount regardless of how it was stored.
+const toWebPath = (p) => {
+  if (!p) return null;
+  const norm = String(p).replace(/\\/g, '/');
+  const m = norm.match(/uploads\/.*/);
+  return m ? `/${m[0]}` : norm;
+};
 
 // ─── Admin Login ──────────────────────────────────────────────────────────────
 exports.adminLogin = async (req, res) => {
@@ -176,12 +188,72 @@ exports.getUserDetails = async (req, res) => {
       include: [
         { model: Account, as: 'account' },
         { model: KYCDocument, as: 'documents' },
+        {
+          model: CardRequest,
+          as: 'cardRequests',
+          // Never expose the raw PAN/CVV to the admin UI.
+          attributes: ['id', 'request_type', 'status', 'card_network', 'card_tier', 'issuance_fee', 'createdAt'],
+          required: false,
+        },
       ],
     });
     if (!user) return notFound(res, 'User not found.');
-    return success(res, { user });
+
+    // Enrich KYC documents with a resolvable web URL + secure stream path so the
+    // admin UI can render direct view links (with a clean fallback when empty).
+    const json = user.toJSON();
+    json.documents = (json.documents || []).map((d) => ({
+      ...d,
+      document_url: toWebPath(d.file_path),
+      // Authenticated stream endpoint (admin-token protected) as a hardened
+      // alternative to the static path.
+      secure_url: `/api/admin/users/${user.id}/documents/${d.id}`,
+      has_file: Boolean(d.file_path),
+    }));
+
+    return success(res, { user: json });
   } catch (err) {
     return error(res, 'Failed to fetch user details.');
+  }
+};
+
+// ─── Stream a user's KYC document (admin-only, role-protected) ────────────────
+// GET /api/admin/users/:id/documents/:docId
+// Serves the file through admin auth instead of relying solely on the public
+// static mount, so KYC assets require a valid admin token to retrieve.
+exports.getUserDocument = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+
+    const doc = await KYCDocument.findOne({ where: { id: docId, user_id: id } });
+    if (!doc) return notFound(res, 'Document not found.');
+    if (!doc.file_path) return notFound(res, 'No file is attached to this document.');
+
+    // Resolve the absolute path and CONTAIN it within the uploads directory to
+    // prevent any path-traversal escape.
+    const uploadsRoot = path.resolve(__dirname, '..', 'uploads');
+    const webRel = toWebPath(doc.file_path) || '';
+    const relInsideUploads = webRel.replace(/^\/?uploads\/?/, '');
+    const absPath = path.resolve(uploadsRoot, relInsideUploads);
+    if (!absPath.startsWith(uploadsRoot) || !fs.existsSync(absPath)) {
+      return notFound(res, 'Document file is no longer available.');
+    }
+
+    createAuditLog({
+      adminId: req.admin?.id,
+      userId: id,
+      action: 'ADMIN_VIEWED_KYC_DOCUMENT',
+      entityType: 'KYCDocument',
+      entityId: docId,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Admin viewed ${doc.document_type} document.`,
+    }).catch(() => {});
+
+    return res.sendFile(absPath);
+  } catch (err) {
+    logger.error(`getUserDocument error: ${err.message}`);
+    return error(res, 'Failed to retrieve the document.');
   }
 };
 
@@ -193,9 +265,9 @@ exports.approveKYC = async (req, res) => {
     if (user.kyc_status === 'approved') return badRequest(res, 'KYC already approved.');
 
     if (!user.video_kyc_completed) {
-      // Send Video KYC link
+      // Send Video KYC link — strict 24-hour onboarding expiry written to DB.
       const token = generateSecureToken();
-      const expiresAt = getSecureLinkExpiry(5);
+      const expiresAt = getOnboardingLinkExpiry();
 
       await SecureLink.create({
         user_id: user.id,
@@ -236,6 +308,9 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'INR',
       status: 'active',
+      // New accounts start with a RESTRICTED ₹5,000 active daily limit (max
+      // potential ceiling is ₹5,00,000). An admin raises it via modifyUserCeiling.
+      daily_transfer_limit: 5000.00,
     });
 
     // Send approval email with setup link
@@ -244,7 +319,7 @@ exports.approveKYC = async (req, res) => {
       user_id: user.id,
       token: setupToken,
       purpose: 'account_setup',
-      expires_at: getSecureLinkExpiry(5),
+      expires_at: getOnboardingLinkExpiry(),
     });
 
     const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
@@ -305,6 +380,13 @@ exports.rejectKYC = async (req, res) => {
       priority: 'urgent',
     });
 
+    // Transactional rejection email — non-fatal (a mail hiccup never blocks the
+    // admin action or the status update).
+    if (user.email) {
+      sendKYCRejectedEmail(user.email, user.first_name || 'Customer', reason || 'Documents not acceptable')
+        .catch((e) => logger.error(`KYC rejection email failed (${user.email}): ${e.message}`));
+    }
+
     await createAuditLog({
       adminId: req.admin.id,
       userId: user.id,
@@ -323,13 +405,6 @@ exports.rejectKYC = async (req, res) => {
 };
 
 // ─── KYC Review Queue (video_kyc_pending + under_review, with documents) ──────
-const toWebPath = (p) => {
-  if (!p) return null;
-  const norm = String(p).replace(/\\/g, '/');
-  const m = norm.match(/uploads\/.*/);
-  return m ? `/${m[0]}` : norm;
-};
-
 exports.getKYCQueue = async (req, res) => {
   try {
     const users = await User.findAll({
@@ -383,6 +458,10 @@ exports.reviewKYC = async (req, res) => {
         type: 'kyc',
         priority: 'urgent',
       });
+      if (user.email) {
+        sendKYCRejectedEmail(user.email, user.first_name || 'Customer', reason || 'Biometric verification failed.')
+          .catch((e) => logger.error(`KYC rejection email failed (${user.email}): ${e.message}`));
+      }
       await createAuditLog({
         adminId: req.admin.id, userId: user.id, action: 'KYC_REVIEW_REJECTED',
         entityType: 'User', entityId: user.id, newValues: { reason }, ipAddress: req.ip, status: 'success',
@@ -402,6 +481,8 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'INR',
         status: 'active',
+        // Restricted ₹5,000 active daily limit by default (₹5,00,000 max ceiling).
+        daily_transfer_limit: 5000.00,
       });
     } else {
       await account.update({ status: 'active' });
@@ -416,7 +497,7 @@ exports.reviewKYC = async (req, res) => {
     if (!user.setup_completed) {
       const setupToken = generateSecureToken();
       await SecureLink.create({
-        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getSecureLinkExpiry(5),
+        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getOnboardingLinkExpiry(),
       });
       const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
       try {
@@ -534,6 +615,20 @@ exports.manualTransaction = async (req, res) => {
       status: 'success',
     });
 
+    // Transaction alert email — notify the user of this credit/debit event.
+    User.findByPk(req.params.id).then((u) => {
+      if (!u?.email) return;
+      return sendTransferAlertEmail(u.email, u.first_name || 'Customer', {
+        type: type === 'debit' ? 'debit' : 'credit',
+        amount: parsedAmount.toFixed(2),
+        reference: 'Adjustment',
+        counterparty: 'Alister Bank',
+        mode: 'SYSTEM',
+        balance: balanceAfter.toFixed(2),
+        time: new Date().toLocaleString('en-IN'),
+      });
+    }).catch((e) => logger.error(`Manual-transaction email failed: ${e.message}`));
+
     return success(res, { newBalance: balanceAfter }, `₹${parsedAmount} ${type}ed successfully.`);
   } catch (err) {
     logger.error(`Manual transaction error: ${err.message}`);
@@ -636,6 +731,57 @@ exports.updateTicket = async (req, res) => {
     return success(res, {}, 'Ticket updated.');
   } catch (err) {
     return error(res, 'Failed to update ticket.');
+  }
+};
+
+// ─── Modify User Transfer Ceiling ─────────────────────────────────────────────
+// POST /api/admin/modify-user-ceiling/:userId   (admin only)
+// Overwrites the target user's daily transfer limit instantly. Reuses the
+// existing accounts.daily_transfer_limit column (schema-safe, no migration).
+exports.modifyUserCeiling = async (req, res) => {
+  try {
+    const newCeiling = parseFloat(req.body.dailyTransferLimit ?? req.body.ceiling ?? req.body.limit);
+
+    if (Number.isNaN(newCeiling) || newCeiling < 0) {
+      return badRequest(res, 'Please provide a valid transfer ceiling (₹0 or greater).');
+    }
+    // The maximum potential daily ceiling for any account is ₹5,00,000.
+    if (newCeiling > 500000) {
+      return badRequest(res, 'Daily transfer ceiling cannot exceed ₹5,00,000.');
+    }
+
+    const account = await Account.findOne({ where: { user_id: req.params.userId } });
+    if (!account) return notFound(res, 'Account not found for this user.');
+
+    const previousCeiling = parseFloat(account.daily_transfer_limit);
+    await account.update({ daily_transfer_limit: newCeiling });
+
+    await Notification.create({
+      user_id: req.params.userId,
+      title: 'Daily Transfer Ceiling Updated',
+      message: `Your daily transfer limit is now ₹${newCeiling.toLocaleString('en-IN')}.`,
+      type: 'security',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: req.params.userId,
+      action: 'TRANSFER_CEILING_MODIFIED',
+      entityType: 'Account',
+      entityId: account.id,
+      oldValues: { daily_transfer_limit: previousCeiling },
+      newValues: { daily_transfer_limit: newCeiling },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(res, {
+      dailyTransferLimit: newCeiling,
+    }, `Transfer ceiling updated to ₹${newCeiling.toLocaleString('en-IN')}.`);
+  } catch (err) {
+    logger.error(`Modify user ceiling error: ${err.message}`);
+    return error(res, 'Failed to update the transfer ceiling.');
   }
 };
 

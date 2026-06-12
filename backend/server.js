@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const compression = require('compression');
 const path = require('path');
+const fs = require('fs');
 
 const sequelize = require('./config/database');
 const logger = require('./utils/logger');
@@ -27,11 +28,17 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Registration-Token'],
 }));
 
 // ─── Body Parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// `verify` captures the EXACT raw bytes of every JSON request into req.rawBody.
+// This is required to cryptographically validate the Razorpay webhook signature,
+// which must be computed over the unmodified request body.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
@@ -47,7 +54,10 @@ if (process.env.NODE_ENV !== 'test') {
 app.use(sanitizeRequest);
 
 // ─── Static Files (uploaded docs) ────────────────────────────────────────────
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Absolute path to the uploads root. ensureUploadDirs() (run at boot, below)
+// guarantees this tree + its KYC sub-folders exist so fetches never 404.
+const UPLOADS_ROOT = path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(UPLOADS_ROOT));
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 app.use('/api/', apiLimiter);
@@ -55,7 +65,11 @@ app.use('/api/', apiLimiter);
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/account', require('./routes/account'));
+app.use('/api/kyc', require('./routes/kyc'));
 app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/payments', require('./routes/payment'));
+app.use('/api/requests', require('./routes/requests'));
+app.use('/api/payouts', require('./routes/payouts'));
 app.use('/api/admin', require('./routes/admin'));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
@@ -99,8 +113,87 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Database & Server Start ──────────────────────────────────────────────────
+/**
+ * Ensure the uploads directory tree exists on disk at boot.
+ *
+ * Multer creates a sub-folder lazily on first upload, but the express.static
+ * mount + any direct fetch can 404 if the tree was never created (e.g. a fresh
+ * Hostinger container, or after a deploy that doesn't ship empty dirs). We
+ * recursively create the uploads root + every known KYC/media sub-folder so
+ * assets are always servable immediately, with no manual intervention.
+ */
+function ensureUploadDirs() {
+  const subDirs = ['documents', 'selfies', 'kyc-videos', 'profiles'];
+  const targets = [UPLOADS_ROOT, ...subDirs.map((d) => path.join(UPLOADS_ROOT, d))];
+  targets.forEach((dir) => {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        logger.info(`📁 Created missing upload directory: ${dir}`);
+      }
+    } catch (e) {
+      logger.error(`Failed to create upload directory ${dir}: ${e.message}`);
+    }
+  });
+}
+
+/**
+ * Idempotently add the premium debit-card columns to an EXISTING card_requests
+ * table. Plain sequelize.sync() won't add columns to a table that already
+ * exists, and full alter-sync risks the MySQL 64-index overflow — so we add
+ * only the named columns, only when absent, with zero index changes.
+ */
+async function ensureCardRequestColumns() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  // If the table doesn't exist yet, sync() already created it WITH these
+  // columns (fresh deploy) — nothing to backfill.
+  let table;
+  try {
+    table = await qi.describeTable('card_requests');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  const columns = {
+    card_network: { type: DataTypes.STRING(20), allowNull: true },
+    card_tier: { type: DataTypes.STRING(20), allowNull: true },
+    card_number: { type: DataTypes.STRING(16), allowNull: true },
+    cvv: { type: DataTypes.STRING(4), allowNull: true },
+    expiry_date: { type: DataTypes.STRING(5), allowNull: true },
+    controls: { type: DataTypes.JSON, allowNull: true },
+    issuance_fee: { type: DataTypes.DECIMAL(10, 2), allowNull: true, defaultValue: 0.00 },
+    fee_status: { type: DataTypes.STRING(20), allowNull: true, defaultValue: 'none' },
+    fee_reference: { type: DataTypes.STRING(30), allowNull: true },
+  };
+
+  for (const [name, def] of Object.entries(columns)) {
+    if (!table[name]) {
+      try {
+        await qi.addColumn('card_requests', name, def);
+        logger.info(`card_requests: added column '${name}'.`);
+      } catch (e) {
+        logger.error(`card_requests: could not add column '${name}': ${e.message}`);
+      }
+    }
+  }
+
+  // The status ENUM gained 'active'. On MySQL the column may be a constrained
+  // ENUM; widen it to a plain STRING so 'active' is accepted without an ENUM
+  // migration. Best-effort and non-fatal.
+  try {
+    await qi.changeColumn('card_requests', 'status', { type: DataTypes.STRING(20), allowNull: true });
+  } catch (e) {
+    logger.warn(`card_requests: status column widen skipped: ${e.message}`);
+  }
+}
+
 const start = async () => {
   try {
+    // Guarantee the uploads tree exists before anything serves/writes to it.
+    ensureUploadDirs();
+
     await sequelize.authenticate();
     logger.info('✅ Database connected successfully.');
     console.log('✅ Database connected successfully.');
@@ -139,9 +232,24 @@ const start = async () => {
         console.log('✅ Database models synchronized using safe fallback.');
       }
     } else {
-      await sequelize.sync();
+      // Guardrail: schema sync is explicitly LOCKED to alter:false so existing
+      // table schemas are fully protected. Plain sync still auto-creates any
+      // MISSING tables, but never alters/re-indexes existing ones.
+      await sequelize.sync({ alter: false });
       logger.info('✅ Database models synchronized.');
       console.log('✅ Database models synchronized.');
+    }
+
+    // ─── Targeted, idempotent column backfill for card_requests ───────────────
+    // Plain sync() never adds columns to an EXISTING table, so the new premium
+    // debit-card fields must be added explicitly. This is surgical (only the
+    // named columns, only if absent) and adds NO indexes — so it cannot trigger
+    // the 64-index overflow that full alter sync does. Safe to run every boot.
+    try {
+      await ensureCardRequestColumns();
+    } catch (colErr) {
+      logger.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
@@ -154,6 +262,15 @@ const start = async () => {
     } catch (workflowErr) {
       logger.error(`Background workflow failed to start: ${workflowErr.message}`);
       console.error(workflowErr);
+    }
+
+    // Re-arm settlement timers for any NEFT payouts left 'processing' by a
+    // restart, so they still transition to completed after their delay window.
+    try {
+      const { resumePendingNeftSettlements } = require('./controllers/payoutController');
+      await resumePendingNeftSettlements();
+    } catch (neftErr) {
+      logger.error(`Failed to resume NEFT settlements: ${neftErr.message}`);
     }
 
     app.listen(PORT, () => {

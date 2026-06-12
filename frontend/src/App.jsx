@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
@@ -8,6 +8,21 @@ import { getMe } from './store/slices/authSlice';
 import LoginPage from './pages/auth/LoginPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+
+// Public marketing site (lazy-loaded for fast initial paint)
+import PublicLayout from './components/public/PublicLayout';
+const HomePage = lazy(() => import('./pages/public/HomePage'));
+const AccountsPage = lazy(() => import('./pages/public/AccountsPage'));
+const CardsPublicPage = lazy(() => import('./pages/public/CardsPage'));
+const LoansPage = lazy(() => import('./pages/public/LoansPage'));
+const InvestmentsPage = lazy(() => import('./pages/public/InvestmentsPage'));
+const PaymentsPage = lazy(() => import('./pages/public/PaymentsPage'));
+const AboutPage = lazy(() => import('./pages/public/AboutPage'));
+const ContactPage = lazy(() => import('./pages/public/ContactPage'));
+const CareersPage = lazy(() => import('./pages/public/CareersPage'));
+const PressPage = lazy(() => import('./pages/public/PressPage'));
+const PrivacyPolicyPage = lazy(() => import('./pages/public/PrivacyPolicyPage'));
+const TermsOfServicePage = lazy(() => import('./pages/public/TermsOfServicePage'));
 
 // Account opening flow
 import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
@@ -19,12 +34,14 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import TransactionsPage from './pages/dashboard/TransactionsPage';
 import TransferPage from './pages/dashboard/TransferPage';
+import DepositFunds from './pages/dashboard/DepositFunds';
 import BeneficiariesPage from './pages/dashboard/BeneficiariesPage';
 import StatementPage from './pages/dashboard/StatementPage';
 import ProfilePage from './pages/dashboard/ProfilePage';
 import SecurityPage from './pages/dashboard/SecurityPage';
 import SupportPage from './pages/dashboard/SupportPage';
 import AnalyticsPage from './pages/dashboard/AnalyticsPage';
+import CardsPage from './pages/dashboard/CardsPage';
 
 // Admin
 import AdminLayout from './components/layout/AdminLayout';
@@ -84,8 +101,21 @@ export default function App() {
       />
 
       <Routes>
-        {/* Root redirect */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {/* Public marketing site (Navbar + Footer shell) */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/cards" element={<CardsPublicPage />} />
+          <Route path="/loans" element={<LoansPage />} />
+          <Route path="/investments" element={<InvestmentsPage />} />
+          <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/careers" element={<CareersPage />} />
+          <Route path="/press" element={<PressPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+        </Route>
 
         {/* Auth */}
         <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
@@ -105,7 +135,9 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="transfer" element={<TransferPage />} />
+          <Route path="deposit" element={<DepositFunds />} />
           <Route path="beneficiaries" element={<BeneficiariesPage />} />
+          <Route path="cards" element={<CardsPage />} />
           <Route path="statement" element={<StatementPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="profile" element={<ProfilePage />} />

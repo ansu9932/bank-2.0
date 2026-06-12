@@ -11,12 +11,51 @@ const {
   sendKYCUnderReviewEmail, sendVideoKYCEmail, sendAccountApprovedEmail,
 } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
-const { success, error, badRequest, notFound, created } = require('../utils/apiResponse');
+const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
+const {
+  issueRegistrationHandshake, consumeRegistrationHandshake,
+} = require('../utils/registrationHandshake');
+
+// ─── Registration Handshake (HDFC-style ephemeral onboarding nonce) ──────────
+// GET /api/account/registration-handshake → mints a short-lived, single-use
+// anti-CSRF registration nonce. The "Open Account" wizard fetches this the
+// moment its first step mounts, reflects it into the URL, and echoes it back in
+// the request headers when it submits the compiled form. Blocks replay / CSRF
+// on the account-creation pipeline.
+exports.registrationHandshake = async (req, res) => {
+  try {
+    const { token, expiresIn } = issueRegistrationHandshake(req.ip);
+    return success(res, { handshakeToken: token, expiresIn }, 'Registration handshake issued.');
+  } catch (err) {
+    logger.error(`Registration handshake error: ${err.message}`);
+    return error(res, 'Could not initialize a secure registration session.');
+  }
+};
 
 // ─── Submit Account Opening Application ───────────────────────────────────────
 exports.openAccount = async (req, res) => {
   try {
+    // ── Ephemeral registration handshake validation (anti-CSRF / anti-replay) ─
+    // Entry-point guard for the onboarding pipeline. The nonce is read from the
+    // request headers (falling back to the body for resilience), and must be
+    // present, structurally valid, unexpired, single-use, and IP-consistent.
+    // On any failure we abort BEFORE any DB writes or external identity
+    // verification calls, protecting system stability.
+    const registrationToken =
+      req.headers['x-registration-token'] ||
+      req.headers['x-handshake-token'] ||
+      req.body?.registrationToken ||
+      req.body?.handshakeToken;
+    const hs = consumeRegistrationHandshake(registrationToken, req.ip);
+    if (!hs.valid) {
+      const msg = hs.reason === 'expired'
+        ? 'Your secure registration session expired. Please refresh the page and start again.'
+        : 'Invalid or missing security handshake. Please refresh the page and try again.';
+      logger.warn(`openAccount handshake rejected (${hs.reason}) from ${req.ip}`);
+      return badRequest(res, msg);
+    }
+
     const {
       firstName, lastName, email, phone, dateOfBirth, gender,
       fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
@@ -24,6 +63,29 @@ exports.openAccount = async (req, res) => {
       aadhaarNumber, panNumber, passportNumber,
       accountType,
     } = req.body;
+
+    // ── Explicit required-field validation ─────────────────────────────────────
+    // The DB columns are NOT NULL; missing values would otherwise surface as a
+    // generic Sequelize 500 deep in .create(). Validate up-front and return a
+    // precise 400 naming the first missing field instead. (This is the primary
+    // cause of the reported mobile 500s: partially-filled payloads reaching
+    // .create() before the frontend gating existed.)
+    const requiredFields = {
+      firstName, lastName, email, phone, dateOfBirth, gender,
+      addressLine1, city, state, pincode, accountType,
+    };
+    const missing = Object.entries(requiredFields)
+      .filter(([, v]) => v === undefined || v === null || String(v).trim() === '')
+      .map(([k]) => k);
+    if (missing.length > 0) {
+      logger.warn(`openAccount rejected — missing required fields: ${missing.join(', ')}`);
+      return badRequest(res, `Missing required fields: ${missing.join(', ')}.`);
+    }
+
+    // Normalize the identity fields the same way the client does (defensive:
+    // strip Aadhaar spacing, upper-case PAN) so stored values are canonical.
+    const aadhaarClean = aadhaarNumber ? String(aadhaarNumber).replace(/\D/g, '') : null;
+    const panClean = panNumber ? String(panNumber).toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
 
     // Check duplicates
     const existingEmail = await User.findOne({ where: { email } });
@@ -52,19 +114,21 @@ exports.openAccount = async (req, res) => {
       gender,
       father_name: fatherName,
       mother_name: motherName,
-      marital_status: maritalStatus,
+      marital_status: maritalStatus || null,
       nationality: nationality || 'Indian',
       occupation,
-      annual_income: annualIncome,
+      // annual_income is DECIMAL — coerce blanks to null so an empty string
+      // doesn't trip a numeric validation error.
+      annual_income: annualIncome === '' || annualIncome === undefined ? null : annualIncome,
       address_line1: addressLine1,
       address_line2: addressLine2,
       city,
       state,
       pincode,
       country: country || 'India',
-      aadhaar_number: aadhaarNumber,
-      pan_number: panNumber,
-      passport_number: passportNumber,
+      aadhaar_number: aadhaarClean,
+      pan_number: panClean,
+      passport_number: passportNumber || null,
       account_type: accountType || 'savings',
       kyc_status: 'pending',
       account_status: 'pending',
@@ -101,8 +165,13 @@ exports.openAccount = async (req, res) => {
       }
     }
 
-    // Send review email
-    await sendKYCUnderReviewEmail(email, firstName, customerId);
+    // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
+    // successfully-created account into a 500; log it and continue.
+    try {
+      await sendKYCUnderReviewEmail(email, firstName, customerId);
+    } catch (mailErr) {
+      logger.error(`KYC review email failed for ${email} (non-fatal): ${mailErr.message}`);
+    }
 
     // Update kyc status to under_review
     await user.update({ kyc_status: 'under_review' });
@@ -122,7 +191,26 @@ exports.openAccount = async (req, res) => {
       message: 'Application submitted successfully. Documents are under review.',
     }, 'Application submitted successfully.');
   } catch (err) {
-    logger.error(`Account opening error: ${err.message}`);
+    // ── Full error context to the node terminal so the failing column/constraint
+    //    is identifiable on the live (Hostinger) dashboard ──────────────────────
+    logger.error(`Account opening error: ${err.name}: ${err.message}`);
+    if (err.original) logger.error(`Raw DB error: ${err.original.message}`);
+    if (err.stack) logger.error(err.stack);
+
+    // Map known Sequelize failures to a precise 400 instead of a generic 500.
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      const field = err.errors?.[0]?.path || 'field';
+      return badRequest(res, `An account with this ${field} already exists.`);
+    }
+    if (err.name === 'SequelizeValidationError') {
+      const detail = err.errors?.[0]?.message || 'A submitted field is invalid.';
+      return badRequest(res, detail);
+    }
+    if (err.name === 'SequelizeDatabaseError') {
+      // e.g. value too long, bad enum, datatype mismatch — actionable as 400.
+      return badRequest(res, 'One or more submitted details are invalid. Please review and try again.');
+    }
+
     return error(res, 'Failed to submit application. Please try again.');
   }
 };
@@ -133,10 +221,10 @@ exports.verifyVideoKYCLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'video_kyc', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired Video KYC link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This Video KYC link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'This Video KYC link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This Video KYC link has expired. You can request a fresh one below.');
     }
 
     const user = await User.findByPk(link.user_id, {
@@ -203,7 +291,12 @@ exports.submitVideoKYC = async (req, res) => {
 // no session), it still returns success so the wizard completes gracefully.
 exports.uploadKYCCapture = async (req, res) => {
   try {
-    if (!req.file) return badRequest(res, 'KYC capture image is required.');
+    // `.fields()` populates req.files; fall back to req.file for compatibility.
+    // The primary capture is the `document`; if only a `selfie` was sent, use it.
+    const captureFile = req.file
+      || req.files?.document?.[0]
+      || req.files?.selfie?.[0];
+    if (!captureFile) return badRequest(res, 'KYC capture image is required.');
 
     // ── Resolve the user + (optional) secure link ──────────────────────────
     let userId = null;
@@ -240,10 +333,10 @@ exports.uploadKYCCapture = async (req, res) => {
     await KYCDocument.create({
       user_id: userId,
       document_type: 'video_kyc', // reuse the valid enum value used by the workflow
-      file_path: req.file.path,
-      file_name: req.file.originalname,
-      file_size: req.file.size,
-      mime_type: req.file.mimetype,
+      file_path: captureFile.path,
+      file_name: captureFile.originalname,
+      file_size: captureFile.size,
+      mime_type: captureFile.mimetype,
     });
 
     // ── Advance the user's workflow record ─────────────────────────────────
@@ -285,10 +378,10 @@ exports.verifySetupLink = async (req, res) => {
     const { token } = req.params;
     const link = await SecureLink.findOne({ where: { token, purpose: 'account_setup', used: false } });
 
-    if (!link) return badRequest(res, 'Invalid or expired setup link.');
+    if (!link) return linkError(res, 'INVALID_LINK', 'This setup link is invalid or has already been used. You can request a fresh one below.');
     if (isExpired(link.expires_at)) {
       await link.update({ used: true });
-      return badRequest(res, 'Setup link has expired. Please contact support.');
+      return linkError(res, 'EXPIRED_LINK', 'This setup link has expired. You can request a fresh one below.');
     }
 
     return success(res, { valid: true }, 'Link is valid. Complete your account setup.');
@@ -304,7 +397,22 @@ exports.getAccountDetails = async (req, res) => {
       where: { user_id: req.user.id },
     });
     if (!account) return notFound(res, 'Account not found.');
-    return success(res, { account });
+
+    // Apply the same rolling 24h reset used by the transfer guard so the
+    // returned limit figures are never stale, then expose computed convenience
+    // fields (daily_transfer_limit + remaining_limit_today) on the response.
+    const now = Date.now();
+    const lastReset = account.last_limit_reset ? new Date(account.last_limit_reset).getTime() : null;
+    if (lastReset === null || (now - lastReset) >= 24 * 60 * 60 * 1000) {
+      await account.update({ daily_transferred: 0, last_limit_reset: new Date() });
+    }
+
+    const dailyLimit = parseFloat(account.daily_transfer_limit || 0);
+    const usedToday = parseFloat(account.daily_transferred || 0);
+    const accountData = account.toJSON();
+    accountData.remaining_limit_today = Math.max(dailyLimit - usedToday, 0);
+
+    return success(res, { account: accountData });
   } catch (err) {
     return error(res, 'Failed to fetch account details.');
   }

@@ -4,7 +4,7 @@ import {
   RiShieldCheckLine, RiCloseCircleLine, RiCheckboxCircleLine,
   RiRefreshLine, RiUserLine, RiTimeLine, RiAlertLine,
   RiFileShield2Line, RiImageLine, RiMailLine, RiPhoneLine,
-  RiMapPinLine,  RiLoader4Line,
+  RiMapPinLine, RiLoader4Line,
   RiSearchLine, RiZoomInLine, RiCloseLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
@@ -14,9 +14,18 @@ import { format } from 'date-fns';
 // ─── Theme tokens ─────────────────────────────────────────────────────────────
 const NEON = { green: '#10b981', cyan: '#06b6d4', red: '#ef4444', amber: '#f59e0b' };
 
-// Backend origin for static /uploads assets (strip the trailing /api from the
-// configured API base; falls back to same-origin in dev via the vite proxy).
-const IMG_ORIGIN = String(import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+// Absolute backend origin for static /uploads assets. The frontend is served
+// from a separate static host, so KYC asset links MUST point at the Node
+// backend domain explicitly — a relative path would 404 against the frontend
+// host. Hardcoded (not env-derived) so the links compile to the exact absolute
+// production URL regardless of the local build-time VITE_API_URL value.
+// The backend serves these under express.static('/uploads'):
+//   documents → https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
+//   selfies   → https://aqua-salamander-597310.hostingersite.com/uploads/selfies/{filename}
+//   videos    → https://aqua-salamander-597310.hostingersite.com/uploads/kyc-videos/{filename}
+// document_url already carries the correct sub-folder (sliced from file_path).
+const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+const IMG_ORIGIN = BACKEND_ORIGIN;
 
 // Safe date formatter — never throws on null/invalid timestamps.
 const safeDate = (value, pattern = 'dd MMM yyyy, HH:mm', fallback = 'Recent') => {
@@ -140,14 +149,27 @@ function SnapshotLightbox({ open, src, label, applicant, onClose }) {
               </span>
               {applicant && <span className="text-white/40 text-xs">· {applicant}</span>}
             </div>
-            <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl flex items-center justify-center border text-white/70 hover:text-white transition-colors"
-              style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
-              aria-label="Close full-size view"
-            >
-              <RiCloseLine size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border text-[11px] font-semibold tracking-wide uppercase transition-colors"
+                style={{ borderColor: `${NEON.cyan}66`, background: `${NEON.cyan}14`, color: NEON.cyan }}
+                aria-label="Open the original document in a new browser tab"
+              >
+                <RiFileShield2Line size={14} /> Open Original
+              </a>
+              <button
+                onClick={onClose}
+                className="w-9 h-9 rounded-xl flex items-center justify-center border text-white/70 hover:text-white transition-colors"
+                style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}
+                aria-label="Close full-size view"
+              >
+                <RiCloseLine size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Framed image */}
@@ -445,7 +467,7 @@ export default function AdminKYCReviewPage() {
                     <p className="text-[11px] uppercase tracking-widest text-white/35 mb-2">Applicant Profile</p>
                     <div className="rounded-2xl border border-white/[0.06] bg-[#0d0d14] px-4 py-1">
                       <DetailRow icon={RiUserLine} label="Full Name" value={`${selected.first_name || ''} ${selected.last_name || ''}`} />
-                      <DetailRow icon={RiIdCardLine} label="Customer ID" value={selected.customer_id} />
+                      <DetailRow icon={RiFileShield2Line} label="Customer ID" value={selected.customer_id} />
                       <DetailRow icon={RiMailLine} label="Email" value={selected.email} />
                       <DetailRow icon={RiPhoneLine} label="Phone" value={selected.phone} />
                       <DetailRow icon={RiMapPinLine} label="Location" value={[selected.city, selected.state].filter(Boolean).join(', ')} />

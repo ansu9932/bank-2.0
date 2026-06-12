@@ -102,6 +102,16 @@ const getSecureLinkExpiry = (minutes = 5) => {
 };
 
 /**
+ * Strict 24-hour expiry for onboarding secure links (Video KYC + Account Setup).
+ * Returns the absolute timestamp written into SecureLink.expires_at so an
+ * onboarding invitation is valid for exactly 24 hours from issuance.
+ */
+const ONBOARDING_LINK_EXPIRY_HOURS = 24;
+const getOnboardingLinkExpiry = () => {
+  return new Date(Date.now() + ONBOARDING_LINK_EXPIRY_HOURS * 60 * 60 * 1000);
+};
+
+/**
  * Check if value is expired
  */
 const isExpired = (expiryDate) => {
@@ -123,6 +133,134 @@ const generateReferralCode = (name) => {
   const prefix = name.slice(0, 3).toUpperCase();
   const random = Math.floor(10000 + Math.random() * 90000);
   return `${prefix}${random}`;
+};
+
+/**
+ * Compute the Luhn check digit for a numeric string of N-1 digits.
+ * @param {string} partial digits WITHOUT the final check digit
+ * @returns {number} the check digit (0–9) that makes the full string Luhn-valid
+ */
+const luhnCheckDigit = (partial) => {
+  let sum = 0;
+  // The partial's rightmost digit is in an "even" position relative to the
+  // (not-yet-appended) check digit, so doubling starts there.
+  let double = true;
+  for (let i = partial.length - 1; i >= 0; i--) {
+    let d = partial.charCodeAt(i) - 48; // fast digit parse
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return (10 - (sum % 10)) % 10;
+};
+
+/**
+ * Validate a card number against the Luhn (mod-10) checksum.
+ * @param {string} cardNumber digits only
+ * @returns {boolean}
+ */
+const isLuhnValid = (cardNumber) => {
+  const digits = String(cardNumber).replace(/\D/g, '');
+  if (digits.length < 2) return false;
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = digits.charCodeAt(i) - 48;
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+};
+
+/**
+ * Pick a TEST-compliant Mastercard BIN prefix.
+ *
+ * Per Mastercard's published BIN structure (and their Unified Checkout test
+ * data), valid Mastercard account ranges are:
+ *   • the classic 2-digit series 51–55, and
+ *   • the newer 4-digit "2-series" 2221–2720.
+ * We pick uniformly between the two families so generated TEST cards exercise
+ * both ranges. (These are non-funded test PANs — no real account is created.)
+ * @returns {string} a leading BIN fragment ('51'..'55' or '2221'..'2720')
+ */
+const mastercardTestPrefix = () => {
+  if (Math.random() < 0.5) {
+    return String(51 + Math.floor(Math.random() * 5)); // '51'..'55'
+  }
+  return String(2221 + Math.floor(Math.random() * (2720 - 2221 + 1))); // '2221'..'2720'
+};
+
+/**
+ * Generate a Luhn-valid 16-digit TEST card number for the given network.
+ *   • Visa       → starts with '4'.
+ *   • Mastercard → starts with a valid Mastercard BIN (51–55 or 2221–2720),
+ *                  matching Mastercard's test-data specification.
+ * The final digit is the computed Luhn check digit, so the result always passes
+ * standard checksum verification. These are test PANs only — not real cards.
+ * @param {'Visa'|'Mastercard'} network
+ * @returns {string} 16-digit number
+ */
+const generateCardNumber = (network) => {
+  const prefix = String(network).toLowerCase() === 'mastercard'
+    ? mastercardTestPrefix()
+    : '4'; // Visa
+  // Build the first 15 digits (prefix + random fill), then append check digit.
+  let body = prefix;
+  while (body.length < 15) {
+    body += Math.floor(Math.random() * 10).toString();
+  }
+  body = body.slice(0, 15);
+  return body + String(luhnCheckDigit(body));
+};
+
+/**
+ * Detect a card network from its number (Visa / Mastercard / Unknown).
+ * @param {string} cardNumber
+ * @returns {'Visa'|'Mastercard'|'Unknown'}
+ */
+const detectCardNetwork = (cardNumber) => {
+  const d = String(cardNumber || '').replace(/\D/g, '');
+  if (/^4/.test(d)) return 'Visa';
+  const two = parseInt(d.slice(0, 2), 10);
+  const four = parseInt(d.slice(0, 4), 10);
+  if ((two >= 51 && two <= 55) || (four >= 2221 && four <= 2720)) return 'Mastercard';
+  return 'Unknown';
+};
+
+/**
+ * Generate a 3-digit CVV.
+ * @returns {string}
+ */
+const generateCVV = () => String(Math.floor(100 + Math.random() * 900));
+
+/**
+ * Generate a card expiry 'MM/YY' a fixed number of years in the future.
+ * @param {number} yearsAhead default 5
+ * @returns {string}
+ */
+const generateCardExpiry = (yearsAhead = 5) => {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String((now.getFullYear() + yearsAhead) % 100).padStart(2, '0');
+  return `${mm}/${yy}`;
+};
+
+/**
+ * Mask a 16-digit card number as 'XXXX XXXX XXXX 1234'.
+ * @param {string} cardNumber
+ * @returns {string}
+ */
+const maskCardNumber = (cardNumber) => {
+  const d = String(cardNumber || '').replace(/\D/g, '');
+  if (d.length < 4) return 'XXXX XXXX XXXX XXXX';
+  return `XXXX XXXX XXXX ${d.slice(-4)}`;
 };
 
 /**
@@ -155,9 +293,17 @@ module.exports = {
   formatCurrency,
   getOTPExpiry,
   getSecureLinkExpiry,
+  getOnboardingLinkExpiry,
   isExpired,
   sanitizeInput,
   generateReferralCode,
+  luhnCheckDigit,
+  isLuhnValid,
+  generateCardNumber,
+  detectCardNetwork,
+  generateCVV,
+  generateCardExpiry,
+  maskCardNumber,
   detectDevice,
   paginate,
 };

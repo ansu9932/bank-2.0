@@ -7,8 +7,22 @@ export default {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         display: ['Space Grotesk', 'sans-serif'],
+        serif: ['"Playfair Display"', 'serif'],
       },
       colors: {
+        // Alister Bank public site palette (strict red / black / white)
+        alister: {
+          red: '#CC0000',
+          'red-dark': '#990000',
+          'red-light': '#FF3333',
+          black: '#0A0A0A',
+          'black-soft': '#1A1A1A',
+          'black-medium': '#2D2D2D',
+          'black-light': '#3D3D3D',
+          white: '#FFFFFF',
+          'white-soft': '#F5F5F5',
+          'white-muted': '#E8E8E8',
+        },
         brand: {
           50:  '#fff0f2',
           100: '#ffd9de',

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { RiUserLine, RiMailLine, RiPhoneLine, RiMapPinLine, RiBankCardLine, RiEdit2Line, RiCheckLine } from 'react-icons/ri';
 import { updateProfile } from '../../store/slices/accountSlice';
@@ -11,6 +12,7 @@ export default function ProfilePage() {
   const { user } = useSelector(s => s.auth);
   const { account } = useSelector(s => s.account);
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ accountNickname: user?.accountNickname || '' });
   const [cardLoading, setCardLoading] = useState(false);
@@ -108,7 +110,9 @@ export default function ProfilePage() {
             { type: 'debit_card', icon: '💳', label: 'Request Debit Card', desc: 'Physical debit card delivery in 7-10 days' },
             { type: 'cheque_book', icon: '📖', label: 'Request Cheque Book', desc: '25-leaf cheque book, delivery in 5-7 days' },
           ].map(s => (
-            <button key={s.type} onClick={() => requestCard(s.type)} disabled={cardLoading}
+            <button key={s.type}
+              onClick={() => s.type === 'debit_card' ? navigate('/dashboard/cards') : requestCard(s.type)}
+              disabled={cardLoading && s.type !== 'debit_card'}
               className="glass-card-hover p-4 text-left">
               <span className="text-2xl">{s.icon}</span>
               <p className="text-white font-medium text-sm mt-2">{s.label}</p>

@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { body, validationResult } = require('express-validator');
 const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
-const { authLimiter, otpLimiter } = require('../middleware/security');
+const { authLimiter, loginLimiter, otpLimiter } = require('../middleware/security');
 const { badRequest } = require('../utils/apiResponse');
 
 const validate = (req, res, next) => {
@@ -11,10 +11,14 @@ const validate = (req, res, next) => {
   next();
 };
 
-router.post('/login', authLimiter, [
+router.post('/login', loginLimiter, [
   body('username').notEmpty().withMessage('Username/email is required'),
   body('password').notEmpty().withMessage('Password is required'),
 ], validate, authController.login);
+
+// Ephemeral handshake nonce for the secure login gateway (HDFC-style).
+// Client fetches this first, appends it to the URL, and echoes it on submit.
+router.get('/login-handshake', authController.loginHandshake);
 
 router.post('/logout', protect, authController.logout);
 router.get('/me', protect, authController.getMe);
@@ -43,6 +47,25 @@ router.post('/forgot-password', authLimiter, [
   body('email').isEmail(),
 ], validate, authController.forgotPassword);
 
+// ─── Identity-verification password reset (3-step wizard) ────────────────────
+// Public, pre-login. All three steps are rate-limited with authLimiter to
+// throttle brute-forcing of account number / DOB combinations.
+router.post('/verify-userid', authLimiter, [
+  body('userId').notEmpty().withMessage('User ID is required'),
+], validate, authController.verifyUserId);
+
+router.post('/verify-account-details', authLimiter, [
+  body('userId').notEmpty(),
+  body('accountNumber').notEmpty().withMessage('Account number is required'),
+  body('dateOfBirth').isISO8601().withMessage('A valid date of birth is required'),
+], validate, authController.verifyAccountDetails);
+
+router.post('/send-reset-link', authLimiter, [
+  body('userId').notEmpty(),
+  body('accountNumber').notEmpty(),
+  body('dateOfBirth').isISO8601(),
+], validate, authController.sendResetLink);
+
 router.post('/reset-password', [
   body('token').notEmpty(),
   body('newPassword').isLength({ min: 8 }),
@@ -56,5 +79,12 @@ router.post('/setup-account', [
 ], validate, authController.setupAccount);
 
 router.get('/verify-setup/:token', authController.verifySetup);
+
+// Self-service onboarding link regeneration (expired Video KYC / Account Setup).
+router.post('/regenerate-link', authLimiter, [
+  body('email').isEmail().withMessage('A valid email is required'),
+  body('customerId').notEmpty().withMessage('Customer ID is required'),
+  body('type').isIn(['account-setup', 'video-kyc']).withMessage('A valid link type is required'),
+], validate, authController.regenerateOnboardingLink);
 
 module.exports = router;

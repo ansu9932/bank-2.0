@@ -1,9 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine } from 'react-icons/ri';
+import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine, RiDeleteBin6Line } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+
+// Absolute backend origin for static /uploads assets. The frontend is served
+// from a separate static host, so KYC document links MUST point at the Node
+// backend domain explicitly — a relative path would 404 against the frontend
+// host. Hardcoded (not env-derived) so links compile to the exact absolute
+// production URL regardless of the local build-time env vars. The backend
+// serves these under express.static('/uploads'); doc.document_url already
+// carries the correct sub-folder (documents/ selfies/ kyc-videos/), sliced
+// from file_path, so the prefixed link resolves to e.g.:
+//   https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
+const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+const IMG_ORIGIN = BACKEND_ORIGIN;
 
 export default function AdminUserDetailPage() {
   const { id } = useParams();
@@ -11,12 +23,17 @@ export default function AdminUserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [manualTx, setManualTx] = useState({ type: 'credit', amount: '', description: '', reason: '' });
   const [txLoading, setTxLoading] = useState(false);
+  const [ceiling, setCeiling] = useState('');
+  const [ceilingLoading, setCeilingLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
   const fetch = async () => {
     try {
       const { data } = await api.get(`/admin/users/${id}`, { headers });
       setUser(data.data.user);
+      if (data.data.user?.account?.daily_transfer_limit != null) {
+        setCeiling(String(parseFloat(data.data.user.account.daily_transfer_limit)));
+      }
     } catch { toast.error('Failed to load user'); }
     finally { setLoading(false); }
   };
@@ -61,6 +78,29 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setTxLoading(false); }
+  };
+
+  const deleteCard = async (cardId) => {
+    // eslint-disable-next-line no-alert, no-restricted-globals
+    if (!window.confirm('Permanently delete this card? This cannot be undone.')) return;
+    try {
+      await api.delete(`/admin/user/${id}/card/${cardId}`, { headers });
+      toast.success('Card deleted successfully.');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete card'); }
+  };
+
+  const applyCeiling = async () => {
+    const parsed = parseFloat(ceiling);
+    if (Number.isNaN(parsed) || parsed < 0) { toast.error('Enter a valid ceiling amount'); return; }
+    setCeilingLoading(true);
+    try {
+      const { data } = await api.post(`/admin/modify-user-ceiling/${id}`,
+        { dailyTransferLimit: parsed }, { headers });
+      toast.success(data.message || 'Transfer ceiling updated');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update ceiling'); }
+    finally { setCeilingLoading(false); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="spinner w-8 h-8" style={{ borderWidth: 3 }} /></div>;
@@ -112,6 +152,7 @@ export default function AdminUserDetailPage() {
                   ['IFSC Code', user.account.ifsc_code],
                   ['Account Type', user.account.account_type?.toUpperCase()],
                   ['Status', user.account.status],
+                  ['Daily Transfer Limit', `₹${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}`],
                 ].map(([k,v]) => (
                   <div key={k}>
                     <p className="text-dark-400 text-xs">{k}</p>
@@ -122,22 +163,89 @@ export default function AdminUserDetailPage() {
             </div>
           )}
 
-          {/* KYC Documents */}
-          {user.documents?.length > 0 && (
-            <div className="glass-card p-5">
-              <p className="text-white font-semibold mb-3">KYC Documents</p>
+          {/* KYC Documents — Aadhaar / PAN / passport viewer (admin-only) */}
+          <div className="glass-card p-5">
+            <p className="text-white font-semibold mb-3">KYC Documents</p>
+            {user.documents?.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {user.documents.map(doc => (
-                  <a key={doc.id} href={`/${doc.file_path}`} target="_blank" rel="noreferrer"
-                    className="glass-card-hover p-3 text-center">
-                    <span className="text-2xl">📄</span>
-                    <p className="text-dark-200 text-xs mt-1 capitalize">{doc.document_type.replace('_',' ')}</p>
-                    <span className={`badge text-[10px] mt-1 ${doc.status === 'approved' ? 'badge-success' : doc.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>{doc.status}</span>
-                  </a>
-                ))}
+                {user.documents.map((doc) => {
+                  const hasFile = doc.has_file ?? Boolean(doc.document_url || doc.file_path);
+                  const href = doc.document_url ? `${IMG_ORIGIN}${doc.document_url}` : null;
+                  const badgeClass = doc.status === 'approved' ? 'badge-success'
+                    : doc.status === 'rejected' ? 'badge-danger' : 'badge-warning';
+                  const label = String(doc.document_type || 'document').replace(/_/g, ' ');
+
+                  // Clean fallback element when no asset path is present.
+                  if (!hasFile || !href) {
+                    return (
+                      <div key={doc.id} className="p-3 text-center rounded-xl border border-white/[0.06] opacity-60">
+                        <span className="text-2xl">🚫</span>
+                        <p className="text-dark-200 text-xs mt-1 capitalize">{label}</p>
+                        <span className="text-dark-400 text-[10px] mt-1 block">No file uploaded</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <a key={doc.id} href={href} target="_blank" rel="noopener noreferrer"
+                      className="glass-card-hover p-3 text-center">
+                      <span className="text-2xl">📄</span>
+                      <p className="text-dark-200 text-xs mt-1 capitalize">{label}</p>
+                      <span className={`badge text-[10px] mt-1 ${badgeClass}`}>{doc.status}</span>
+                      <span className="block text-brand-400 text-[10px] mt-1">View document →</span>
+                    </a>
+                  );
+                })}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="text-center py-6">
+                <span className="text-2xl">📂</span>
+                <p className="text-dark-300 text-sm mt-2">No KYC documents uploaded by this user.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Cards (debit card requests) */}
+          {(() => {
+            const cards = (user.cardRequests || []).filter(c => c.request_type === 'debit_card');
+            if (cards.length === 0) return null;
+            const statusBadge = (s) => s === 'active' ? 'badge-success' : s === 'cancelled' ? 'badge-danger' : 'badge-warning';
+            return (
+              <div className="glass-card p-5">
+                <p className="text-white font-semibold mb-3">Debit Cards</p>
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-sm min-w-[480px]">
+                    <thead>
+                      <tr className="text-dark-400 text-xs uppercase tracking-wide border-b border-white/[0.06]">
+                        <th className="text-left font-medium py-2 px-1">Network</th>
+                        <th className="text-left font-medium py-2 px-1">Tier</th>
+                        <th className="text-left font-medium py-2 px-1">Status</th>
+                        <th className="text-left font-medium py-2 px-1">Fee</th>
+                        <th className="text-right font-medium py-2 px-1">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cards.map((cardItem) => (
+                        <tr key={cardItem.id} className="border-b border-white/[0.04] last:border-0">
+                          <td className="py-2.5 px-1 text-white">{cardItem.card_network || '—'}</td>
+                          <td className="py-2.5 px-1 text-dark-200">{cardItem.card_tier || '—'}</td>
+                          <td className="py-2.5 px-1">
+                            <span className={`badge ${statusBadge(cardItem.status)} text-[10px]`}>{cardItem.status}</span>
+                          </td>
+                          <td className="py-2.5 px-1 text-dark-200">₹{parseFloat(cardItem.issuance_fee || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-2.5 px-1 text-right">
+                            <button onClick={() => deleteCard(cardItem.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 text-xs font-medium transition-colors">
+                              <RiDeleteBin6Line /> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Actions sidebar */}
@@ -212,6 +320,28 @@ export default function AdminUserDetailPage() {
                   className="input-field text-sm py-2" />
                 <button onClick={submitManualTx} disabled={txLoading} className="btn-primary w-full justify-center py-2.5 text-sm">
                   {txLoading ? <><div className="spinner w-3 h-3" /> Processing...</> : `Apply ${manualTx.type}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Adjust User Transfer Ceiling */}
+          {user.account && (
+            <div className="glass-card p-4">
+              <p className="text-white font-semibold mb-1 text-sm">Adjust User Transfer Ceiling</p>
+              <p className="text-dark-400 text-xs mb-3">
+                Current daily limit: ₹{parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}
+              </p>
+              <div className="space-y-2">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-300 text-sm">₹</span>
+                  <input type="number" min="0" step="1000" placeholder="New daily ceiling (₹)"
+                    value={ceiling} onChange={(e) => setCeiling(e.target.value)}
+                    className="input-field text-sm py-2 pl-7" />
+                </div>
+                <button onClick={applyCeiling} disabled={ceilingLoading}
+                  className="btn-primary w-full justify-center py-2.5 text-sm">
+                  {ceilingLoading ? <><div className="spinner w-3 h-3" /> Applying...</> : 'Apply New Limits'}
                 </button>
               </div>
             </div>

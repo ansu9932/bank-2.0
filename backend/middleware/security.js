@@ -25,12 +25,45 @@ const authLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter — LOGIN brute-force defense (strict).
+ * Window: exactly 15 minutes. Threshold: max 5 attempts per IP.
+ * On breach, rejects with HTTP 429 BEFORE the request reaches the controller
+ * (and therefore before any database lookup), using the exact JSON contract
+ * expected by the client: { status: false, message: "..." }.
+ */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,                    // 5 attempts per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({
+    status: false,
+    message: 'Too many login attempts from this device. Please try again after 15 minutes.',
+  }),
+});
+
+/**
  * Rate limiter — OTP endpoints
  */
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 5,
   handler: (req, res) => tooManyRequests(res, 'Too many OTP requests. Please wait 10 minutes.'),
+});
+
+/**
+ * Rate limiter — KYC identity validation (PAN verify) endpoints.
+ *
+ * Separate from otpLimiter so onboarding PAN lookups get an appropriate,
+ * relaxed ceiling (correcting typos / moving between steps must not lock a
+ * user out) AND a correct, identity-flavoured message — the OTP wording was
+ * leaking onto PAN entry. Still throttled because the endpoint proxies a
+ * metered third-party (Cashfree) and is reachable before auth.
+ */
+const panVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,                   // ~30 attempts/window — generous for typo retries
+  handler: (req, res) => tooManyRequests(res, 'Too many validation attempts. Please slow down and try again shortly.'),
 });
 
 /**
@@ -54,6 +87,7 @@ const securityHeaders = helmet({
       imgSrc: ["'self'", 'data:', 'blob:'],
       scriptSrc: ["'self'"],
       connectSrc: ["'self'"],
+      frameSrc: ["'self'"],
       mediaSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: [],
@@ -101,7 +135,9 @@ const securityResponseHeaders = (req, res, next) => {
 module.exports = {
   apiLimiter,
   authLimiter,
+  loginLimiter,
   otpLimiter,
+  panVerifyLimiter,
   transferLimiter,
   securityHeaders,
   sanitizeRequest,
