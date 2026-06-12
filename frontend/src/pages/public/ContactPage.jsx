@@ -11,7 +11,7 @@ const CONTACTS = [
   { icon: Phone, title: 'Phone Banking', value: '1800-200-0001', note: 'Toll Free · 24/7', href: 'tel:18002000001' },
   { icon: Mail, title: 'Email Support', value: 'support@alisterbank.com', note: 'Replies within 24 hrs', href: 'mailto:support@alisterbank.com' },
   { icon: MessageCircle, title: 'Live Chat', value: 'Chat Now', note: 'Avg. wait < 1 min', href: '#chat', chat: true },
-  { icon: Building2, title: 'Corporate Office', value: 'BKC, Mumbai', note: 'Mon–Sat, 9am–6pm', href: '#office' },
+  { icon: Building2, title: 'Corporate Office', value: '350 Park Avenue, New York, NY 10022', note: 'Mon–Fri, 9am–6pm ET', href: '#office' },
 ];
 
 const FAQS = [

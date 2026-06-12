@@ -19,6 +19,10 @@ const InvestmentsPage = lazy(() => import('./pages/public/InvestmentsPage'));
 const PaymentsPage = lazy(() => import('./pages/public/PaymentsPage'));
 const AboutPage = lazy(() => import('./pages/public/AboutPage'));
 const ContactPage = lazy(() => import('./pages/public/ContactPage'));
+const CareersPage = lazy(() => import('./pages/public/CareersPage'));
+const PressPage = lazy(() => import('./pages/public/PressPage'));
+const PrivacyPolicyPage = lazy(() => import('./pages/public/PrivacyPolicyPage'));
+const TermsOfServicePage = lazy(() => import('./pages/public/TermsOfServicePage'));
 
 // Account opening flow
 import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
@@ -107,6 +111,10 @@ export default function App() {
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/careers" element={<CareersPage />} />
+          <Route path="/press" element={<PressPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms-of-service" element={<TermsOfServicePage />} />
         </Route>
 
         {/* Auth */}

@@ -15,12 +15,12 @@ const PRODUCTS = [
 
 const QUICK = [
   ['About Us', '/about'],
-  ['Careers', '/about'],
-  ['Press', '/about'],
+  ['Careers', '/careers'],
+  ['Press', '/press'],
   ['Interest Rates', '/loans'],
   ['Fees & Charges', '/accounts'],
-  ['Privacy Policy', '/about'],
-  ['Terms of Service', '/about'],
+  ['Privacy Policy', '/privacy-policy'],
+  ['Terms of Service', '/terms-of-service'],
   ['Grievance Redressal', '/contact'],
 ];
 
@@ -90,7 +90,7 @@ export default function Footer() {
             <ul className="space-y-3.5 text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
               <li className="flex items-start gap-2.5">
                 <Phone size={16} style={{ color: '#FF3333' }} className="mt-0.5 shrink-0" />
-                <span>1800-200-0001<br /><span className="text-xs text-white/40">24/7 Toll Free</span></span>
+                <span>1-800-425-4783<br /><span className="text-xs text-white/40">24/7 Toll-Free</span></span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Mail size={16} style={{ color: '#FF3333' }} className="mt-0.5 shrink-0" />
@@ -98,7 +98,7 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-2.5">
                 <MapPin size={16} style={{ color: '#FF3333' }} className="mt-0.5 shrink-0" />
-                Alister Bank Tower, BKC,<br />Mumbai 400051, India
+                Alister Bank, N.A.<br />350 Park Avenue, 21st Floor<br />New York, NY 10022, USA
               </li>
               <li>
                 <Link to="/contact" className="inline-flex items-center gap-1.5 font-semibold" style={{ color: '#FF3333' }}>
