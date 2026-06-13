@@ -13,6 +13,11 @@ const { success, error, badRequest, unauthorized, notFound, linkError } = requir
 const logger = require('../utils/logger');
 const { SecureLink } = require('../models');
 const { issueHandshake, consumeHandshake } = require('../utils/loginHandshake');
+const { verifyTurnstile } = require('../utils/captcha');
+
+// generateSecureToken() = crypto.randomBytes(64).toString('hex') → 128 hex chars.
+// Used to reject obviously-malformed tokens before any DB lookup.
+const RESET_TOKEN_PATTERN = /^[a-f0-9]{128}$/;
 
 // ─── Login Handshake (HDFC-style ephemeral SSO nonce) ────────────────────────
 // GET /api/auth/login-handshake → mints a short-lived, single-use state token
@@ -484,8 +489,23 @@ exports.sendResetLink = async (req, res) => {
 // ─── Reset Password ────────────────────────────────────────────────────────────
 exports.resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
+    const { token, newPassword, captchaToken } = req.body;
     if (!token || !newPassword) return badRequest(res, 'Token and new password are required.');
+
+    // ── Bot protection: verify CAPTCHA BEFORE any token/DB lookup ────────────
+    // Skips gracefully (with a logged warning) when TURNSTILE_SECRET_KEY is
+    // unset, so local development isn't blocked.
+    const captcha = await verifyTurnstile(captchaToken, req.ip);
+    if (!captcha.success) {
+      return badRequest(res, 'CAPTCHA verification failed. Please try again.');
+    }
+
+    // ── Cheap token-shape gate ───────────────────────────────────────────────
+    // Reject obviously-malformed (bot) tokens up front so we never waste a DB
+    // query on them. Same generic message as a genuine miss — no info leak.
+    if (!RESET_TOKEN_PATTERN.test(String(token))) {
+      return badRequest(res, 'Invalid or expired reset link.');
+    }
 
     const link = await SecureLink.findOne({ where: { token, purpose: 'password_reset', used: false } });
     if (!link) return badRequest(res, 'Invalid or expired reset link.');
@@ -496,11 +516,29 @@ exports.resetPassword = async (req, res) => {
 
     if (newPassword.length < 8) return badRequest(res, 'Password must be at least 8 characters.');
 
+    // ── Disallow reusing the current password ────────────────────────────────
+    const user = await User.findByPk(link.user_id);
+    if (user) {
+      const sameAsCurrent = await bcrypt.compare(newPassword, user.password_hash);
+      if (sameAsCurrent) {
+        return badRequest(res, 'New password must be different from your current password.');
+      }
+    }
+
     const hash = await bcrypt.hash(newPassword, parseInt(process.env.BCRYPT_ROUNDS) || 12);
     await User.update({ password_hash: hash }, { where: { id: link.user_id } });
     await link.update({ used: true, used_at: new Date() });
 
     await Session.update({ is_active: false }, { where: { user_id: link.user_id } });
+
+    await createAuditLog({
+      userId: link.user_id,
+      action: 'PASSWORD_RESET_COMPLETED',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      status: 'success',
+      description: 'Password reset completed via secure reset link.',
+    });
 
     return success(res, {}, 'Password reset successfully. Please log in.');
   } catch (err) {
