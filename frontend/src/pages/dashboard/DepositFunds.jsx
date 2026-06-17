@@ -41,6 +41,11 @@ const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 
+// NOTE: browser DevTools may show `bank-transfer.php` 404s while this script is
+// active — these originate from Razorpay Checkout.js internals or a browser
+// extension, NOT from this application (it is a Node.js backend with no PHP).
+// They are harmless and do not affect the payment flow.
+//
 // Lazily inject the Razorpay Checkout script once; resolves when ready.
 function loadRazorpayCheckout() {
   return new Promise((resolve, reject) => {
@@ -466,58 +471,41 @@ export default function DepositFunds() {
                   <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
                 )}
 
-                {/* Cropped QR (UPI flow only) */}
+                {/* QR image (UPI flow only) */}
                 {order.image_url && (
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
+                    {/* Show the FULL Razorpay QR image without cropping. The previous
+                        overflow:hidden + top:-150px crop (intended to hide Razorpay's
+                        branding band) sliced into the quiet-zone/logo area and rendered
+                        a blank white box, leaving no scannable matrix. Displaying the
+                        whole image with objectFit:contain guarantees the complete,
+                        scannable QR is always visible — a working QR matters more than
+                        hiding vendor branding. */}
                     <div
                       style={{
-                        // Bounding view window — strict overflow:hidden slices off the top
-                        // branding band. Height bumped 200→220px to recover vertical matrix
-                        // room given the more aggressive -150px upward pull, keeping the
-                        // black-and-white grid fully exposed and centred. Width held at 200px
-                        // (sides are quiet-zone whitespace).
-                        width: '200px', height: '220px', overflow: 'hidden', position: 'relative',
-                        display: 'flex', justifyContent: 'center', alignItems: 'center',
-                        background: '#ffffff', borderRadius: '12px', margin: 0, padding: 0,
+                        width: '220px',
+                        height: '220px',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        background: '#ffffff',
+                        borderRadius: '12px',
                       }}>
                       <img
                         src={order.image_url}
                         alt="UPI payment QR code"
                         draggable={false}
                         style={{
-                          // White-label crop mask. Razorpay returns a square QR image with its
-                          // vendor logo/branding occupying the TOP band. We zoom the image to
-                          // 420px and view it through the 200×220 overflow-hidden window so only
-                          // the lower matrix region shows.
-                          //   • Horizontal: left:50% + translateX(-50%) centres the matrix
-                          //     EXPLICITLY rather than relying on implicit flex static-position
-                          //     centring (browser-fragile). The image has wide side margins, so
-                          //     the portions that fall outside the window are quiet-zone
-                          //     whitespace, never matrix — sides stay safe.
-                          //   • Vertical: top:-150px (was -100px) — a more aggressive upward pull
-                          //     to force the full top branding band out of view, per live UI check.
-                          //
-                          // ⚠️ FINDER-PATTERN CEILING: the QR's TWO top finder patterns (the large
-                          // corner squares) sit just below the logo band. Pushing `top` more
-                          // negative than the logo height WILL clip them and make the code
-                          // unscannable. If scanning breaks at -150px, the logo band is taller than
-                          // this crop can hide without destroying the matrix — at that point the
-                          // real fix is backend-generated UPI string + client-side renderer
-                          // (needs a real merchant VPA), NOT a larger offset.
-                          //   Tuning: -130px if the top finder patterns start to clip;
-                          //           -170px only if logo remnants still show AND scanning still works.
-                          position: 'absolute',
-                          width: '420px',
-                          height: 'auto',
-                          left: '50%',
-                          top: '-150px',
-                          transform: 'translateX(-50%)',
-                          margin: 0,
-                          padding: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
                           imageRendering: 'crisp-edges',
+                          display: 'block',
                         }}
                       />
                     </div>
