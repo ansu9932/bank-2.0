@@ -84,10 +84,14 @@ const securityHeaders = helmet({
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      imgSrc: ["'self'", 'data:', 'blob:'],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'"],
-      frameSrc: ["'self'"],
+      // api.qrserver.com renders the deposit-page UPI QR image.
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://api.qrserver.com'],
+      // checkout.razorpay.com serves the Razorpay Checkout widget script.
+      scriptSrc: ["'self'", 'https://checkout.razorpay.com'],
+      // Razorpay Checkout makes XHR/fetch calls to its API + analytics hosts.
+      connectSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com', 'https://rzp.io'],
+      // Razorpay Checkout renders its payment UI inside an iframe.
+      frameSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com', 'https://rzp.io'],
       mediaSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: [],
