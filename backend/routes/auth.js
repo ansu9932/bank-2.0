@@ -66,9 +66,16 @@ router.post('/send-reset-link', authLimiter, [
   body('dateOfBirth').isISO8601(),
 ], validate, authController.sendResetLink);
 
-router.post('/reset-password', [
+// Final reset step — public + unauthenticated, so it's rate-limited with
+// authLimiter (throttles token-guessing from a single IP) and enforces a
+// stronger server-side password policy than the frontend's 8-char minimum.
+router.post('/reset-password', authLimiter, [
   body('token').notEmpty(),
-  body('newPassword').isLength({ min: 8 }),
+  body('newPassword')
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/[A-Z]/).withMessage('Password must contain an uppercase letter')
+    .matches(/[a-z]/).withMessage('Password must contain a lowercase letter')
+    .matches(/[0-9]/).withMessage('Password must contain a number'),
 ], validate, authController.resetPassword);
 
 router.post('/setup-account', [

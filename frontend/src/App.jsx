@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
 import { getMe } from './store/slices/authSlice';
 
+import PageLoader from './components/common/PageLoader';
+
 // Auth pages
 import LoginPage from './pages/auth/LoginPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
@@ -24,35 +26,40 @@ const PressPage = lazy(() => import('./pages/public/PressPage'));
 const PrivacyPolicyPage = lazy(() => import('./pages/public/PrivacyPolicyPage'));
 const TermsOfServicePage = lazy(() => import('./pages/public/TermsOfServicePage'));
 
-// Account opening flow
-import AccountOpeningPage from './pages/account-opening/AccountOpeningPage';
-import CyberVideoKYC from './pages/account-opening/CyberVideoKYC';
-import AccountSetupPage from './pages/account-opening/AccountSetupPage';
-
-// Dashboard
+// Account opening flow (lazy-loaded — only fetched when these routes are hit)
 import DashboardLayout from './components/layout/DashboardLayout';
-import DashboardPage from './pages/dashboard/DashboardPage';
-import TransactionsPage from './pages/dashboard/TransactionsPage';
-import TransferPage from './pages/dashboard/TransferPage';
-import DepositFunds from './pages/dashboard/DepositFunds';
-import BeneficiariesPage from './pages/dashboard/BeneficiariesPage';
-import StatementPage from './pages/dashboard/StatementPage';
-import ProfilePage from './pages/dashboard/ProfilePage';
-import SecurityPage from './pages/dashboard/SecurityPage';
-import SupportPage from './pages/dashboard/SupportPage';
-import AnalyticsPage from './pages/dashboard/AnalyticsPage';
-import CardsPage from './pages/dashboard/CardsPage';
-
-// Admin
 import AdminLayout from './components/layout/AdminLayout';
-import AdminLoginPage from './pages/admin/AdminLoginPage';
-import AdminDashboardPage from './pages/admin/AdminDashboardPage';
-import AdminUsersPage from './pages/admin/AdminUsersPage';
-import AdminUserDetailPage from './pages/admin/AdminUserDetailPage';
-import AdminKYCReviewPage from './pages/admin/AdminKYCReviewPage';
-import AdminTransactionsPage from './pages/admin/AdminTransactionsPage';
-import AdminAuditPage from './pages/admin/AdminAuditPage';
-import AdminTicketsPage from './pages/admin/AdminTicketsPage';
+const AccountOpeningPage = lazy(() => import('./pages/account-opening/AccountOpeningPage'));
+const CyberVideoKYC = lazy(() => import('./pages/account-opening/CyberVideoKYC'));
+const AccountSetupPage = lazy(() => import('./pages/account-opening/AccountSetupPage'));
+
+// Dashboard (lazy-loaded — layout shell stays eager, page content is split)
+const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'));
+const TransactionsPage = lazy(() => import('./pages/dashboard/TransactionsPage'));
+const TransferPage = lazy(() => import('./pages/dashboard/TransferPage'));
+const DepositFunds = lazy(() => import('./pages/dashboard/DepositFunds'));
+const BeneficiariesPage = lazy(() => import('./pages/dashboard/BeneficiariesPage'));
+const StatementPage = lazy(() => import('./pages/dashboard/StatementPage'));
+const ProfilePage = lazy(() => import('./pages/dashboard/ProfilePage'));
+const SecurityPage = lazy(() => import('./pages/dashboard/SecurityPage'));
+const SupportPage = lazy(() => import('./pages/dashboard/SupportPage'));
+const AnalyticsPage = lazy(() => import('./pages/dashboard/AnalyticsPage'));
+const CardsPage = lazy(() => import('./pages/dashboard/CardsPage'));
+
+// Admin (lazy-loaded — layout shell stays eager, page content is split)
+const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage'));
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminUserDetailPage = lazy(() => import('./pages/admin/AdminUserDetailPage'));
+const AdminKYCReviewPage = lazy(() => import('./pages/admin/AdminKYCReviewPage'));
+const AdminTransactionsPage = lazy(() => import('./pages/admin/AdminTransactionsPage'));
+const AdminAuditPage = lazy(() => import('./pages/admin/AdminAuditPage'));
+const AdminTicketsPage = lazy(() => import('./pages/admin/AdminTicketsPage'));
+
+// Wraps a lazy page element in a Suspense boundary with the shared loader.
+const withSuspense = (element) => (
+  <Suspense fallback={<PageLoader />}>{element}</Suspense>
+);
 
 // Guards
 const PrivateRoute = ({ children }) => {
@@ -123,41 +130,41 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Account Opening */}
-        <Route path="/open-account" element={<AccountOpeningPage />} />
+        <Route path="/open-account" element={withSuspense(<AccountOpeningPage />)} />
         {/* Live production Video KYC — email secure links land here (?token=...) */}
-        <Route path="/video-kyc" element={<CyberVideoKYC />} />
+        <Route path="/video-kyc" element={withSuspense(<CyberVideoKYC />)} />
         {/* Public showcase / demo of the same cyber wizard (no token = demo mode) */}
-        <Route path="/cyber-kyc" element={<CyberVideoKYC />} />
-        <Route path="/account-setup" element={<AccountSetupPage />} />
+        <Route path="/cyber-kyc" element={withSuspense(<CyberVideoKYC />)} />
+        <Route path="/account-setup" element={withSuspense(<AccountSetupPage />)} />
 
         {/* Dashboard */}
         <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
-          <Route index element={<DashboardPage />} />
-          <Route path="transactions" element={<TransactionsPage />} />
-          <Route path="transfer" element={<TransferPage />} />
-          <Route path="deposit" element={<DepositFunds />} />
-          <Route path="beneficiaries" element={<BeneficiariesPage />} />
-          <Route path="cards" element={<CardsPage />} />
-          <Route path="statement" element={<StatementPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="security" element={<SecurityPage />} />
-          <Route path="support" element={<SupportPage />} />
+          <Route index element={withSuspense(<DashboardPage />)} />
+          <Route path="transactions" element={withSuspense(<TransactionsPage />)} />
+          <Route path="transfer" element={withSuspense(<TransferPage />)} />
+          <Route path="deposit" element={withSuspense(<DepositFunds />)} />
+          <Route path="beneficiaries" element={withSuspense(<BeneficiariesPage />)} />
+          <Route path="cards" element={withSuspense(<CardsPage />)} />
+          <Route path="statement" element={withSuspense(<StatementPage />)} />
+          <Route path="analytics" element={withSuspense(<AnalyticsPage />)} />
+          <Route path="profile" element={withSuspense(<ProfilePage />)} />
+          <Route path="security" element={withSuspense(<SecurityPage />)} />
+          <Route path="support" element={withSuspense(<SupportPage />)} />
         </Route>
 
         {/* Admin */}
-        <Route path="/admin/login" element={<AdminLoginPage />} />
+        <Route path="/admin/login" element={withSuspense(<AdminLoginPage />)} />
         <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="users/:id" element={<AdminUserDetailPage />} />
-          <Route path="kyc-review" element={<AdminKYCReviewPage />} />
-          <Route path="transactions" element={<AdminTransactionsPage />} />
+          <Route index element={withSuspense(<AdminDashboardPage />)} />
+          <Route path="users" element={withSuspense(<AdminUsersPage />)} />
+          <Route path="users/:id" element={withSuspense(<AdminUserDetailPage />)} />
+          <Route path="kyc-review" element={withSuspense(<AdminKYCReviewPage />)} />
+          <Route path="transactions" element={withSuspense(<AdminTransactionsPage />)} />
           {/* audit — matches the /admin/audit path used in Sidebar and AdminLayout */}
-          <Route path="audit" element={<AdminAuditPage />} />
+          <Route path="audit" element={withSuspense(<AdminAuditPage />)} />
           {/* audit-logs — alias so old bookmarks still work */}
-          <Route path="audit-logs" element={<AdminAuditPage />} />
-          <Route path="tickets" element={<AdminTicketsPage />} />
+          <Route path="audit-logs" element={withSuspense(<AdminAuditPage />)} />
+          <Route path="tickets" element={withSuspense(<AdminTicketsPage />)} />
         </Route>
 
         {/* 404 */}
