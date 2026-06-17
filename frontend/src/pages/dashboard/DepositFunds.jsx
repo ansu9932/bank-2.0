@@ -477,27 +477,18 @@ export default function DepositFunds() {
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* `order.image_url` is now a base64 data URI of the Razorpay QR
-                        (the backend fetches the QR image and inlines it), so it can be
-                        rendered directly by a plain <img> with no external request. */}
-                    <div
-                      style={{
-                        width: '220px',
-                        height: '220px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        background: '#ffffff',
-                        borderRadius: '12px',
-                      }}>
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        width={200}
-                        height={200}
-                        style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
-                      />
-                    </div>
+                    {/* CSS background-crop: show only the black-and-white QR matrix,
+                        hiding Razorpay's branding header and payment logos. */}
+                    <div style={{
+                      width: '200px',
+                      height: '200px',
+                      backgroundImage: `url(${order.image_url})`,
+                      backgroundSize: '290px auto',
+                      backgroundPosition: 'center 38%',
+                      backgroundRepeat: 'no-repeat',
+                      borderRadius: '8px',
+                      backgroundColor: '#ffffff',
+                    }} />
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
                       'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
                       <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
