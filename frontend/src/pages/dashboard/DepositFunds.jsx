@@ -8,7 +8,6 @@ import {
   RiBankCardLine, RiBankLine, RiInformationLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
-import { QRCodeSVG } from 'qrcode.react';
 import api from '../../services/api';
 import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
@@ -478,11 +477,11 @@ export default function DepositFunds() {
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* Generate the QR locally from the Razorpay payment link.
-                        `order.image_url` is a short-link URL (e.g. https://rzp.io/rzp/XXXX),
-                        NOT an image file — so an <img> tag renders blank. QRCodeSVG encodes
-                        the URL directly in the browser, so no external image load is needed
-                        and the QR always displays. Scanning it opens the payment link. */}
+                    {/* Generate the QR via an external QR API from the Razorpay payment
+                        link. `order.image_url` is a short-link URL (e.g. https://rzp.io/rzp/XXXX),
+                        NOT an image file — so pointing <img> at it directly renders blank.
+                        We pass the URL as the `data` param to api.qrserver.com, which returns
+                        a 200×200 PNG QR. Scanning it opens the payment link. */}
                     <div
                       style={{
                         width: '220px',
@@ -493,12 +492,12 @@ export default function DepositFunds() {
                         background: '#ffffff',
                         borderRadius: '12px',
                       }}>
-                      <QRCodeSVG
-                        value={order.image_url}
-                        size={200}
-                        bgColor="#ffffff"
-                        fgColor="#000000"
-                        level="H"
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(order.image_url)}&ecc=H`}
+                        alt="UPI payment QR code"
+                        width={200}
+                        height={200}
+                        style={{ display: 'block', borderRadius: '8px', imageRendering: 'crisp-edges' }}
                       />
                     </div>
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
