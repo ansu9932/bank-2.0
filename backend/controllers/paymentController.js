@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { randomUUID } = require('crypto');
+const axios = require('axios');
 const sequelize = require('../config/database');
 const { Account, Transaction, Notification, User } = require('../models');
 const { createUpiQr, isConfigured } = require('../utils/razorpay');
@@ -93,6 +94,21 @@ exports.createQR = async (req, res) => {
       closeBy: Math.floor(Date.now() / 1000) + QR_TTL_SECONDS,
     });
 
+    // Fetch the QR image from Razorpay and inline it as a base64 data URI so the
+    // frontend never has to load a cross-origin image (avoids CSP/img-src and
+    // hotlink issues, and renders instantly). If the fetch fails for any reason
+    // we fall back to the raw Razorpay image_url rather than failing the whole
+    // QR creation.
+    let qrImage = qr.image_url;
+    try {
+      const imgResponse = await axios.get(qr.image_url, { responseType: 'arraybuffer', timeout: 8000 });
+      const base64 = Buffer.from(imgResponse.data).toString('base64');
+      const mimeType = imgResponse.headers['content-type'] || 'image/png';
+      qrImage = `data:${mimeType};base64,${base64}`;
+    } catch (imgErr) {
+      logger.error(`QR image fetch failed (${orderRef}); falling back to image_url: ${imgErr.message}`);
+    }
+
     // Pre-create the deposit as a PENDING ledger record keyed on orderRef. The
     // webhook later flips this to completed and credits the balance.
     try {
@@ -119,7 +135,7 @@ exports.createQR = async (req, res) => {
     return success(res, {
       orderRef,
       qrId: qr.id,
-      image_url: qr.image_url,
+      image_url: qrImage,
       amount,
       currency: 'INR',
       description,

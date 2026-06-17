@@ -477,11 +477,9 @@ export default function DepositFunds() {
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* Generate the QR via an external QR API from the Razorpay payment
-                        link. `order.image_url` is a short-link URL (e.g. https://rzp.io/rzp/XXXX),
-                        NOT an image file — so pointing <img> at it directly renders blank.
-                        We pass the URL as the `data` param to api.qrserver.com, which returns
-                        a 200×200 PNG QR. Scanning it opens the payment link. */}
+                    {/* `order.image_url` is now a base64 data URI of the Razorpay QR
+                        (the backend fetches the QR image and inlines it), so it can be
+                        rendered directly by a plain <img> with no external request. */}
                     <div
                       style={{
                         width: '220px',
@@ -493,11 +491,11 @@ export default function DepositFunds() {
                         borderRadius: '12px',
                       }}>
                       <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(order.image_url)}&ecc=H`}
+                        src={order.image_url}
                         alt="UPI payment QR code"
                         width={200}
                         height={200}
-                        style={{ display: 'block', borderRadius: '8px', imageRendering: 'crisp-edges' }}
+                        style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
                       />
                     </div>
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
