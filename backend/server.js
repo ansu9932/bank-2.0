@@ -62,6 +62,19 @@ app.use('/uploads', express.static(UPLOADS_ROOT));
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 app.use('/api/', apiLimiter);
 
+// ─── Block stray .php calls (this is a Node.js backend — no PHP exists) ───────
+// DevTools sometimes shows 404s for paths like `bank-transfer.php`. These do
+// NOT originate from this app (there are zero .php files in the codebase) —
+// they come from third-party scripts (e.g. Razorpay Checkout internals) or a
+// browser extension. This guard simply returns a clean JSON 404 instead of the
+// generic HTML fall-through, and keeps such noise out of the real route table.
+app.use((req, res, next) => {
+  if (req.path.toLowerCase().endsWith('.php')) {
+    return res.status(404).json({ success: false, message: 'Not found.' });
+  }
+  next();
+});
+
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/account', require('./routes/account'));

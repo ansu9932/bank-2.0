@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
 const SCRIPT_ID = 'cf-turnstile-script';
@@ -48,6 +48,16 @@ function loadTurnstileScript() {
 export default function Turnstile({ siteKey, onVerify, onExpire, theme = 'dark' }) {
   const containerRef = useRef(null);
   const widgetIdRef = useRef(null);
+  // Tracks whether the Turnstile script/widget failed to load (e.g. blocked by
+  // an ad-blocker, privacy extension, or network filter). We surface this to the
+  // user with a retry instead of silently leaving the form disabled.
+  //
+  // IMPORTANT: a load failure NEVER issues a token. We deliberately do NOT
+  // "bypass" the CAPTCHA — that would defeat the bot protection these endpoints
+  // (e.g. password reset) rely on, and the backend would reject a fake token
+  // anyway. We only inform the user so they can unblock and retry.
+  const [blocked, setBlocked] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   // Keep latest callbacks in refs so the render effect doesn't re-run on each
   // parent re-render (which would re-mount the widget).
   const onVerifyRef = useRef(onVerify);
@@ -58,6 +68,7 @@ export default function Turnstile({ siteKey, onVerify, onExpire, theme = 'dark' 
   useEffect(() => {
     if (!siteKey) return undefined;
     let cancelled = false;
+    setBlocked(false);
 
     loadTurnstileScript()
       .then((turnstile) => {
@@ -67,11 +78,14 @@ export default function Turnstile({ siteKey, onVerify, onExpire, theme = 'dark' 
           theme,
           callback: (token) => onVerifyRef.current?.(token),
           'expired-callback': () => onExpireRef.current?.(),
-          'error-callback': () => onExpireRef.current?.(),
+          'error-callback': () => { setBlocked(true); onExpireRef.current?.(); },
         });
       })
       .catch(() => {
-        // Network/script failure — fail to a state where no token is issued.
+        // Network/script failure — fail to a state where NO token is issued and
+        // tell the user so the form isn't silently stuck.
+        if (cancelled) return;
+        setBlocked(true);
         onExpireRef.current?.();
       });
 
@@ -81,8 +95,26 @@ export default function Turnstile({ siteKey, onVerify, onExpire, theme = 'dark' 
         try { window.turnstile.remove(widgetIdRef.current); } catch { /* noop */ }
       }
     };
-  }, [siteKey, theme]);
+  }, [siteKey, theme, reloadKey]);
 
   if (!siteKey) return null;
+
+  if (blocked) {
+    return (
+      <div className="flex flex-col items-center gap-2 text-center">
+        <p className="text-xs text-amber-400">
+          Security check couldn&apos;t load. It may be blocked by a browser
+          extension or network filter. Please disable blockers for this site and retry.
+        </p>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="text-xs font-semibold underline text-amber-300 hover:text-amber-200">
+          Retry verification
+        </button>
+      </div>
+    );
+  }
+
   return <div ref={containerRef} className="flex justify-center" />;
 }
