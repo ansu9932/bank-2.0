@@ -8,6 +8,7 @@ import {
   RiBankCardLine, RiBankLine, RiInformationLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
+import { QRCodeSVG } from 'qrcode.react';
 import api from '../../services/api';
 import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
@@ -477,36 +478,27 @@ export default function DepositFunds() {
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* Show the FULL Razorpay QR image without cropping. The previous
-                        overflow:hidden + top:-150px crop (intended to hide Razorpay's
-                        branding band) sliced into the quiet-zone/logo area and rendered
-                        a blank white box, leaving no scannable matrix. Displaying the
-                        whole image with objectFit:contain guarantees the complete,
-                        scannable QR is always visible — a working QR matters more than
-                        hiding vendor branding. */}
+                    {/* Generate the QR locally from the Razorpay payment link.
+                        `order.image_url` is a short-link URL (e.g. https://rzp.io/rzp/XXXX),
+                        NOT an image file — so an <img> tag renders blank. QRCodeSVG encodes
+                        the URL directly in the browser, so no external image load is needed
+                        and the QR always displays. Scanning it opens the payment link. */}
                     <div
                       style={{
                         width: '220px',
                         height: '220px',
-                        overflow: 'hidden',
-                        position: 'relative',
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
                         background: '#ffffff',
                         borderRadius: '12px',
                       }}>
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        draggable={false}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'contain',
-                          imageRendering: 'crisp-edges',
-                          display: 'block',
-                        }}
+                      <QRCodeSVG
+                        value={order.image_url}
+                        size={200}
+                        bgColor="#ffffff"
+                        fgColor="#000000"
+                        level="H"
                       />
                     </div>
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
