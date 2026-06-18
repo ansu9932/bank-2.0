@@ -13,14 +13,20 @@ const moment = require('moment');
 // ─── Get Transactions ─────────────────────────────────────────────────────────
 exports.getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 20, type, mode, startDate, endDate, search, status } = req.query;
+    const { page = 1, limit = 20, type, mode, startDate, endDate, search } = req.query;
     const account = await Account.findOne({ where: { user_id: req.user.id } });
     if (!account) return notFound(res, 'Account not found.');
 
     const where = { account_id: account.id };
     if (type) where.transaction_type = type;
     if (mode) where.transfer_mode = mode;
-    if (status) where.status = status;
+    // User dashboard shows ONLY successful/completed transactions. Pending,
+    // processing, failed and reversed entries are hidden from the end user, so an
+    // incomplete deposit (e.g. a UPI QR that was generated but never paid) never
+    // appears here. NOTE: this restriction is intentionally user-side only — the
+    // admin transaction views use a different controller and still see every
+    // status, so nothing changes for admins.
+    where.status = 'success';
     if (startDate && endDate) {
       where.created_at = { [Op.between]: [new Date(startDate), new Date(endDate + 'T23:59:59')] };
     }
@@ -365,7 +371,7 @@ exports.getMiniStatement = async (req, res) => {
     if (!account) return notFound(res, 'Account not found.');
 
     const transactions = await Transaction.findAll({
-      where: { account_id: account.id },
+      where: { account_id: account.id, status: 'success' },
       order: [['created_at', 'DESC']],
       limit: 10,
     });
