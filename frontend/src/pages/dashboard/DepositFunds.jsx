@@ -121,26 +121,65 @@ const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 // extension, NOT from this application (it is a Node.js backend with no PHP).
 // They are harmless and do not affect the payment flow.
 //
-// Lazily inject the Razorpay Checkout script once; resolves when ready.
+// Resolve with the Razorpay Checkout global. It is normally loaded eagerly via
+// the <script> tag in index.html; this also self-heals by (re)injecting the
+// script if needed, listens for load/error, and retries on failure so a single
+// blocked request doesn't permanently break the Card / Net Banking flow.
 function loadRazorpayCheckout() {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') { reject(new Error('No window')); return; }
     if (window.Razorpay) { resolve(window.Razorpay); return; }
 
+    let settled = false;
     let script = document.getElementById('rzp-checkout-js');
+
+    const cleanup = () => {
+      clearInterval(poll);
+      if (script) {
+        script.removeEventListener('load', onLoad);
+        script.removeEventListener('error', onError);
+      }
+    };
+    const succeed = () => {
+      if (settled || !window.Razorpay) return;
+      settled = true; cleanup(); resolve(window.Razorpay);
+    };
+    const fail = (message) => {
+      if (settled) return;
+      settled = true; cleanup();
+      // Drop the failed node so the next attempt can re-inject and retry.
+      if (script && script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error(message));
+    };
+    const onLoad = () => succeed();
+    const onError = () => fail(
+      'Could not load the secure payment widget. It may be blocked by an ad blocker '
+      + 'or browser privacy setting — please disable it for this site and try again.'
+    );
+
+    // Reuse the eager index.html tag if present; otherwise inject our own.
     if (!script) {
       script = document.createElement('script');
       script.id = 'rzp-checkout-js';
       script.src = CHECKOUT_SRC;
       script.async = true;
-      document.body.appendChild(script);
+      document.head.appendChild(script);
     }
+    script.addEventListener('load', onLoad);
+    script.addEventListener('error', onError);
+
+    // Poll as a safety net (covers the eager tag finishing before listeners are
+    // attached, and slow networks) with a hard timeout.
     const started = Date.now();
     const poll = setInterval(() => {
-      if (window.Razorpay) { clearInterval(poll); resolve(window.Razorpay); }
-      else if (Date.now() - started > 15000) { clearInterval(poll); reject(new Error('Checkout failed to load')); }
+      if (window.Razorpay) succeed();
+      else if (Date.now() - started > 15000) {
+        fail('The payment widget took too long to load. Please check your connection and try again.');
+      }
     }, 100);
-    script.addEventListener('error', () => { clearInterval(poll); reject(new Error('Checkout script error')); });
+
+    // The eager script may already be loaded by the time we get here.
+    if (window.Razorpay) succeed();
   });
 }
 
