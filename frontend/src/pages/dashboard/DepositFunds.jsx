@@ -12,6 +12,81 @@ import api from '../../services/api';
 import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
 
+/**
+ * Clean, branding-free QR renderer.
+ *
+ * `order.image_url` may be Razorpay's full branded POSTER (Powered-by-Razorpay
+ * header, BHIM/UPI band, the QR, "Scan & Pay" text, GPay/PhonePe/Paytm icons,
+ * merchant name) OR an already-clean QR. This decodes the QR payload out of the
+ * image with jsQR, then regenerates a pristine SQUARE QR from that exact payload
+ * (so it scans to the same UPI intent and still pays through Razorpay). On any
+ * failure it transparently falls back to the source image.
+ *
+ * This runs entirely on the client, so the QR is cropped/cleaned regardless of
+ * whether the backend clean-QR step has been deployed.
+ */
+const QR_IMG_STYLE = {
+  width: '200px',
+  height: '200px',
+  maxWidth: '220px',
+  objectFit: 'contain',
+  display: 'block',
+  margin: '0 auto',
+  imageRendering: 'crisp-edges',
+};
+
+function CleanQrImage({ src }) {
+  const [cleanSrc, setCleanSrc] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCleanSrc(null);
+    if (!src) return undefined;
+
+    (async () => {
+      try {
+        const [{ default: jsQR }, { default: QRCode }] = await Promise.all([
+          import('jsqr'),
+          import('qrcode'),
+        ]);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = async () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(data, width, height);
+            if (code && code.data && !cancelled) {
+              const url = await QRCode.toDataURL(code.data, {
+                margin: 2,
+                width: 600,
+                errorCorrectionLevel: 'M',
+                color: { dark: '#000000', light: '#ffffff' },
+              });
+              if (!cancelled) setCleanSrc(url);
+            }
+          } catch {
+            /* decode failed — keep fallback (raw src) */
+          }
+        };
+        img.src = src;
+      } catch {
+        /* jsqr/qrcode failed to load — keep fallback (raw src) */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return <img src={cleanSrc || src} alt="UPI payment QR code" style={QR_IMG_STYLE} />;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
    • Amount <= ₹1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
@@ -487,22 +562,10 @@ export default function DepositFunds() {
                         padding: '28px',
                         boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)`,
                       }}>
-                      {/* Fixed-size, object-contain QR. NOT width/height 100% — a fixed
-                          200x200 with margin:auto guarantees equal gaps on all four sides
-                          inside the padded card and never stretches to fill the parent. */}
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        style={{
-                          width: '200px',
-                          height: '200px',
-                          maxWidth: '220px',
-                          objectFit: 'contain',
-                          display: 'block',
-                          margin: '0 auto',
-                          imageRendering: 'crisp-edges',
-                        }}
-                      />
+                      {/* Clean, branding-free QR generated client-side (see
+                          CleanQrImage). Works even if the backend clean-QR step
+                          isn't deployed. */}
+                      <CleanQrImage src={order.image_url} />
                     </div>
                     {/* Red corner brackets (.qr-frame) — unchanged style, now on the
                         outer wrapper so they sit OUTSIDE the padded white QR box. */}
