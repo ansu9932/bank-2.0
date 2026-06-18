@@ -476,26 +476,33 @@ export default function DepositFunds() {
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative inline-flex">
-                    {/* Inner white box (.qr-inner-box): its padding creates a clear,
-                        equal gap between the QR and the corner brackets, and flex
-                        centres the QR on both axes. */}
+                    {/* .qr-card — the IMMEDIATE parent of the QR <img>.
+                        box-sizing:border-box so the 28px padding is honoured and the
+                        image can never reach the card edge; flex centres the QR on both
+                        axes; rounded corners match the bracket frame. */}
                     <div
                       className="flex items-center justify-center rounded-2xl bg-white"
-                      style={{ padding: '28px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                      {/* QR matrix only — CSS background-crop hides Razorpay's branding
-                          header and GPay/PhonePe/Paytm footer. 220px window with 319px
-                          backgroundSize preserves the original crop framing. */}
-                      <div style={{
-                        width: '220px',
-                        height: '220px',
-                        backgroundImage: `url(${order.image_url})`,
-                        backgroundSize: '319px auto',
-                        backgroundPosition: 'center 38%',
-                        backgroundRepeat: 'no-repeat',
-                        overflow: 'hidden',
-                        borderRadius: '8px',
-                        backgroundColor: '#ffffff',
-                      }} />
+                      style={{
+                        boxSizing: 'border-box',
+                        padding: '28px',
+                        boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)`,
+                      }}>
+                      {/* Fixed-size, object-contain QR. NOT width/height 100% — a fixed
+                          200x200 with margin:auto guarantees equal gaps on all four sides
+                          inside the padded card and never stretches to fill the parent. */}
+                      <img
+                        src={order.image_url}
+                        alt="UPI payment QR code"
+                        style={{
+                          width: '200px',
+                          height: '200px',
+                          maxWidth: '220px',
+                          objectFit: 'contain',
+                          display: 'block',
+                          margin: '0 auto',
+                          imageRendering: 'crisp-edges',
+                        }}
+                      />
                     </div>
                     {/* Red corner brackets (.qr-frame) — unchanged style, now on the
                         outer wrapper so they sit OUTSIDE the padded white QR box. */}
