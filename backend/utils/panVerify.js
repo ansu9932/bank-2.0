@@ -40,11 +40,6 @@ const PAN_RESOURCE_PATH = process.env.CASHFREE_PAN_RESOURCE_PATH || '/pan';
 // caller supplies no real name we inject a neutral placeholder purely to satisfy
 // schema validation — the gateway still returns the true `registered_name`.
 const NAME_PLACEHOLDER = process.env.CASHFREE_PAN_NAME_PLACEHOLDER || 'Alister Bank Customer';
-// Cashfree requires a date-based API version header. Newer accounts expect a
-// current-era version (Cashfree's own Postman docs reference e.g. 2025-01-01);
-// an outdated value can itself trigger a 400 schema rejection. Override via env
-// to match your dashboard; the raw-body logging below reveals the required value.
-const DEFAULT_API_VERSION = '2025-01-01';
 
 /** JSON.stringify that never throws (handles circular / odd payloads). */
 function safeStringify(value) {
@@ -130,18 +125,24 @@ async function verifyPan(pan, name) {
 
   let response;
   try {
+    // Cashfree's Verification Suite PAN endpoints authenticate with just the
+    // client id/secret; their docs examples do NOT send an x-api-version, and a
+    // wrong/future version value is a common cause of a blanket 400 rejection.
+    // So we only attach x-api-version when explicitly configured via env.
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-client-id': process.env.CASHFREE_CLIENT_ID,
+      'x-client-secret': process.env.CASHFREE_CLIENT_SECRET,
+    };
+    if (process.env.CASHFREE_API_VERSION) {
+      headers['x-api-version'] = process.env.CASHFREE_API_VERSION;
+    }
+
     response = await axios.post(
       `${baseUrl()}${PAN_RESOURCE_PATH}`,
       { pan: normalized, name: requestName, verification_id: verificationId },
       {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': process.env.CASHFREE_CLIENT_ID,
-          'x-client-secret': process.env.CASHFREE_CLIENT_SECRET,
-          // Cashfree verification APIs require a version header; omitting it is a
-          // common cause of blanket non-2xx rejections (→ the reported 502).
-          'x-api-version': process.env.CASHFREE_API_VERSION || DEFAULT_API_VERSION,
-        },
+        headers,
         timeout: REQUEST_TIMEOUT_MS,
         // Resolve (don't throw) for any status < 500 so we can inspect 4xx bodies
         // and classify them (e.g. a "PAN not found" 422 is a NORMAL outcome, not
