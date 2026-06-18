@@ -478,20 +478,25 @@ export default function DepositFunds() {
                     className="relative rounded-3xl bg-white p-4"
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
                     {/* CSS background-crop: show only the black-and-white QR matrix,
-                        hiding Razorpay's branding header and payment logos. */}
+                        hiding Razorpay's branding header and payment logos.
+                        Window + backgroundSize are scaled together by 1.4x (200→280px,
+                        290→406px) vs the original tuning, so the crop framing is
+                        IDENTICAL but the QR renders ~40% larger and is easier to scan.
+                        backgroundPosition stays 'center 38%' to keep the matrix centred. */}
                     <div style={{
-                      width: '200px',
-                      height: '200px',
+                      width: '280px',
+                      height: '280px',
                       backgroundImage: `url(${order.image_url})`,
-                      backgroundSize: '290px auto',
+                      backgroundSize: '406px auto',
                       backgroundPosition: 'center 38%',
                       backgroundRepeat: 'no-repeat',
+                      overflow: 'hidden',
                       borderRadius: '8px',
                       backgroundColor: '#ffffff',
                     }} />
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
                       'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
-                      <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
+                      <div key={i} className={`absolute w-7 h-7 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
                     ))}
                   </motion.div>
                 )}
