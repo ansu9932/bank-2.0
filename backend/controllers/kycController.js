@@ -65,7 +65,14 @@ exports.verifyPanController = async (req, res) => {
     // Gateway rejected / response mismatch → clean 400 JSON to the proxy
     // (per ops preference) rather than a 502 the load balancer obscures.
     if (err.code === 'CASHFREE_UPSTREAM') {
-      return badRequest(res, 'Could not complete PAN verification. Please re-check the number and try again.');
+      // Expose ONLY the numeric upstream HTTP status (no PII / no body) so the
+      // exact gateway rejection (401 creds/env, 403 product-not-activated,
+      // 400 schema/version) is visible in the browser response for diagnosis.
+      return badRequest(
+        res,
+        'Could not complete PAN verification. Please re-check the number and try again.',
+        { gatewayStatus: err.upstreamStatus ?? null },
+      );
     }
     return badRequest(res, 'Could not verify PAN right now. Please try again.');
   }

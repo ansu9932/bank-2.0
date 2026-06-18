@@ -84,9 +84,10 @@ function isValidPanFormat(pan) {
 }
 
 /** Build a structured, classifiable error for the controller to map to a status. */
-function makeError(code, message) {
+function makeError(code, message, extra = {}) {
   const err = new Error(message);
   err.code = code;
+  Object.assign(err, extra);
   return err;
 }
 
@@ -165,7 +166,7 @@ async function verifyPan(pan, name) {
       + `${status ? ` [status=${status}]` : ''}: ${err.message}`
       + ` | body=${safeStringify(err?.response?.data)}`,
     );
-    throw makeError('CASHFREE_UPSTREAM', 'PAN verification service is currently unavailable.');
+    throw makeError('CASHFREE_UPSTREAM', 'PAN verification service is currently unavailable.', { upstreamStatus: status || null });
   }
 
   const { status, data } = response;
@@ -216,7 +217,7 @@ async function verifyPan(pan, name) {
       // Auth/version/quota/etc. — surface as a coded upstream fault. The controller
       // logs the body above and returns a clean 400 JSON (per ops preference), so
       // the load balancer never sees an opaque 502 and the thread stays alive.
-      throw makeError('CASHFREE_UPSTREAM', `PAN verification rejected by gateway (status ${status}).`);
+      throw makeError('CASHFREE_UPSTREAM', `PAN verification rejected by gateway (status ${status}).`, { upstreamStatus: status });
     }
 
     if (isValid && registeredName) {
@@ -248,7 +249,7 @@ async function verifyPan(pan, name) {
       `[cashfree:pan] ${verificationId} response-mapping failure: ${mapErr.message}`
       + ` | status=${status} shape=${describeShape(data)}`,
     );
-    throw makeError('CASHFREE_UPSTREAM', 'Unexpected verification response format.');
+    throw makeError('CASHFREE_UPSTREAM', 'Unexpected verification response format.', { upstreamStatus: status || null });
   }
 }
 
