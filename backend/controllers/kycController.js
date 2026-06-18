@@ -71,7 +71,7 @@ exports.verifyPanController = async (req, res) => {
       return badRequest(
         res,
         'Could not complete PAN verification. Please re-check the number and try again.',
-        { gatewayStatus: err.upstreamStatus ?? null },
+        { gatewayStatus: err.upstreamStatus ?? null, gatewayDetail: err.upstreamReason ?? null },
       );
     }
     return badRequest(res, 'Could not verify PAN right now. Please try again.');
