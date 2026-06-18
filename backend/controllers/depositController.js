@@ -1,6 +1,6 @@
 const { randomUUID } = require('crypto');
 const { Account, Transaction } = require('../models');
-const { createOrder, isConfigured } = require('../utils/razorpay');
+const { createOrder, createPaymentLink, isConfigured } = require('../utils/razorpay');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -202,5 +202,130 @@ exports.createDepositOrder = async (req, res) => {
 
     logger.error(`create-deposit-order error: ${err.message}`);
     return error(res, 'Could not create the deposit order. Please try again.');
+  }
+};
+
+
+// ─── Create a hosted Payment Link deposit (fallback when checkout.js is blocked) ─
+// POST /api/payments/create-deposit-link   (protected)
+// Body: { amount, paymentMethod }  where paymentMethod ∈ 'card' | 'netbanking'.
+//
+// The client calls this only when the embedded Razorpay Checkout script fails to
+// load (ad blockers / privacy extensions / network filters). It returns a
+// Razorpay-hosted `shortUrl` that the browser is redirected to — no client-side
+// script required — and the SAME webhook credits the balance via `orderRef`.
+exports.createDepositLink = async (req, res) => {
+  try {
+    if (!isConfigured()) {
+      return error(res, 'Payment gateway is not configured. Please try again later.', 503);
+    }
+
+    const amount = parseFloat(req.body.amount);
+    const paymentMethod = String(req.body.paymentMethod || '').toLowerCase().trim();
+    const bankCode = String(req.body.bank || '').toUpperCase().trim();
+
+    if (!amount || Number.isNaN(amount) || amount <= 0) {
+      return badRequest(res, 'Please enter a valid deposit amount.');
+    }
+    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is ₹${MIN_DEPOSIT}.`);
+    if (amount > MAX_DEPOSIT) {
+      return badRequest(res, `Maximum deposit per transaction is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
+    }
+    if (!CHECKOUT_METHODS.includes(paymentMethod)) {
+      return badRequest(res, 'Select a valid payment method: Card or Net Banking.');
+    }
+    if (paymentMethod === 'netbanking' && bankCode && !NETBANKING_BANK_CODES.has(bankCode)) {
+      return badRequest(res, 'Unsupported bank selection. Please choose a bank from the list.');
+    }
+
+    const account = await Account.findOne({ where: { user_id: req.user.id } });
+    if (!account) return notFound(res, 'No active bank account found for this profile.');
+
+    const userName = `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || 'Customer';
+    const orderRef = buildOrderRef();
+
+    const notes = {
+      orderRef,
+      userId: String(req.user.id),
+      accountId: String(account.id),
+      userName,
+      purpose: 'wallet_topup',
+      method: paymentMethod,
+      ...(paymentMethod === 'netbanking' && bankCode ? { bank: bankCode } : {}),
+    };
+
+    // Razorpay returns the user here after payment; the page resumes polling on
+    // the orderRef so the UI flips to success once the webhook credits.
+    const frontendBase = process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com';
+    const callbackUrl = `${frontendBase.replace(/\/$/, '')}/dashboard/deposit?orderRef=${encodeURIComponent(orderRef)}`;
+
+    const link = await createPaymentLink({
+      amount,
+      description: `Alister Bank wallet top-up · ${userName}`,
+      notes,
+      customer: { name: userName, email: req.user.email || '', contact: req.user.phone || '' },
+      callbackUrl,
+    });
+
+    // Pre-create the PENDING ledger record keyed on orderRef. The shared webhook
+    // (payment.captured / payment_link.paid) flips this to completed.
+    try {
+      await Transaction.create({
+        account_id: account.id,
+        reference_number: orderRef,
+        transaction_type: 'credit',
+        transfer_mode: 'IMPS',
+        amount,
+        description: DEPOSIT_PENDING_DESCRIPTION,
+        narration: `Razorpay ${paymentMethod} link · ${orderRef}`,
+        category: 'deposit',
+        status: 'pending',
+        from_account_name: `${paymentMethod === 'card' ? 'Card' : 'Net Banking'} Deposit`,
+        tags: {
+          provider: 'razorpay',
+          rzpPaymentLinkId: link.id,
+          orderRef,
+          method: paymentMethod,
+          userId: String(req.user.id),
+        },
+      });
+    } catch (txErr) {
+      // Non-fatal: the webhook has a fallback that creates the record on credit.
+      logger.error(`Pending deposit (link) record creation failed (${orderRef}): ${txErr.message}`);
+    }
+
+    logger.info(`Deposit payment link created: orderRef=${orderRef} linkId=${link.id} amount=₹${amount} method=${paymentMethod} user=${req.user.id}`);
+
+    createAuditLog({
+      userId: req.user.id,
+      action: 'DEPOSIT_LINK_CREATED',
+      entityType: 'Transaction',
+      entityId: orderRef,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Hosted payment link deposit of ₹${amount} via ${paymentMethod}.`,
+    }).catch(() => {});
+
+    return success(res, {
+      orderRef,
+      shortUrl: link.short_url,
+      amount,
+      paymentMethod,
+    }, 'Hosted payment link created. Redirecting to complete payment.');
+  } catch (err) {
+    const rzpStatus = err?.statusCode;
+    const rzpDescription = err?.error?.description || err?.error?.reason;
+
+    if (err.message === 'RAZORPAY_NOT_CONFIGURED') {
+      logger.error('create-deposit-link: gateway not configured');
+      return error(res, 'Payment gateway is not configured. Please try again later.', 503);
+    }
+    if (rzpStatus) {
+      logger.error(`create-deposit-link gateway error [${rzpStatus}]: ${rzpDescription || err.message}`);
+      const clientStatus = rzpStatus >= 400 && rzpStatus < 500 ? 400 : 502;
+      return error(res, rzpDescription || 'The payment gateway rejected this deposit. Please try again.', clientStatus);
+    }
+    logger.error(`create-deposit-link error: ${err.message}`);
+    return error(res, 'Could not create the payment link. Please try again.');
   }
 };

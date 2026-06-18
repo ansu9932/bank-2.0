@@ -304,6 +304,34 @@ export default function DepositFunds() {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
     try {
+      // Load the embedded Checkout widget FIRST. If checkout.js is blocked
+      // (ad blocker / privacy extension / network filter), fall back to a
+      // Razorpay HOSTED Payment Link and redirect the browser there — that page
+      // needs no script on our domain, so blockers can't stop it, and it credits
+      // through the same webhook.
+      let Razorpay;
+      try {
+        Razorpay = await loadRazorpayCheckout();
+      } catch (scriptErr) {
+        try {
+          const { data: linkResp } = await api.post('/payments/create-deposit-link', {
+            amount: numericAmount,
+            paymentMethod: method,
+            ...(method === 'netbanking' && bankCode ? { bank: bankCode } : {}),
+          });
+          const shortUrl = linkResp?.data?.shortUrl;
+          if (shortUrl) {
+            toast('Opening secure payment page…', { icon: '🔒' });
+            window.location.href = shortUrl;
+            return;
+          }
+        } catch (linkErr) {
+          const lmsg = linkErr?.response?.data?.message;
+          if (lmsg) { toast.error(lmsg); setCheckoutMethod(null); return; }
+        }
+        throw scriptErr; // no link fallback available — surface the original error
+      }
+
       const { data } = await api.post('/payments/create-deposit-order', {
         amount: numericAmount,
         paymentMethod: method,
@@ -313,8 +341,6 @@ export default function DepositFunds() {
       });
       const cfg = data?.data;
       if (!cfg?.orderId || !cfg?.keyId) throw new Error('Malformed order response');
-
-      const Razorpay = await loadRazorpayCheckout();
 
       // Clone the server-supplied prefill so we can attach the bank routing
       // hints for Net Banking without mutating the response object. Prefer the

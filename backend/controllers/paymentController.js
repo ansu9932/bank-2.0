@@ -369,23 +369,31 @@ exports.webhook = async (req, res) => {
     const payload = req.body?.payload || {};
     logger.info(`Razorpay webhook verified — event=${event}`);
 
-    // 2) Act only on a confirmed successful capture / QR credit.
-    if (event === 'payment.captured' || event === 'qr_code.credited') {
+    // 2) Act only on a confirmed successful capture / QR credit / payment link.
+    if (event === 'payment.captured' || event === 'qr_code.credited' || event === 'payment_link.paid') {
+      // The payment may arrive under different payload keys depending on the
+      // event: `payment.entity` (captured/qr), and for a paid Payment Link the
+      // payload carries both `payment.entity` and `payment_link.entity`.
       const paymentEntity = payload.payment?.entity;
-      if (!paymentEntity) {
-        logger.warn(`Webhook ${event} had no payment entity — acknowledged.`);
+      const linkEntity = payload.payment_link?.entity;
+      const qrEntity = payload.qr_code?.entity;
+
+      const notes = paymentEntity?.notes || linkEntity?.notes || qrEntity?.notes || {};
+      const orderRef = notes.orderRef || null;
+      const paymentId = paymentEntity?.id || linkEntity?.id || null;
+      const amountPaise = paymentEntity?.amount ?? linkEntity?.amount;
+
+      if (!orderRef && !paymentId) {
+        logger.warn(`Webhook ${event} had no payment/link entity — acknowledged.`);
         return res.status(200).json({ success: true, received: true });
       }
 
-      const notes = paymentEntity.notes || payload.qr_code?.entity?.notes || {};
-      const orderRef = notes.orderRef || null;
-
-      logger.info(`Crediting deposit — orderRef=${orderRef} payment=${paymentEntity.id} amount(paise)=${paymentEntity.amount}`);
+      logger.info(`Crediting deposit — event=${event} orderRef=${orderRef} payment=${paymentId} amount(paise)=${amountPaise}`);
 
       await creditDeposit({
         orderRef,
-        paymentId: paymentEntity.id,
-        amountPaise: paymentEntity.amount,
+        paymentId,
+        amountPaise,
         notes,
       });
 
