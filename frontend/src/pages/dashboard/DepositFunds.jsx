@@ -114,74 +114,6 @@ const NETBANKING_BANKS = [
 ];
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
-const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
-
-// NOTE: browser DevTools may show `bank-transfer.php` 404s while this script is
-// active — these originate from Razorpay Checkout.js internals or a browser
-// extension, NOT from this application (it is a Node.js backend with no PHP).
-// They are harmless and do not affect the payment flow.
-//
-// Resolve with the Razorpay Checkout global. It is normally loaded eagerly via
-// the <script> tag in index.html; this also self-heals by (re)injecting the
-// script if needed, listens for load/error, and retries on failure so a single
-// blocked request doesn't permanently break the Card / Net Banking flow.
-function loadRazorpayCheckout() {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined') { reject(new Error('No window')); return; }
-    if (window.Razorpay) { resolve(window.Razorpay); return; }
-
-    let settled = false;
-    let script = document.getElementById('rzp-checkout-js');
-
-    const cleanup = () => {
-      clearInterval(poll);
-      if (script) {
-        script.removeEventListener('load', onLoad);
-        script.removeEventListener('error', onError);
-      }
-    };
-    const succeed = () => {
-      if (settled || !window.Razorpay) return;
-      settled = true; cleanup(); resolve(window.Razorpay);
-    };
-    const fail = (message) => {
-      if (settled) return;
-      settled = true; cleanup();
-      // Drop the failed node so the next attempt can re-inject and retry.
-      if (script && script.parentNode) script.parentNode.removeChild(script);
-      reject(new Error(message));
-    };
-    const onLoad = () => succeed();
-    const onError = () => fail(
-      'Could not load the secure payment widget. It may be blocked by an ad blocker '
-      + 'or browser privacy setting — please disable it for this site and try again.'
-    );
-
-    // Reuse the eager index.html tag if present; otherwise inject our own.
-    if (!script) {
-      script = document.createElement('script');
-      script.id = 'rzp-checkout-js';
-      script.src = CHECKOUT_SRC;
-      script.async = true;
-      document.head.appendChild(script);
-    }
-    script.addEventListener('load', onLoad);
-    script.addEventListener('error', onError);
-
-    // Poll as a safety net (covers the eager tag finishing before listeners are
-    // attached, and slow networks) with a hard timeout.
-    const started = Date.now();
-    const poll = setInterval(() => {
-      if (window.Razorpay) succeed();
-      else if (Date.now() - started > 15000) {
-        fail('The payment widget took too long to load. Please check your connection and try again.');
-      }
-    }, 100);
-
-    // The eager script may already be loaded by the time we get here.
-    if (window.Razorpay) succeed();
-  });
-}
 
 // View phases: 'form' → 'qr' (awaiting QR payment) → 'success'
 export default function DepositFunds() {
@@ -296,101 +228,31 @@ export default function DepositFunds() {
     }
   };
 
-  // ── > ₹1L: open the re-skinned Razorpay hosted widget for Card / Net Banking ─
-  // Card data (PAN/CVV) is collected *inside* Razorpay's iframe, never in our
-  // DOM, so we stay in PCI SAQ A scope. For Net Banking we forward the chosen
-  // bank via prefill so the widget routes straight to that bank's redirect.
+  // ── > ₹1L: Card / Net Banking complete on Razorpay's SECURE HOSTED page ──────
+  // We redirect the browser to a Razorpay-hosted Payment Link. The card number,
+  // CVV and the bank's OTP / 3-D Secure (or the net-banking login) are entered on
+  // Razorpay's / the bank's OWN pages — never on our site — so we never touch card
+  // data (PCI-compliant) and there is no checkout.js for ad blockers to break.
+  // The shared webhook credits the balance on payment_link.paid, and Razorpay
+  // returns the user to the deposit page afterwards.
   const handleCheckout = async (method, bankCode = null) => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
     try {
-      // Load the embedded Checkout widget FIRST. If checkout.js is blocked
-      // (ad blocker / privacy extension / network filter), fall back to a
-      // Razorpay HOSTED Payment Link and redirect the browser there — that page
-      // needs no script on our domain, so blockers can't stop it, and it credits
-      // through the same webhook.
-      let Razorpay;
-      try {
-        Razorpay = await loadRazorpayCheckout();
-      } catch (scriptErr) {
-        try {
-          const { data: linkResp } = await api.post('/payments/create-deposit-link', {
-            amount: numericAmount,
-            paymentMethod: method,
-            ...(method === 'netbanking' && bankCode ? { bank: bankCode } : {}),
-          });
-          const shortUrl = linkResp?.data?.shortUrl;
-          if (shortUrl) {
-            toast('Opening secure payment page…', { icon: '🔒' });
-            window.location.href = shortUrl;
-            return;
-          }
-        } catch (linkErr) {
-          const lmsg = linkErr?.response?.data?.message;
-          if (lmsg) { toast.error(lmsg); setCheckoutMethod(null); return; }
-        }
-        throw scriptErr; // no link fallback available — surface the original error
-      }
-
-      const { data } = await api.post('/payments/create-deposit-order', {
+      const { data } = await api.post('/payments/create-deposit-link', {
         amount: numericAmount,
         paymentMethod: method,
-        // Forward the chosen Net Banking partner code so the backend can validate
-        // it and echo it back for direct-to-bank routing (null for card).
+        // Forward the chosen Net Banking partner so the hosted page can route to
+        // that bank (ignored for card).
         ...(method === 'netbanking' && bankCode ? { bank: bankCode } : {}),
       });
-      const cfg = data?.data;
-      if (!cfg?.orderId || !cfg?.keyId) throw new Error('Malformed order response');
+      const shortUrl = data?.data?.shortUrl;
+      if (!shortUrl) throw new Error('Could not start the payment. Please try again.');
 
-      // Clone the server-supplied prefill so we can attach the bank routing
-      // hints for Net Banking without mutating the response object. Prefer the
-      // backend-validated bank code, falling back to the user's selection.
-      const prefill = { ...(cfg.prefill || {}) };
-      const routedBank = cfg.bank || (method === 'netbanking' ? bankCode : null);
-      if (method === 'netbanking' && routedBank) {
-        prefill.method = 'netbanking';
-        prefill.bank = routedBank; // e.g. 'HDFC', 'SBIN', 'ICIC' → skips bank picker
-      }
-
-      const options = {
-        key: cfg.keyId,
-        amount: cfg.amountPaise,
-        currency: cfg.currency,
-        name: cfg.name,
-        description: cfg.description,
-        order_id: cfg.orderId,
-        prefill,
-        notes: { orderRef: cfg.orderRef },
-        // Alister Bank skin: crimson accents over a rich matte-black backdrop so
-        // the hosted widget blends seamlessly into the dashboard.
-        theme: {
-          color: CRIMSON,
-          backdrop_color: '#000000',
-        },
-        // Force the chosen rail in the Checkout widget.
-        method: cfg.methodConfig,
-        handler: () => {
-          // Payment authorized in the widget. The webhook credits the balance;
-          // begin polling so the UI flips to success the moment it lands.
-          toast.success('Payment received — confirming with your bank…');
-          setOrder({ orderRef: cfg.orderRef, amount: cfg.amount });
-          setPhase('qr'); // reuse the "awaiting confirmation" waiting panel
-          startPolling(cfg.orderRef);
-        },
-        modal: {
-          ondismiss: () => {
-            setCheckoutMethod(null);
-            toast('Payment cancelled.', { icon: 'ℹ️' });
-          },
-        },
-      };
-
-      const rzp = new Razorpay(options);
-      rzp.on('payment.failed', (resp) => {
-        toast.error(resp?.error?.description || 'Payment failed. Please try again.');
-        setCheckoutMethod(null);
-      });
-      rzp.open();
+      toast('Redirecting to the secure payment page…', { icon: '🔒' });
+      // Full-page redirect to Razorpay's hosted page → the bank's OTP / login
+      // happens there → Razorpay returns the user to /dashboard/deposit.
+      window.location.href = shortUrl;
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Could not start the payment. Please try again.';
       toast.error(msg);
