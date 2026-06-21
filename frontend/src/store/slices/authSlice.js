@@ -10,6 +10,11 @@ const getStoredUser = () => {
 export const login = createAsyncThunk('auth/login', async (credentials, { rejectWithValue }) => {
   try {
     const { data } = await api.post('/auth/login', credentials);
+    // Adaptive CAPTCHA: a suspicious attempt returns HTTP 200 with
+    // { captchaRequired:true } instead of a session — surface it to the page.
+    if (data && data.captchaRequired) {
+      return rejectWithValue({ captchaRequired: true, message: data.message });
+    }
     localStorage.setItem('token', data.data.token);
     localStorage.setItem('user', JSON.stringify(data.data.user));
     // Absolute-session marker: the precise ms the current session began. The
@@ -17,7 +22,11 @@ export const login = createAsyncThunk('auth/login', async (credentials, { reject
     localStorage.setItem('loginTime', String(Date.now()));
     return data.data;
   } catch (err) {
-    return rejectWithValue(err.response?.data?.message || 'Login failed');
+    const resp = err.response?.data;
+    if (resp?.captchaRequired) {
+      return rejectWithValue({ captchaRequired: true, message: resp.message || 'Please complete the security check to continue.' });
+    }
+    return rejectWithValue(resp?.message || 'Login failed');
   }
 });
 
@@ -66,10 +75,14 @@ const authSlice = createSlice({
     error: null,
     otpSent: false,
     otpVerified: false,
+    // Adaptive login CAPTCHA: set when the backend flags a suspicious attempt.
+    captchaRequired: false,
+    captchaMessage: '',
   },
   reducers: {
     clearError: (state) => { state.error = null; },
     resetOTP: (state) => { state.otpSent = false; state.otpVerified = false; },
+    resetCaptcha: (state) => { state.captchaRequired = false; state.captchaMessage = ''; },
     updateUser: (state, action) => {
       state.user = { ...state.user, ...action.payload };
       localStorage.setItem('user', JSON.stringify(state.user));
@@ -83,8 +96,20 @@ const authSlice = createSlice({
         s.isAuthenticated = true;
         s.user = a.payload.user;
         s.token = a.payload.token;
+        s.captchaRequired = false;
+        s.captchaMessage = '';
       })
-      .addCase(login.rejected, (s, a) => { s.loading = false; s.error = a.payload; })
+      .addCase(login.rejected, (s, a) => {
+        s.loading = false;
+        if (a.payload && typeof a.payload === 'object' && a.payload.captchaRequired) {
+          // Not a hard error — prompt the user for the adaptive CAPTCHA instead.
+          s.captchaRequired = true;
+          s.captchaMessage = a.payload.message || 'Please complete the security check to continue.';
+          s.error = null;
+        } else {
+          s.error = a.payload;
+        }
+      })
       .addCase(logout.fulfilled, (s) => { s.user = null; s.token = null; s.isAuthenticated = false; })
       .addCase(getMe.fulfilled, (s, a) => { s.user = a.payload; })
       .addCase(sendOTP.fulfilled, (s) => { s.otpSent = true; })
@@ -94,5 +119,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, resetOTP, updateUser } = authSlice.actions;
+export const { clearError, resetOTP, updateUser, resetCaptcha } = authSlice.actions;
 export default authSlice.reducer;
