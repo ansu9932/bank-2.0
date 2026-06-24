@@ -287,15 +287,15 @@ const sendTransferAlertEmail = async (email, name, txData) => {
     ${para(`Dear ${hl(name)},`)}
     ${para(`A transaction has been ${isDebit ? 'debited from' : 'credited to'} your account.`)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-      ${detailRow('Amount', `₹${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
+      ${detailRow('Amount', `$${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
       ${detailRow('Reference', txData.reference)}
       ${detailRow(isDebit ? 'To Account' : 'From', txData.counterparty)}
       ${detailRow('Mode', txData.mode)}
-      ${detailRow('Balance', `₹${txData.balance}`)}
+      ${detailRow('Balance', `$${txData.balance}`)}
       ${detailRow('Date &amp; Time', txData.time)}
     </table>
   `));
-  return sendEmail({ to: email, subject: `Alister Bank — ${isDebit ? 'Debit' : 'Credit'} Alert: ₹${txData.amount}`, html });
+  return sendEmail({ to: email, subject: `Alister Bank — ${isDebit ? 'Debit' : 'Credit'} Alert: $${txData.amount}`, html });
 };
 
 const sendPasswordResetEmail = async (email, name, resetLink) => {
@@ -341,7 +341,7 @@ const sendPasswordChangedEmail = async (email, name, info = {}) => {
  * passes the duplicate gate. `serviceLabel` is human-readable (e.g. "Debit Card").
  */
 const sendServiceRequestEmail = async (email, name, { serviceLabel, requestId, createdAt }) => {
-  const when = createdAt ? new Date(createdAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+  const when = createdAt ? new Date(createdAt).toLocaleString('en-US') : new Date().toLocaleString('en-US');
   const html = baseTemplate(bodyShell(`
     ${badge('&#128221; Request Received')}
     ${heading(`Your ${serviceLabel} Request is Under Review`)}
@@ -394,7 +394,7 @@ const sendCardRejectedEmail = async (email, name, { tier, reason, refundAmount }
     ${infoBox(`<strong>Reason:</strong> ${reason || 'Your application did not meet the current issuance criteria.'}`)}
     ${refunded
       ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-          ${detailRow('Issuance Fee Refunded', `₹${Number(refundAmount).toLocaleString('en-IN')}`, '#22c55e')}
+          ${detailRow('Issuance Fee Refunded', `$${Number(refundAmount).toLocaleString('en-US')}`, '#22c55e')}
           ${detailRow('Credited To', 'Your Alister Bank account')}
         </table>`
       : ''}
@@ -432,7 +432,7 @@ const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, chan
     ${para(`A change was just made to your <strong>${tier || ''}</strong> card${maskedNumber ? ` (${maskedNumber})` : ''}:`)}
     ${infoBox(list || 'Card controls were updated.')}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-      ${detailRow('When', time || new Date().toLocaleString('en-IN'))}
+      ${detailRow('When', time || new Date().toLocaleString('en-US'))}
     </table>
     ${infoBox('&#9888;&#65039; If you did NOT make this change, freeze your card immediately and contact support — your account security may be at risk.')}
   `));

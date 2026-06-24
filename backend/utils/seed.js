@@ -64,7 +64,7 @@ const seed = async () => {
       account_type: 'savings',
       balance: 254750.00,
       available_balance: 254750.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
       interest_rate: 4.00,
       minimum_balance: 1000.00,
@@ -109,7 +109,7 @@ const seed = async () => {
       account_type: 'current',
       balance: 182500.00,
       available_balance: 182500.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
     });
 

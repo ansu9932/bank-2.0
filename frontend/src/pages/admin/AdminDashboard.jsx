@@ -26,7 +26,7 @@ export default function AdminDashboard() {
     { label: "Today's Transactions", value: stats.todayTransactions, icon: RiExchangeLine, color: 'text-purple-400', bg: 'bg-purple-500/10' },
     { label: 'Flagged Transactions', value: stats.flaggedTransactions, icon: RiAlertLine, color: 'text-orange-400', bg: 'bg-orange-500/10' },
     { label: 'Open Tickets', value: stats.pendingTickets, icon: RiGroupLine, color: 'text-brand-400', bg: 'bg-brand-500/10' },
-    { label: 'Total Volume (₹)', value: `₹${(parseFloat(stats.totalVolume||0)/100000).toFixed(1)}L`, icon: RiExchangeLine, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { label: 'Total Volume ($)', value: `$${(parseFloat(stats.totalVolume||0)/1000).toFixed(1)}k`, icon: RiExchangeLine, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
   ];
 
   // Build chart
@@ -65,9 +65,9 @@ export default function AdminDashboard() {
             <BarChart data={chartData}>
               <XAxis dataKey="month" tick={{ fill: '#666', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => `₹${(v/100000).toFixed(0)}L`} />
+                tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
               <Tooltip contentStyle={{ background: '#1e1e2e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
-                formatter={v => [`₹${parseFloat(v).toLocaleString('en-IN')}`, '']} />
+                formatter={v => [`$${parseFloat(v).toLocaleString('en-US')}`, '']} />
               <Bar dataKey="credit" name="Credits" fill="#22c55e" radius={[4,4,0,0]} />
               <Bar dataKey="debit" name="Debits" fill="#ef4444" radius={[4,4,0,0]} />
             </BarChart>

@@ -89,15 +89,15 @@ function CleanQrImage({ src }) {
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
-   • Amount <= ₹1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
-   • Amount  > ₹1,00,000 → UPI/QR disabled; Card / Net Banking method cards
+   • Amount <= $1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
+   • Amount  > $1,00,000 → UPI/QR disabled; Card / Net Banking method cards
      open the Razorpay Checkout widget (method forced by selection).
    Theme: matte-black #0d0e12 · charcoal surfaces · crimson #c8102e accents.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
 const QUICK_ADD = [500, 1000, 5000];
-const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling (₹1L)
+const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling ($1L)
 
 // Net-banking partner grid. The selected code is forwarded to the hosted
 // Razorpay widget via prefill.bank so it routes straight to the bank's
@@ -153,7 +153,7 @@ export default function DepositFunds() {
   }, []);
 
   const numericAmount = parseFloat(amount) || 0;
-  // Conditional gate: anything over ₹1L cannot use UPI/QR.
+  // Conditional gate: anything over $1L cannot use UPI/QR.
   const isHighValue = numericAmount > UPI_QR_CAP;
 
   const handleQuickAdd = (inc) => setAmount((prev) => String((parseFloat(prev) || 0) + inc));
@@ -163,7 +163,7 @@ export default function DepositFunds() {
     if (/^\d*\.?\d*$/.test(v)) setAmount(v); // digits + single optional decimal
   };
 
-  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   // ── Handle a confirmed credit (shared by QR + Checkout flows) ──────────────
   const handleCredited = useCallback((payload) => {
@@ -208,10 +208,10 @@ export default function DepositFunds() {
     }, POLL_INTERVAL_MS);
   }, [handleCredited, stopPolling]);
 
-  // ── ≤ ₹1L: generate the UPI QR ──────────────────────────────────────────────
+  // ── ≤ $1L: generate the UPI QR ──────────────────────────────────────────────
   const handleGenerate = async () => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
-    if (isHighValue) { toast.error('Maximum deposit per QR is ₹1,00,000.'); return; }
+    if (isHighValue) { toast.error('Maximum deposit per QR is $1,00,000.'); return; }
     setGenerating(true);
     try {
       const { data } = await api.post('/payments/create-qr', { amount: numericAmount });
@@ -228,13 +228,10 @@ export default function DepositFunds() {
     }
   };
 
-  // ── > ₹1L: Card / Net Banking complete on Razorpay's SECURE HOSTED page ──────
-  // We redirect the browser to a Razorpay-hosted Payment Link. The card number,
-  // CVV and the bank's OTP / 3-D Secure (or the net-banking login) are entered on
-  // Razorpay's / the bank's OWN pages — never on our site — so we never touch card
-  // data (PCI-compliant) and there is no checkout.js for ad blockers to break.
-  // The shared webhook credits the balance on payment_link.paid, and Razorpay
-  // returns the user to the deposit page afterwards.
+  // ── > $1L: open the re-skinned Razorpay hosted widget for Card / Net Banking ─
+  // Card data (PAN/CVV) is collected *inside* Razorpay's iframe, never in our
+  // DOM, so we stay in PCI SAQ A scope. For Net Banking we forward the chosen
+  // bank via prefill so the widget routes straight to that bank's redirect.
   const handleCheckout = async (method, bankCode = null) => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
@@ -315,7 +312,7 @@ export default function DepositFunds() {
                 </label>
 
                 <div className="relative">
-                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-semibold text-slate-400">₹</span>
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-semibold text-slate-400">$</span>
                   <input
                     type="text" inputMode="decimal" value={amount} onChange={handleAmountChange}
                     placeholder="0" autoFocus
@@ -328,12 +325,12 @@ export default function DepositFunds() {
                   {QUICK_ADD.map((inc) => (
                     <button key={inc} type="button" onClick={() => handleQuickAdd(inc)}
                       className="py-2.5 rounded-xl text-sm font-semibold text-slate-200 border border-white/[0.08] bg-white/[0.03] hover:border-brand-500/50 hover:text-white hover:bg-brand-500/10 transition-all active:scale-95">
-                      +₹{inc.toLocaleString('en-IN')}
+                      +${inc.toLocaleString('en-US')}
                     </button>
                   ))}
                 </div>
 
-                {/* ── ≤ ₹1L: UPI QR generation ─────────────────────────────── */}
+                {/* ── ≤ $1L: UPI QR generation ─────────────────────────────── */}
                 {!isHighValue && (
                   <>
                     <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
@@ -350,7 +347,7 @@ export default function DepositFunds() {
                   </>
                 )}
 
-                {/* ── > ₹1L: Card / Net Banking method cards ───────────────── */}
+                {/* ── > $1L: Card / Net Banking method cards ───────────────── */}
                 {isHighValue && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -360,7 +357,7 @@ export default function DepositFunds() {
                       style={{ background: 'rgba(200,16,46,0.07)', borderColor: 'rgba(200,16,46,0.28)' }}>
                       <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
                       <p className="text-xs leading-relaxed" style={{ color: '#ffb3bf' }}>
-                        ℹ UPI/QR payments are capped at ₹1 Lakh. Please select Card or Net Banking to complete this transaction safely.
+                        ℹ UPI/QR payments are capped at $1 Lakh. Please select Card or Net Banking to complete this transaction safely.
                       </p>
                     </div>
 

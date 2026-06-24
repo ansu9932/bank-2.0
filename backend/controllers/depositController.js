@@ -66,16 +66,16 @@ exports.createDepositOrder = async (req, res) => {
     if (!amount || Number.isNaN(amount) || amount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');
     }
-    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is ₹${MIN_DEPOSIT}.`);
+    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is $${MIN_DEPOSIT}.`);
     if (amount > MAX_DEPOSIT) {
-      return badRequest(res, `Maximum deposit per transaction is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
+      return badRequest(res, `Maximum deposit per transaction is $${MAX_DEPOSIT.toLocaleString('en-US')}.`);
     }
 
     // ── Conditional rule: UPI/QR is hard-capped at ₹1,00,000 ──────────────────
     if (amount > UPI_QR_CAP && QR_METHODS.includes(paymentMethod)) {
       return badRequest(
         res,
-        `UPI/QR payments are capped at ₹${UPI_QR_CAP.toLocaleString('en-IN')}. Please choose Card or Net Banking for this amount.`
+        `UPI/QR payments are capped at $${UPI_QR_CAP.toLocaleString('en-US')}. Please choose Card or Net Banking for this amount.`
       );
     }
 
@@ -162,7 +162,7 @@ exports.createDepositOrder = async (req, res) => {
       keyId: process.env.RAZORPAY_KEY_ID,
       amount,
       amountPaise: order.amount,
-      currency: order.currency || 'INR',
+      currency: order.currency || 'USD',
       paymentMethod,
       methodConfig,
       // Echoed back so the client can route the hosted widget straight to the

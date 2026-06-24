@@ -12,7 +12,7 @@ const TIMELINE = [
   { year: '2020', text: 'Launched mobile-first app and instant account opening with video KYC.' },
   { year: '2022', text: 'Crossed 1 million accounts and expanded into loans and investments.' },
   { year: '2024', text: 'Recognised as one of the fastest-growing digital banks serving India under US federal oversight.' },
-  { year: '2025', text: 'Surpassed 2.5 million customers and ₹50,000+ Cr in processed transactions.' },
+  { year: '2025', text: 'Surpassed 2.5 million customers and $500B+ in processed transactions.' },
 ];
 
 const LEADERS = [
@@ -36,7 +36,7 @@ const COMPLIANCE = [
 
 const STATS = [
   { value: 2.5, decimals: 1, suffix: 'M+', label: 'Customers' },
-  { value: 50000, prefix: '₹', suffix: '+ Cr', label: 'Processed' },
+  { value: 500, prefix: '$', suffix: 'B+', label: 'Processed' },
   { value: 99.9, decimals: 1, suffix: '%', label: 'Uptime' },
   { value: 7, suffix: '+ yrs', label: 'Of Trust' },
 ];

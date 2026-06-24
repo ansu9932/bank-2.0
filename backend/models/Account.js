@@ -11,7 +11,7 @@ const Account = sequelize.define('Account', {
   balance: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   available_balance: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   hold_amount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
-  currency: { type: DataTypes.STRING(5), defaultValue: 'INR' },
+  currency: { type: DataTypes.STRING(5), defaultValue: 'USD' },
   status: { type: DataTypes.ENUM('active', 'frozen', 'dormant', 'closed'), defaultValue: 'active' },
   // Active daily transaction limit. New accounts start RESTRICTED at ₹5,000;
   // an admin can raise it up to the ₹5,00,000 max ceiling via modifyUserCeiling.

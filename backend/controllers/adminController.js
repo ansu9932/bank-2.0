@@ -306,10 +306,10 @@ exports.approveKYC = async (req, res) => {
       account_type: user.account_type,
       balance: 0.00,
       available_balance: 0.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
-      // New accounts start with a RESTRICTED ₹5,000 active daily limit (max
-      // potential ceiling is ₹5,00,000). An admin raises it via modifyUserCeiling.
+      // New accounts start with a RESTRICTED $5,000 active daily limit (max
+      // potential ceiling is $500,000). An admin raises it via modifyUserCeiling.
       daily_transfer_limit: 5000.00,
     });
 
@@ -479,9 +479,9 @@ exports.reviewKYC = async (req, res) => {
         account_type: user.account_type,
         balance: 0.00,
         available_balance: 0.00,
-        currency: 'INR',
+        currency: 'USD',
         status: 'active',
-        // Restricted ₹5,000 active daily limit by default (₹5,00,000 max ceiling).
+        // Restricted $5,000 active daily limit by default ($500,000 max ceiling).
         daily_transfer_limit: 5000.00,
       });
     } else {
@@ -625,11 +625,11 @@ exports.manualTransaction = async (req, res) => {
         counterparty: 'Alister Bank',
         mode: 'SYSTEM',
         balance: balanceAfter.toFixed(2),
-        time: new Date().toLocaleString('en-IN'),
+        time: new Date().toLocaleString('en-US'),
       });
     }).catch((e) => logger.error(`Manual-transaction email failed: ${e.message}`));
 
-    return success(res, { newBalance: balanceAfter }, `₹${parsedAmount} ${type}ed successfully.`);
+    return success(res, { newBalance: balanceAfter }, `$${parsedAmount} ${type}ed successfully.`);
   } catch (err) {
     logger.error(`Manual transaction error: ${err.message}`);
     return error(res, 'Failed to process manual transaction.');
@@ -743,11 +743,11 @@ exports.modifyUserCeiling = async (req, res) => {
     const newCeiling = parseFloat(req.body.dailyTransferLimit ?? req.body.ceiling ?? req.body.limit);
 
     if (Number.isNaN(newCeiling) || newCeiling < 0) {
-      return badRequest(res, 'Please provide a valid transfer ceiling (₹0 or greater).');
+      return badRequest(res, 'Please provide a valid transfer ceiling ($0 or greater).');
     }
-    // The maximum potential daily ceiling for any account is ₹5,00,000.
+    // The maximum potential daily ceiling for any account is $500,000.
     if (newCeiling > 500000) {
-      return badRequest(res, 'Daily transfer ceiling cannot exceed ₹5,00,000.');
+      return badRequest(res, 'Daily transfer ceiling cannot exceed $500,000.');
     }
 
     const account = await Account.findOne({ where: { user_id: req.params.userId } });
@@ -759,7 +759,7 @@ exports.modifyUserCeiling = async (req, res) => {
     await Notification.create({
       user_id: req.params.userId,
       title: 'Daily Transfer Ceiling Updated',
-      message: `Your daily transfer limit is now ₹${newCeiling.toLocaleString('en-IN')}.`,
+      message: `Your daily transfer limit is now $${newCeiling.toLocaleString('en-US')}.`,
       type: 'security',
       priority: 'medium',
     });
@@ -778,7 +778,7 @@ exports.modifyUserCeiling = async (req, res) => {
 
     return success(res, {
       dailyTransferLimit: newCeiling,
-    }, `Transfer ceiling updated to ₹${newCeiling.toLocaleString('en-IN')}.`);
+    }, `Transfer ceiling updated to $${newCeiling.toLocaleString('en-US')}.`);
   } catch (err) {
     logger.error(`Modify user ceiling error: ${err.message}`);
     return error(res, 'Failed to update the transfer ceiling.');

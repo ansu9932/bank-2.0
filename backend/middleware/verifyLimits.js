@@ -56,7 +56,7 @@ const verifyLimits = async (req, res, next) => {
       const remaining = Math.max(dailyLimit - usedToday, 0);
       return badRequest(
         res,
-        `Daily transfer limit exceeded. Remaining allowance: ₹${remaining.toLocaleString('en-IN')}`
+        `Daily transfer limit exceeded. Remaining allowance: $${remaining.toLocaleString('en-US')}`
       );
     }
 

@@ -96,8 +96,8 @@ async function createOrder({ amount, receipt, notes }) {
   if (!client) throw new Error('RAZORPAY_NOT_CONFIGURED');
 
   return client.orders.create({
-    amount: Math.round(Number(amount) * 100), // rupees → paise
-    currency: 'INR',
+    amount: Math.round(Number(amount) * 100), // dollars → cents
+    currency: 'USD',
     receipt: String(receipt).slice(0, 40),
     payment_capture: 1, // auto-capture on successful authorization
     notes,

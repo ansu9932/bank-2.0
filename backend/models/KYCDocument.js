@@ -4,7 +4,17 @@ const sequelize = require('../config/database');
 const KYCDocument = sequelize.define('KYCDocument', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   user_id: { type: DataTypes.UUID, allowNull: false },
-  document_type: { type: DataTypes.ENUM('aadhaar', 'pan', 'passport', 'selfie', 'signature', 'address_proof', 'video_kyc'), allowNull: false },
+  document_type: {
+    type: DataTypes.ENUM(
+      // India
+      'aadhaar', 'pan', 'passport',
+      // Nepal / Bhutan / Bangladesh identity documents
+      'citizenship', 'cid', 'national_id', 'nominee_id', 'tin',
+      // Common across all countries
+      'selfie', 'signature', 'address_proof', 'video_kyc',
+    ),
+    allowNull: false,
+  },
   file_path: { type: DataTypes.STRING(500), allowNull: false },
   file_name: { type: DataTypes.STRING(300) },
   file_size: { type: DataTypes.INTEGER },
