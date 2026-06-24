@@ -12,6 +12,81 @@ import api from '../../services/api';
 import { fetchAccount, updateBalance } from '../../store/slices/accountSlice';
 import { fetchTransactions } from '../../store/slices/transactionSlice';
 
+/**
+ * Clean, branding-free QR renderer.
+ *
+ * `order.image_url` may be Razorpay's full branded POSTER (Powered-by-Razorpay
+ * header, BHIM/UPI band, the QR, "Scan & Pay" text, GPay/PhonePe/Paytm icons,
+ * merchant name) OR an already-clean QR. This decodes the QR payload out of the
+ * image with jsQR, then regenerates a pristine SQUARE QR from that exact payload
+ * (so it scans to the same UPI intent and still pays through Razorpay). On any
+ * failure it transparently falls back to the source image.
+ *
+ * This runs entirely on the client, so the QR is cropped/cleaned regardless of
+ * whether the backend clean-QR step has been deployed.
+ */
+const QR_IMG_STYLE = {
+  width: '200px',
+  height: '200px',
+  maxWidth: '220px',
+  objectFit: 'contain',
+  display: 'block',
+  margin: '0 auto',
+  imageRendering: 'crisp-edges',
+};
+
+function CleanQrImage({ src }) {
+  const [cleanSrc, setCleanSrc] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCleanSrc(null);
+    if (!src) return undefined;
+
+    (async () => {
+      try {
+        const [{ default: jsQR }, { default: QRCode }] = await Promise.all([
+          import('jsqr'),
+          import('qrcode'),
+        ]);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = async () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(data, width, height);
+            if (code && code.data && !cancelled) {
+              const url = await QRCode.toDataURL(code.data, {
+                margin: 2,
+                width: 600,
+                errorCorrectionLevel: 'M',
+                color: { dark: '#000000', light: '#ffffff' },
+              });
+              if (!cancelled) setCleanSrc(url);
+            }
+          } catch {
+            /* decode failed — keep fallback (raw src) */
+          }
+        };
+        img.src = src;
+      } catch {
+        /* jsqr/qrcode failed to load — keep fallback (raw src) */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return <img src={cleanSrc || src} alt="UPI payment QR code" style={QR_IMG_STYLE} />;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
    • Amount <= $1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
@@ -39,35 +114,6 @@ const NETBANKING_BANKS = [
 ];
 const POLL_INTERVAL_MS = 2500;        // poll backend every 2.5s
 const SUCCESS_REDIRECT_MS = 1900;     // dwell on the checkmark before routing
-const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
-
-// NOTE: browser DevTools may show `bank-transfer.php` 404s while this script is
-// active — these originate from Razorpay Checkout.js internals or a browser
-// extension, NOT from this application (it is a Node.js backend with no PHP).
-// They are harmless and do not affect the payment flow.
-//
-// Lazily inject the Razorpay Checkout script once; resolves when ready.
-function loadRazorpayCheckout() {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined') { reject(new Error('No window')); return; }
-    if (window.Razorpay) { resolve(window.Razorpay); return; }
-
-    let script = document.getElementById('rzp-checkout-js');
-    if (!script) {
-      script = document.createElement('script');
-      script.id = 'rzp-checkout-js';
-      script.src = CHECKOUT_SRC;
-      script.async = true;
-      document.body.appendChild(script);
-    }
-    const started = Date.now();
-    const poll = setInterval(() => {
-      if (window.Razorpay) { clearInterval(poll); resolve(window.Razorpay); }
-      else if (Date.now() - started > 15000) { clearInterval(poll); reject(new Error('Checkout failed to load')); }
-    }, 100);
-    script.addEventListener('error', () => { clearInterval(poll); reject(new Error('Checkout script error')); });
-  });
-}
 
 // View phases: 'form' → 'qr' (awaiting QR payment) → 'success'
 export default function DepositFunds() {
@@ -190,67 +236,20 @@ export default function DepositFunds() {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
     setCheckoutMethod(method);
     try {
-      const { data } = await api.post('/payments/create-deposit-order', {
+      const { data } = await api.post('/payments/create-deposit-link', {
         amount: numericAmount,
         paymentMethod: method,
-        // Forward the chosen Net Banking partner code so the backend can validate
-        // it and echo it back for direct-to-bank routing (null for card).
+        // Forward the chosen Net Banking partner so the hosted page can route to
+        // that bank (ignored for card).
         ...(method === 'netbanking' && bankCode ? { bank: bankCode } : {}),
       });
-      const cfg = data?.data;
-      if (!cfg?.orderId || !cfg?.keyId) throw new Error('Malformed order response');
+      const shortUrl = data?.data?.shortUrl;
+      if (!shortUrl) throw new Error('Could not start the payment. Please try again.');
 
-      const Razorpay = await loadRazorpayCheckout();
-
-      // Clone the server-supplied prefill so we can attach the bank routing
-      // hints for Net Banking without mutating the response object. Prefer the
-      // backend-validated bank code, falling back to the user's selection.
-      const prefill = { ...(cfg.prefill || {}) };
-      const routedBank = cfg.bank || (method === 'netbanking' ? bankCode : null);
-      if (method === 'netbanking' && routedBank) {
-        prefill.method = 'netbanking';
-        prefill.bank = routedBank; // e.g. 'HDFC', 'SBIN', 'ICIC' → skips bank picker
-      }
-
-      const options = {
-        key: cfg.keyId,
-        amount: cfg.amountPaise,
-        currency: cfg.currency,
-        name: cfg.name,
-        description: cfg.description,
-        order_id: cfg.orderId,
-        prefill,
-        notes: { orderRef: cfg.orderRef },
-        // Alister Bank skin: crimson accents over a rich matte-black backdrop so
-        // the hosted widget blends seamlessly into the dashboard.
-        theme: {
-          color: CRIMSON,
-          backdrop_color: '#000000',
-        },
-        // Force the chosen rail in the Checkout widget.
-        method: cfg.methodConfig,
-        handler: () => {
-          // Payment authorized in the widget. The webhook credits the balance;
-          // begin polling so the UI flips to success the moment it lands.
-          toast.success('Payment received — confirming with your bank…');
-          setOrder({ orderRef: cfg.orderRef, amount: cfg.amount });
-          setPhase('qr'); // reuse the "awaiting confirmation" waiting panel
-          startPolling(cfg.orderRef);
-        },
-        modal: {
-          ondismiss: () => {
-            setCheckoutMethod(null);
-            toast('Payment cancelled.', { icon: 'ℹ️' });
-          },
-        },
-      };
-
-      const rzp = new Razorpay(options);
-      rzp.on('payment.failed', (resp) => {
-        toast.error(resp?.error?.description || 'Payment failed. Please try again.');
-        setCheckoutMethod(null);
-      });
-      rzp.open();
+      toast('Redirecting to the secure payment page…', { icon: '🔒' });
+      // Full-page redirect to Razorpay's hosted page → the bank's OTP / login
+      // happens there → Razorpay returns the user to /dashboard/deposit.
+      window.location.href = shortUrl;
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Could not start the payment. Please try again.';
       toast.error(msg);
@@ -475,32 +474,28 @@ export default function DepositFunds() {
                 {order.image_url && (
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                    className="relative rounded-3xl bg-white p-4"
-                    style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* `order.image_url` is now a base64 data URI of the Razorpay QR
-                        (the backend fetches the QR image and inlines it), so it can be
-                        rendered directly by a plain <img> with no external request. */}
+                    className="relative inline-flex">
+                    {/* .qr-card — the IMMEDIATE parent of the QR <img>.
+                        box-sizing:border-box so the 28px padding is honoured and the
+                        image can never reach the card edge; flex centres the QR on both
+                        axes; rounded corners match the bracket frame. */}
                     <div
+                      className="flex items-center justify-center rounded-2xl bg-white"
                       style={{
-                        width: '220px',
-                        height: '220px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        background: '#ffffff',
-                        borderRadius: '12px',
+                        boxSizing: 'border-box',
+                        padding: '28px',
+                        boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)`,
                       }}>
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        width={200}
-                        height={200}
-                        style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
-                      />
+                      {/* Clean, branding-free QR generated client-side (see
+                          CleanQrImage). Works even if the backend clean-QR step
+                          isn't deployed. */}
+                      <CleanQrImage src={order.image_url} />
                     </div>
+                    {/* Red corner brackets (.qr-frame) — unchanged style, now on the
+                        outer wrapper so they sit OUTSIDE the padded white QR box. */}
                     {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
                       'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
-                      <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
+                      <div key={i} className={`absolute w-7 h-7 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
                     ))}
                   </motion.div>
                 )}

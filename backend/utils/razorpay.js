@@ -105,6 +105,52 @@ async function createOrder({ amount, receipt, notes }) {
 }
 
 /**
+ * Create a Razorpay hosted Payment Link for a Card / Net Banking deposit.
+ *
+ * Used as a fallback when the embedded Checkout widget (`checkout.js`) is
+ * blocked client-side (ad blockers / privacy extensions / network filters):
+ * the browser is redirected to Razorpay's own hosted page (`short_url`), which
+ * has no dependency on any script loading on our domain. The link carries the
+ * same tracking `notes` (orderRef, accountId, userId) so the shared webhook
+ * credits the balance identically to the Order/QR flows.
+ *
+ * @param {object} params
+ * @param {number} params.amount        Amount in INR (rupees).
+ * @param {string} params.description   Human-readable label.
+ * @param {object} params.notes         Metadata propagated to the payment.
+ * @param {object} [params.customer]    { name, email, contact } prefill.
+ * @param {string} [params.callbackUrl] Where Razorpay returns the user post-pay.
+ * @returns {Promise<object>} The Razorpay Payment Link entity (incl. short_url).
+ */
+async function createPaymentLink({ amount, description, notes, customer, callbackUrl }) {
+  const client = getRazorpayInstance();
+  if (!client) throw new Error('RAZORPAY_NOT_CONFIGURED');
+
+  const payload = {
+    amount: Math.round(Number(amount) * 100), // rupees → paise
+    currency: 'INR',
+    accept_partial: false,
+    description: String(description || 'Alister Bank deposit').slice(0, 2048),
+    notify: { sms: false, email: false }, // we own user comms
+    reminder_enable: false,
+    notes,
+  };
+  if (customer && (customer.name || customer.email || customer.contact)) {
+    payload.customer = {
+      name: customer.name || undefined,
+      email: customer.email || undefined,
+      contact: customer.contact || undefined,
+    };
+  }
+  if (callbackUrl) {
+    payload.callback_url = callbackUrl;
+    payload.callback_method = 'get';
+  }
+
+  return client.paymentLink.create(payload);
+}
+
+/**
  * Cryptographically validate an incoming Razorpay webhook signature.
  *
  * @param {string|Buffer} body      The RAW request body (exact bytes received).
@@ -133,5 +179,6 @@ module.exports = {
   isConfigured,
   createUpiQr,
   createOrder,
+  createPaymentLink,
   validateWebhookSignature,
 };

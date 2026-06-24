@@ -303,11 +303,37 @@ const sendPasswordResetEmail = async (email, name, resetLink) => {
     ${badge('&#128273; Password Reset')}
     ${heading('Reset Your Password')}
     ${para(`Dear ${hl(name)},`)}
-    ${para('We received a request to reset your Alister Bank password. Click the button below to proceed:')}
+    ${para('We received a request to reset the password for your Alister Bank account. Confirm the account holder below, then tap the button to set a new password:')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Account Holder', name)}
+      ${detailRow('Link Validity', '5 minutes', '#f59e0b')}
+    </table>
     ${button('Reset Password →', resetLink)}
-    ${infoBox('&#9201; This link expires in <strong>5 minutes</strong>. If you did not request a password reset, please ignore this email.')}
+    ${infoBox('&#9201; This link expires in <strong>5 minutes</strong> and can be used only once. <strong>Never share this link with anyone</strong> — Alister Bank will never ask for it. If you did not request this, please ignore this email.')}
   `));
   return sendEmail({ to: email, subject: 'Alister Bank — Password Reset Request', html });
+};
+
+/**
+ * Post-reset confirmation / security alert — sent immediately after a password
+ * is successfully changed via the reset flow. Shows the account holder name so
+ * the recipient can confirm it's their account, plus when/where it happened.
+ */
+const sendPasswordChangedEmail = async (email, name, info = {}) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#9989; Password Changed')}
+    ${heading('Your Password Was Changed')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('This confirms that the password for your Alister Bank account was just changed successfully. For your security, all active sessions have been signed out.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Account Holder', name)}
+      ${detailRow('Date &amp; Time', info.time || new Date().toLocaleString('en-IN'))}
+      ${detailRow('IP Address', info.ip || 'Unknown')}
+      ${detailRow('Status', 'Successful', '#22c55e')}
+    </table>
+    ${infoBox('&#9888;&#65039; If you did <strong>not</strong> make this change, your account may be at risk. Contact Alister Bank support immediately and secure your email account.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Your Password Was Changed', html });
 };
 
 /**
@@ -442,6 +468,7 @@ module.exports = {
   sendLoginAlertEmail,
   sendTransferAlertEmail,
   sendPasswordResetEmail,
+  sendPasswordChangedEmail,
   sendServiceRequestEmail,
   sendCardIssuedEmail,
   sendCardRejectedEmail,
