@@ -223,6 +223,8 @@ async function ensureUserColumns() {
   const columns = {
     // Add Money (deposit) access — disabled by default, admin-activated.
     deposit_enabled: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+    // External transfers (IMPS/NEFT/UPI) — locked by default, admin-activated.
+    external_transfer_enabled: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
     // Country-specific identity numbers (Nepal / Bhutan / Bangladesh).
     citizenship_number: { type: DataTypes.STRING(50), allowNull: true },
     cid_number: { type: DataTypes.STRING(50), allowNull: true },

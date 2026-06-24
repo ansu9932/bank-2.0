@@ -308,9 +308,9 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'USD',
       status: 'active',
-      // New accounts start with a RESTRICTED $5,000 active daily limit (max
+      // New accounts start with a RESTRICTED $100 active daily limit (max
       // potential ceiling is $500,000). An admin raises it via modifyUserCeiling.
-      daily_transfer_limit: 5000.00,
+      daily_transfer_limit: 100.00,
     });
 
     // Send approval email with setup link
@@ -481,8 +481,8 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'USD',
         status: 'active',
-        // Restricted $5,000 active daily limit by default ($500,000 max ceiling).
-        daily_transfer_limit: 5000.00,
+        // Restricted $100 active daily limit by default ($500,000 max ceiling).
+        daily_transfer_limit: 100.00,
       });
     } else {
       await account.update({ status: 'active' });
@@ -832,6 +832,56 @@ exports.toggleDeposit = async (req, res) => {
   } catch (err) {
     logger.error(`Toggle deposit error: ${err.message}`);
     return error(res, 'Failed to update Add Money access.');
+  }
+};
+
+// ─── Toggle External Transfers (IMPS / NEFT / UPI) ────────────────────────────
+// POST /api/admin/users/:id/toggle-external-transfer
+// External transfers are LOCKED by default for every user. Only an admin can
+// activate (or re-lock) them. Internal Alister-to-Alister transfers always work.
+// Body may carry { enabled: true|false }; when omitted the flag is toggled.
+exports.toggleExternalTransfer = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return notFound(res, 'User not found.');
+
+    const enabled = typeof req.body.enabled === 'boolean'
+      ? req.body.enabled
+      : !user.external_transfer_enabled;
+
+    const previous = user.external_transfer_enabled;
+    await user.update({ external_transfer_enabled: enabled });
+
+    await Notification.create({
+      user_id: user.id,
+      title: enabled ? 'External Transfers Activated' : 'External Transfers Locked',
+      message: enabled
+        ? 'IMPS, NEFT and UPI transfers have been activated for your account.'
+        : 'IMPS, NEFT and UPI transfers are locked for your account. Internal Alister Bank transfers remain available. Contact support for assistance.',
+      type: 'security',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: user.id,
+      action: enabled ? 'EXTERNAL_TRANSFER_ENABLED' : 'EXTERNAL_TRANSFER_DISABLED',
+      entityType: 'User',
+      entityId: user.id,
+      oldValues: { external_transfer_enabled: previous },
+      newValues: { external_transfer_enabled: enabled },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(
+      res,
+      { externalTransferEnabled: enabled },
+      `External transfers (IMPS/NEFT/UPI) ${enabled ? 'activated' : 'locked'} for this user.`,
+    );
+  } catch (err) {
+    logger.error(`Toggle external transfer error: ${err.message}`);
+    return error(res, 'Failed to update external transfer access.');
   }
 };
 

@@ -28,6 +28,8 @@ router.post('/users/:id/manual-transaction', requireRole('super_admin', 'admin')
 router.post('/modify-user-ceiling/:userId', requireRole('super_admin', 'admin'), adminController.modifyUserCeiling);
 // Activate / deactivate the Add Money (deposit) feature for a specific user.
 router.post('/users/:id/toggle-deposit', requireRole('super_admin', 'admin'), adminController.toggleDeposit);
+// Activate / lock external transfers (IMPS/NEFT/UPI) for a specific user.
+router.post('/users/:id/toggle-external-transfer', requireRole('super_admin', 'admin'), adminController.toggleExternalTransfer);
 
 // Transactions
 router.get('/transactions', adminController.getAllTransactions);

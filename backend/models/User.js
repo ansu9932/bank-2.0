@@ -41,6 +41,10 @@ const User = sequelize.define('User', {
   // Add Money / deposit access. DISABLED by default — only an admin can
   // activate it per user (see adminController.toggleDeposit).
   deposit_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // External transfers (IMPS / NEFT / UPI). LOCKED by default — only an admin
+  // can activate them per user (see adminController.toggleExternalTransfer).
+  // Internal Alister-to-Alister transfers are always allowed regardless.
+  external_transfer_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
   profile_picture: { type: DataTypes.STRING(500) },
   last_login: { type: DataTypes.DATE },
   login_attempts: { type: DataTypes.INTEGER, defaultValue: 0 },

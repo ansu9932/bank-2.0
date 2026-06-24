@@ -211,6 +211,7 @@ exports.login = async (req, res) => {
         darkMode: user.dark_mode,
         twoFactorEnabled: user.two_factor_enabled,
         depositEnabled: user.deposit_enabled,
+        externalTransferEnabled: user.external_transfer_enabled,
       },
     }, 'Login successful.');
   } catch (err) {

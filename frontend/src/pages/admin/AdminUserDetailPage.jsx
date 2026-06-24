@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine, RiDeleteBin6Line, RiSecurePaymentLine } from 'react-icons/ri';
+import { RiArrowLeftLine, RiCheckLine, RiCloseLine, RiLockLine, RiLockUnlockLine, RiAddCircleLine, RiSubtractLine, RiDeleteBin6Line, RiSecurePaymentLine, RiSendPlaneLine } from 'react-icons/ri';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -26,6 +26,7 @@ export default function AdminUserDetailPage() {
   const [ceiling, setCeiling] = useState('');
   const [ceilingLoading, setCeilingLoading] = useState(false);
   const [depositLoading, setDepositLoading] = useState(false);
+  const [extLoading, setExtLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
   const fetch = async () => {
@@ -114,6 +115,18 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update Add Money access'); }
     finally { setDepositLoading(false); }
+  };
+
+  // Activate / lock external transfers (IMPS/NEFT/UPI) for this user.
+  const toggleExternalTransfer = async () => {
+    const enabled = !user.external_transfer_enabled;
+    setExtLoading(true);
+    try {
+      const { data } = await api.post(`/admin/users/${id}/toggle-external-transfer`, { enabled }, { headers });
+      toast.success(data.message || `External transfers ${enabled ? 'activated' : 'locked'}`);
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update external transfer access'); }
+    finally { setExtLoading(false); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="spinner w-8 h-8" style={{ borderWidth: 3 }} /></div>;
@@ -327,6 +340,27 @@ export default function AdminUserDetailPage() {
                 : user.deposit_enabled
                   ? <><RiLockLine /> Deactivate Add Money</>
                   : <><RiSecurePaymentLine /> Activate Add Money</>}
+            </button>
+          </div>
+
+          {/* External transfers (IMPS/NEFT/UPI) — locked by default */}
+          <div className="glass-card p-4">
+            <p className="text-white font-semibold mb-1 text-sm">External Transfers (IMPS / NEFT / UPI)</p>
+            <p className="text-dark-400 text-xs mb-3">
+              External rails are{' '}
+              <span className={user.external_transfer_enabled ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>
+                {user.external_transfer_enabled ? 'Activated' : 'Locked'}
+              </span>.
+              {' '}Internal Alister transfers always work.
+            </p>
+            <button onClick={toggleExternalTransfer} disabled={extLoading}
+              className={`w-full justify-center py-2.5 text-sm ${user.external_transfer_enabled ? 'btn-secondary border-red-500/20 text-red-400' : 'btn-primary'}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {extLoading
+                ? <><div className="spinner w-3 h-3" /> Updating...</>
+                : user.external_transfer_enabled
+                  ? <><RiLockLine /> Lock External Transfers</>
+                  : <><RiSendPlaneLine /> Activate External Transfers</>}
             </button>
           </div>
 
