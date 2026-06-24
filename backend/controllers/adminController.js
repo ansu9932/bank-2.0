@@ -785,6 +785,56 @@ exports.modifyUserCeiling = async (req, res) => {
   }
 };
 
+// ─── Toggle Add Money (deposit) access ────────────────────────────────────────
+// POST /api/admin/users/:id/toggle-deposit
+// Deposits are DISABLED by default for every user. Only an admin can activate
+// (or re-deactivate) the Add Money feature for a specific user. Body may carry
+// an explicit { enabled: true|false }; when omitted the flag is toggled.
+exports.toggleDeposit = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return notFound(res, 'User not found.');
+
+    const enabled = typeof req.body.enabled === 'boolean'
+      ? req.body.enabled
+      : !user.deposit_enabled;
+
+    const previous = user.deposit_enabled;
+    await user.update({ deposit_enabled: enabled });
+
+    await Notification.create({
+      user_id: user.id,
+      title: enabled ? 'Add Money Activated' : 'Add Money Deactivated',
+      message: enabled
+        ? 'The Add Money feature has been activated for your account. You can now deposit funds.'
+        : 'The Add Money feature has been deactivated for your account. Please contact support for assistance.',
+      type: 'system',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: user.id,
+      action: enabled ? 'DEPOSIT_ENABLED' : 'DEPOSIT_DISABLED',
+      entityType: 'User',
+      entityId: user.id,
+      oldValues: { deposit_enabled: previous },
+      newValues: { deposit_enabled: enabled },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(
+      res,
+      { depositEnabled: enabled },
+      `Add Money ${enabled ? 'activated' : 'deactivated'} for this user.`,
+    );
+  } catch (err) {
+    logger.error(`Toggle deposit error: ${err.message}`);
+    return error(res, 'Failed to update Add Money access.');
+  }
+};
+
 // ─── Flag Transaction ─────────────────────────────────────────────────────────
 exports.flagTransaction = async (req, res) => {
   try {

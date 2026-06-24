@@ -26,6 +26,8 @@ router.post('/users/:id/kyc-review', requireRole('super_admin', 'admin', 'kyc_of
 router.post('/users/:id/freeze', requireRole('super_admin', 'admin'), adminController.toggleFreezeAccount);
 router.post('/users/:id/manual-transaction', requireRole('super_admin', 'admin'), adminController.manualTransaction);
 router.post('/modify-user-ceiling/:userId', requireRole('super_admin', 'admin'), adminController.modifyUserCeiling);
+// Activate / deactivate the Add Money (deposit) feature for a specific user.
+router.post('/users/:id/toggle-deposit', requireRole('super_admin', 'admin'), adminController.toggleDeposit);
 
 // Transactions
 router.get('/transactions', adminController.getAllTransactions);

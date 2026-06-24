@@ -210,6 +210,7 @@ exports.login = async (req, res) => {
         kycStatus: user.kyc_status,
         darkMode: user.dark_mode,
         twoFactorEnabled: user.two_factor_enabled,
+        depositEnabled: user.deposit_enabled,
       },
     }, 'Login successful.');
   } catch (err) {
