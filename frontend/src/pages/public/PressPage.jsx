@@ -42,7 +42,7 @@ const DISCLOSURES = [
 ];
 
 const CONTACTS = [
-  { icon: Mail, title: 'Press', value: 'press@alisterbank.com', href: 'mailto:press@alisterbank.com' },
+  { icon: Mail, title: 'Press', value: 'info@alisterbank.online', href: 'mailto:info@alisterbank.online' },
   { icon: Phone, title: 'Media Line', value: '1-800-425-4783 Ext. 2', href: 'tel:18004254783' },
   { icon: Building2, title: 'Office', value: '350 Park Avenue, 21st Floor, New York, NY 10022', href: '#office' },
   { icon: Clock, title: 'Hours', value: 'Monday–Friday, 9:00 AM – 6:00 PM ET', href: '#hours' },
@@ -52,7 +52,7 @@ export default function PressPage() {
   return (
     <PageTransition
       title="Press & Newsroom — Alister Bank"
-      description="Official press releases, media resources, and corporate announcements from Alister Bank, N.A. Media inquiries: press@alisterbank.com."
+      description="Official press releases, media resources, and corporate announcements from Alister Bank, N.A. Media inquiries: info@alisterbank.online."
     >
       <PageHero eyebrow="Newsroom" title="Alister Bank" highlight="Newsroom" subtitle="Official press releases, media resources, and corporate announcements from Alister Bank, N.A." />
 
@@ -62,7 +62,7 @@ export default function PressPage() {
           <div className="grid sm:grid-cols-3 gap-5">
             <div className="flex items-center gap-3">
               <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}><Mail size={20} style={{ color: '#FF3333' }} /></span>
-              <div><p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Media Inquiries</p><p className="text-white font-medium text-sm">press@alisterbank.com</p></div>
+              <div><p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Media Inquiries</p><p className="text-white font-medium text-sm">info@alisterbank.online</p></div>
             </div>
             <div className="flex items-center gap-3">
               <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(204,0,0,0.12)', border: '1px solid rgba(204,0,0,0.3)' }}><Phone size={20} style={{ color: '#FF3333' }} /></span>

@@ -29,7 +29,7 @@ const LEGAL = [
   'Alister Bank, N.A. is an Equal Opportunity / Affirmative Action Employer. We do not discriminate on the basis of race, color, religion, sex, national origin, age, disability, veteran status, sexual orientation, gender identity, or any other protected status under applicable federal, state, or local law, including Title VII of the Civil Rights Act of 1964, the Age Discrimination in Employment Act of 1967 (ADEA), and the Americans with Disabilities Act (ADA).',
   'Employment at Alister Bank is at-will unless otherwise specified in a written employment agreement. All employees must complete Form I-9 employment eligibility verification as required by the Immigration Reform and Control Act (IRCA) of 1986.',
   'Alister Bank participates in E-Verify. Federal law requires all employers to verify the identity and employment eligibility of all persons hired to work in the United States.',
-  'If you require a reasonable accommodation to apply for a position, please contact hr@alisterbank.com. Alister Bank complies with all applicable state and local laws governing non-discrimination in employment.',
+  'If you require a reasonable accommodation to apply for a position, please contact info@alisterbank.online. Alister Bank complies with all applicable state and local laws governing non-discrimination in employment.',
 ];
 
 const STEPS = [

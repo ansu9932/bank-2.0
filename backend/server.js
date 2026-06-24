@@ -25,7 +25,7 @@ app.use(hpp());
 
 // ─── CORS (Updated Fallback to Hostinger Frontend) ────────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com',
+  origin: process.env.FRONTEND_URL || 'https://alisterbank.online',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Registration-Token'],
