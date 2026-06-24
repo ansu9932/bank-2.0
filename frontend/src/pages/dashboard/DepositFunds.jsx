@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   RiQrCodeLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
   RiSecurePaymentLine, RiArrowLeftLine, RiArrowRightLine,
-  RiBankCardLine, RiBankLine, RiInformationLine,
+  RiBankCardLine, RiBankLine, RiInformationLine, RiLock2Line,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -120,6 +120,11 @@ export default function DepositFunds() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { account } = useSelector((s) => s.account);
+  const { user } = useSelector((s) => s.auth);
+
+  // Add Money is deactivated by default — only an admin can activate it.
+  // Accept either the getMe (snake_case) or login (camelCase) shape.
+  const depositEnabled = Boolean(user?.deposit_enabled ?? user?.depositEnabled ?? false);
 
   const [phase, setPhase] = useState('form');
   const [amount, setAmount] = useState('');
@@ -270,6 +275,62 @@ export default function DepositFunds() {
     setAmount('');
     setPhase('form');
   };
+
+  // ── Add Money deactivated by admin → blocked screen ────────────────────────
+  if (!depositEnabled) {
+    return (
+      <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>
+        <div className="max-w-2xl mx-auto px-1 py-6 sm:py-8">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center border border-brand-500/30"
+              style={{ background: 'rgba(200,16,46,0.12)', boxShadow: `0 0 22px ${CRIMSON}33` }}>
+              <RiSecurePaymentLine className="text-2xl" style={{ color: '#ff3d52' }} />
+            </div>
+            <div>
+              <h1 className="font-display font-bold text-white text-xl leading-tight"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Add Money
+              </h1>
+              <p className="text-slate-400 text-xs mt-0.5">Instant top-up · UPI, Card &amp; Net Banking</p>
+            </div>
+          </div>
+
+          {/* Blocked card */}
+          <div className="bg-[#15161c] border border-white/[0.06] rounded-3xl overflow-hidden p-8 sm:p-10 text-center"
+            style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+            <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-5 border border-white/[0.08]"
+              style={{ background: 'rgba(200,16,46,0.10)' }}>
+              <RiLock2Line className="text-3xl" style={{ color: '#ff6173' }} />
+            </div>
+            <h2 className="text-white font-bold text-lg mb-2">Add Money is currently unavailable</h2>
+            <p className="text-slate-400 text-sm leading-relaxed max-w-md mx-auto">
+              The Add Money feature has been <span className="text-white font-medium">deactivated</span> for your account.
+              This service must be activated by a bank administrator before you can deposit funds.
+            </p>
+            <div className="flex items-start gap-2 rounded-xl px-4 py-3 mt-6 text-left border"
+              style={{ background: 'rgba(200,16,46,0.07)', borderColor: 'rgba(200,16,46,0.28)' }}>
+              <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
+              <p className="text-slate-300 text-xs leading-relaxed">
+                Please contact support to request activation. You'll be notified once an administrator enables Add Money for your account.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 mt-7 justify-center">
+              <button type="button" onClick={() => navigate('/dashboard')}
+                className="py-3 px-6 rounded-2xl text-sm font-semibold text-slate-200 border border-white/[0.08] bg-white/[0.03] hover:border-brand-500/50 hover:text-white hover:bg-brand-500/10 transition-all">
+                Back to Dashboard
+              </button>
+              <button type="button" onClick={() => navigate('/dashboard/support')}
+                className="py-3 px-6 rounded-2xl text-sm font-semibold text-white transition-all active:scale-[0.98]"
+                style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 28px ${CRIMSON}44` }}>
+                Contact Support
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>

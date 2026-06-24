@@ -88,7 +88,7 @@ const SECTIONS = [
             'Credit bureaus as permitted under the FCRA',
           ]}
         />
-        <LP>To opt out of any permissible sharing, contact us at: privacy@alisterbank.com or 1-800-425-4783.</LP>
+        <LP>To opt out of any permissible sharing, contact us at: info@alisterbank.online or 1-800-425-4783.</LP>
       </>
     ),
   },
@@ -113,7 +113,7 @@ const SECTIONS = [
           Note: Much of the personal information we collect is exempt from CCPA under the GLBA financial information
           exemption (Cal. Civ. Code § 1798.145(e)).
         </LP>
-        <LP>To submit a CCPA request: privacy@alisterbank.com</LP>
+        <LP>To submit a CCPA request: info@alisterbank.online</LP>
       </>
     ),
   },
@@ -180,7 +180,7 @@ const SECTIONS = [
     body: (
       <>
         <LP>
-          {'Privacy Officer: Alister Bank, N.A.\n350 Park Avenue, 21st Floor, New York, NY 10022\nEmail: privacy@alisterbank.com\nPhone: 1-800-425-4783'}
+          {'Privacy Officer: Alister Bank, N.A.\n350 Park Avenue, 21st Floor, New York, NY 10022\nEmail: info@alisterbank.online\nPhone: 1-800-425-4783'}
         </LP>
         <LP>You may also file a complaint with:</LP>
         <LList

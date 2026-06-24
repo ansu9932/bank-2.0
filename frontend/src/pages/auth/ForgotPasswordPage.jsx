@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RiCheckLine } from 'react-icons/ri';
@@ -31,6 +31,13 @@ export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // ── Non-CAPTCHA bot protection ────────────────────────────────────────────
+  // 1) Honeypot: a hidden field real users never see/fill. Any value = a bot.
+  // 2) Timing trap: a human takes >2.5s to read + type the User ID; near-instant
+  //    submits are scripted. Both checks run silently before the first API call.
+  const [hp, setHp] = useState('');           // honeypot ("company website")
+  const loadedAt = useRef(Date.now());        // page-load timestamp for timing
+
   // Step 1
   const [userId, setUserId] = useState('');
 
@@ -48,6 +55,17 @@ export default function ForgotPasswordPage() {
   // Uses the shared `api` client (baseURL → backend host). A raw fetch('/api/…')
   // would resolve to the FRONTEND origin and return index.html (404 HTML).
   const verifyUserId = async () => {
+    // ── Silent bot gate (honeypot + timing) ─────────────────────────────────
+    if (hp.trim() !== '') {
+      // A filled honeypot = automated submission. Fail without revealing why.
+      setError('Unable to verify your request. Please try again.');
+      return;
+    }
+    if (Date.now() - loadedAt.current < 2500) {
+      setError('Please take a moment — fill in your User ID and try again.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     try {
@@ -126,6 +144,14 @@ export default function ForgotPasswordPage() {
           margin-right: 8px;
         }
         @media (max-width: 380px) { .fp-step-label { display: none; } }
+        /* Honeypot — visually hidden from humans, still in the DOM for bots. */
+        .fp-hp {
+          position: absolute !important;
+          left: -9999px !important;
+          top: -9999px !important;
+          width: 1px; height: 1px;
+          opacity: 0; pointer-events: none;
+        }
       `}</style>
 
       {/* Back to Home (fixed top-left) */}
@@ -226,6 +252,20 @@ export default function ForgotPasswordPage() {
                     </p>
 
                     {error && <ErrorBanner message={error} />}
+
+                    {/* Honeypot field — hidden from real users; bots fill it. */}
+                    <div className="fp-hp" aria-hidden="true">
+                      <label htmlFor="fp-company-website">Company Website</label>
+                      <input
+                        id="fp-company-website"
+                        type="text"
+                        name="company_website"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={hp}
+                        onChange={(e) => setHp(e.target.value)}
+                      />
+                    </div>
 
                     <div className="mb-[18px]">
                       <label className="block text-[13px] font-medium mb-[7px]" style={{ color: 'rgba(255,255,255,0.55)' }}>

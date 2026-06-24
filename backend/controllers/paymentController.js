@@ -135,6 +135,11 @@ exports.createQR = async (req, res) => {
       return error(res, 'Payment gateway is not configured. Please try again later.', 503);
     }
 
+    // Add Money is disabled by default — an admin must activate it per user.
+    if (!req.user.deposit_enabled) {
+      return error(res, 'Add Money is currently deactivated for your account. Please contact support to enable deposits.', 403);
+    }
+
     const amount = parseFloat(req.body.amount);
     if (!amount || Number.isNaN(amount) || amount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');

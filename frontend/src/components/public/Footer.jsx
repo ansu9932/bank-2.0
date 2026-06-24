@@ -94,7 +94,7 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-2.5">
                 <Mail size={16} style={{ color: '#FF3333' }} className="mt-0.5 shrink-0" />
-                support@alisterbank.com
+                info@alisterbank.online
               </li>
               <li className="flex items-start gap-2.5">
                 <MapPin size={16} style={{ color: '#FF3333' }} className="mt-0.5 shrink-0" />

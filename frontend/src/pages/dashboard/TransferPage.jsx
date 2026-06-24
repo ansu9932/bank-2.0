@@ -30,9 +30,14 @@ export default function TransferPage() {
   const dispatch = useDispatch();
   const { account } = useSelector((s) => s.account);
   const { beneficiaries = [] } = useSelector((s) => s.transaction);
+  const { user } = useSelector((s) => s.auth);
+
+  // External transfers (IMPS/NEFT/UPI) are LOCKED unless an admin activated them.
+  // Internal Alister-to-Alister transfers are always available.
+  const externalLocked = !(user?.external_transfer_enabled ?? user?.externalTransferEnabled ?? false);
 
   const [step, setStep] = useState('form'); // form | confirm | success
-  const [mode, setMode] = useState('IMPS');
+  const [mode, setMode] = useState(externalLocked ? 'ALISTER' : 'IMPS');
   const [form, setForm] = useState({
     beneficiaryName: '', accountNumber: '', confirmAccountNumber: '',
     ifsc: '', vpa: '', amount: '', description: '', securityPin: '',
@@ -80,6 +85,16 @@ export default function TransferPage() {
     loadLimit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // If external transfers are locked (or become locked after the profile loads),
+  // force the form onto the always-available internal Alister rail.
+  useEffect(() => {
+    if (externalLocked && mode !== 'ALISTER') {
+      setMode('ALISTER');
+      setForm((f) => ({ ...f, ifsc: '', vpa: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalLocked]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -185,6 +200,11 @@ export default function TransferPage() {
   }, []);
 
   const switchMode = (m) => {
+    // Block the external rails when the admin hasn't activated them.
+    if (externalLocked && m !== 'ALISTER') {
+      toast.error('IMPS, NEFT and UPI are locked for your account by the admin. Use Alister Internal transfer or contact support.');
+      return;
+    }
     setMode(m);
     setVpaStatus('idle');
     setVpaProvider('');
@@ -385,16 +405,31 @@ export default function TransferPage() {
               {/* Mode tabs */}
               <div className="mb-5">
                 <label className="form-label">Transfer Mode</label>
+                {externalLocked && (
+                  <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 mb-3 border text-xs"
+                    style={{ background: 'rgba(200,16,46,0.08)', borderColor: 'rgba(200,16,46,0.28)', color: 'rgba(255,255,255,0.7)' }}>
+                    <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
+                    <span>
+                      IMPS, NEFT &amp; UPI are <span className="text-white font-semibold">locked</span> for your account.
+                      Only <span className="text-white font-semibold">Alister Internal</span> transfers are available — contact support to activate external transfers.
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {MODES.map((m) => {
                     const Icon = m.icon;
                     const active = mode === m.value;
+                    const locked = externalLocked && m.value !== 'ALISTER';
                     return (
                       <button key={m.value} type="button" onClick={() => switchMode(m.value)}
-                        className={`p-3 rounded-xl border transition-all text-left ${active ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'}`}>
-                        <Icon className={active ? 'text-brand-400' : 'text-dark-300'} />
+                        aria-disabled={locked}
+                        className={`relative p-3 rounded-xl border transition-all text-left ${active ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'} ${locked ? 'opacity-50 cursor-not-allowed hover:border-white/[0.08]' : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <Icon className={active ? 'text-brand-400' : 'text-dark-300'} />
+                          {locked && <span className="text-[11px]" title="Locked by admin">🔒</span>}
+                        </div>
                         <p className={`text-sm font-bold mt-1 ${active ? 'text-brand-400' : 'text-white'}`}>{m.label}</p>
-                        <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">{m.desc}</p>
+                        <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">{locked ? 'Locked — admin only' : m.desc}</p>
                       </button>
                     );
                   })}

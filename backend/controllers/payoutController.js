@@ -165,6 +165,13 @@ exports.verifyIfsc = async (req, res) => {
 // the daily ceiling, and attached req.transferAccount + req.transferLimitSnapshot.
 exports.disbursePayout = async (req, res) => {
   try {
+    // External transfers (IMPS/NEFT/UPI) are locked by default — an admin must
+    // activate them per user. Internal Alister transfers use a separate route
+    // and stay available regardless of this flag.
+    if (!req.user.external_transfer_enabled) {
+      return error(res, 'External transfers (IMPS, NEFT, UPI) are locked for your account. Please contact the admin to activate them. Internal Alister Bank transfers remain available.', 403);
+    }
+
     const {
       mode, amount, beneficiaryName, accountNumber, confirmAccountNumber,
       ifsc, vpa, email, description, securityPin,
