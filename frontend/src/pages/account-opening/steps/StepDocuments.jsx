@@ -3,15 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { RiUploadCloud2Line, RiCheckLine, RiLoader4Line, RiShieldCheckLine } from 'react-icons/ri';
 import api from '../../../services/api';
 import toast from 'react-hot-toast';
-
-const docFields = [
-  { key: 'aadhaar',       idKey: 'aadhaarNumber',   label: 'Aadhaar Card',     placeholder: '1234 5678 9012', required: true },
-  { key: 'pan',           idKey: 'panNumber',        label: 'PAN Card',         placeholder: 'ABCDE1234F',     required: true },
-  { key: 'passport',      idKey: 'passportNumber',   label: 'Passport',         placeholder: 'A1234567',       required: false },
-  { key: 'selfie',        idKey: null,               label: 'Live Selfie',      placeholder: null,             required: true },
-  { key: 'signature',     idKey: null,               label: 'Signature',        placeholder: null,             required: true },
-  { key: 'address_proof', idKey: null,               label: 'Address Proof',    placeholder: null,             required: true },
-];
+import { getCountry, getCountryDocuments } from '../../../data/countries';
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
@@ -54,6 +46,9 @@ function FileUpload({ docKey, onDrop, file, error }) {
 }
 
 export default function StepDocuments({ form, update, errors = {}, nameLocked = false, setNameLocked }) {
+  const country = getCountry(form.country);
+  const docFields = getCountryDocuments(form.country);
+
   const setFile = useCallback((key, file) => {
     update({ files: { ...form.files, [key]: file } });
   }, [form.files, update]);
@@ -81,12 +76,10 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
 
   const onPlainChange = (k) => (e) => update({ [k]: e.target.value });
 
-  // ── PAN name auto-fetch ─────────────────────────────────────────────────────
+  // ── PAN name auto-fetch (India only) ────────────────────────────────────────
   // Fires EXACTLY ONCE the moment a clean, full 10-char PAN pattern is locked in.
-  // The effect only depends on form.panNumber, so unrelated state changes (file
-  // uploads, etc.) never re-trigger it; `dispatchedPan` blocks duplicate calls
-  // for the same value; and a stale-response guard discards results for a PAN
-  // the user has since edited.
+  // For non-India countries there's no PAN field, so form.panNumber stays empty
+  // and PAN_RE never matches — the effect is a no-op.
   useEffect(() => {
     const pan = (form.panNumber || '').toUpperCase();
 
@@ -163,15 +156,24 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
       )}
 
       <h3 className="font-display text-xl font-700 text-white mb-1">KYC Documents</h3>
-      <p className="text-dark-300 text-sm mb-6">Upload clear, legible copies of your documents. Files are encrypted and stored securely.</p>
+      <p className="text-dark-300 text-sm mb-4">Upload clear, legible copies of your documents. Files are encrypted and stored securely.</p>
+
+      {/* Country-specific requirement banner */}
+      <div className="mb-6 flex items-center gap-2 p-3 rounded-xl bg-brand-500/10 border border-brand-500/25 text-sm">
+        <span className="text-lg leading-none">{country.flag}</span>
+        <span className="text-dark-200">
+          Documents required to open an account in <span className="text-white font-semibold">{country.name}</span>
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {docFields.map(({ key, idKey, label, placeholder, required }) => {
-          const isAadhaar = key === 'aadhaar';
-          const isPan = key === 'pan';
+        {docFields.map(({ key, idKey, label, placeholder, required, format }) => {
+          const isAadhaar = format === 'aadhaar';
+          const isPan = format === 'pan';
           // Aadhaar shows the spaced display value; raw is what's stored in form.
           const displayValue = isAadhaar
             ? formatAadhaar(form.aadhaarNumber || '')
-            : (form[idKey] || '');
+            : (idKey ? (form[idKey] || '') : '');
 
           return (
             <div key={key}>

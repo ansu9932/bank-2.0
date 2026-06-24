@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { formatINR, formatINRShort } from './ui';
+import { formatUSD, formatUSDShort } from './ui';
 
 // SIP growth calculator with sliders and an animated invested-vs-value area chart.
 export default function SIPCalculator() {
@@ -40,14 +40,14 @@ export default function SIPCalculator() {
       <div className="grid lg:grid-cols-5 gap-8">
         {/* Sliders */}
         <div className="lg:col-span-2 space-y-7">
-          <Slider label="Monthly SIP" value={monthly} display={formatINR(monthly)} min={500} max={200000} step={500} onChange={setMonthly} />
+          <Slider label="Monthly SIP" value={monthly} display={formatUSD(monthly)} min={500} max={200000} step={500} onChange={setMonthly} />
           <Slider label="Expected Return" value={rate} display={`${rate}% p.a.`} min={8} max={15} step={0.5} onChange={setRate} />
           <Slider label="Duration" value={years} display={`${years} years`} min={5} max={30} step={1} onChange={setYears} />
 
           <div className="space-y-3 pt-2">
-            <Result label="Invested Amount" value={formatINR(invested)} muted />
-            <Result label="Est. Returns" value={formatINR(gains)} accent />
-            <Result label="Total Value" value={formatINR(futureValue)} big />
+            <Result label="Invested Amount" value={formatUSD(invested)} muted />
+            <Result label="Est. Returns" value={formatUSD(gains)} accent />
+            <Result label="Total Value" value={formatUSD(futureValue)} big />
           </div>
         </div>
 
@@ -67,10 +67,10 @@ export default function SIPCalculator() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
               <XAxis dataKey="year" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={formatINRShort} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} width={56} />
+              <YAxis tickFormatter={formatUSDShort} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} width={56} />
               <Tooltip
                 contentStyle={{ background: '#1A1A1A', border: '1px solid rgba(204,0,0,0.3)', borderRadius: 12, color: '#fff' }}
-                formatter={(v) => formatINR(v)}
+                formatter={(v) => formatUSD(v)}
               />
               <Area type="monotone" dataKey="Invested" stroke="#888" strokeWidth={2} fill="url(#sipInvested)" />
               <Area type="monotone" dataKey="Value" stroke="#FF3333" strokeWidth={2.5} fill="url(#sipValue)" />

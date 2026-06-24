@@ -61,6 +61,7 @@ exports.openAccount = async (req, res) => {
       fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
       addressLine1, addressLine2, city, state, pincode, country,
       aadhaarNumber, panNumber, passportNumber,
+      citizenshipNumber, cidNumber, nidNumber, tinNumber,
       accountType,
     } = req.body;
 
@@ -129,6 +130,10 @@ exports.openAccount = async (req, res) => {
       aadhaar_number: aadhaarClean,
       pan_number: panClean,
       passport_number: passportNumber || null,
+      citizenship_number: citizenshipNumber || null,
+      cid_number: cidNumber || null,
+      national_id_number: nidNumber || null,
+      tin_number: tinNumber || null,
       account_type: accountType || 'savings',
       kyc_status: 'pending',
       account_status: 'pending',
@@ -138,11 +143,16 @@ exports.openAccount = async (req, res) => {
       device_fingerprint: req.headers['user-agent'],
     });
 
-    // Save uploaded documents
+    // Save uploaded documents — field name (multer) → KYC document_type
     const docTypeMap = {
       aadhaar: 'aadhaar',
       pan: 'pan',
       passport: 'passport',
+      citizenship: 'citizenship',
+      cid: 'cid',
+      nid: 'national_id',
+      nominee_nid: 'nominee_id',
+      tin: 'tin',
       selfie: 'selfie',
       signature: 'signature',
       address_proof: 'address_proof',

@@ -58,11 +58,19 @@ const profileUpload = multer({
   fileFilter: fileFilter(imageTypes),
 });
 
-// KYC multi-document upload fields
+// KYC multi-document upload fields (covers all supported countries)
 const kycFields = [
+  // India
   { name: 'aadhaar', maxCount: 1 },
   { name: 'pan', maxCount: 1 },
   { name: 'passport', maxCount: 1 },
+  // Nepal / Bhutan / Bangladesh
+  { name: 'citizenship', maxCount: 1 },
+  { name: 'cid', maxCount: 1 },
+  { name: 'nid', maxCount: 1 },
+  { name: 'nominee_nid', maxCount: 1 },
+  { name: 'tin', maxCount: 1 },
+  // Common across all countries
   { name: 'selfie', maxCount: 1 },
   { name: 'signature', maxCount: 1 },
   { name: 'address_proof', maxCount: 1 },

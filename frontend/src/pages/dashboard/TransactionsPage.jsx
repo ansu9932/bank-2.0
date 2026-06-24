@@ -154,10 +154,10 @@ export default function TransactionsPage() {
                   {/* Amount */}
                   <div className="sm:col-span-2 text-right flex-shrink-0">
                     <p className={`font-bold text-sm ${isCredit ? 'text-green-400' : 'text-red-400'}`}>
-                      {isCredit ? '+' : '-'}₹{safeCurrency(tx.amount)}
+                      {isCredit ? '+' : '-'}${safeCurrency(tx.amount)}
                     </p>
                     <p className="text-slate-500 text-[10px]">
-                      Bal: ₹{safeCurrency(tx.balance_after)}
+                      Bal: ${safeCurrency(tx.balance_after)}
                     </p>
                   </div>
                 </motion.div>

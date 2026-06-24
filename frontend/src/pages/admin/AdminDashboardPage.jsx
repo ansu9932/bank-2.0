@@ -119,11 +119,11 @@ function MonthlyBarChart({ points }) {
   const yTicks = [0, 0.25, 0.5, 0.75, 1.0].map((f) => ({
     value : f * maxVal,
     y     : PAD_T + plotH * (1 - f),
-    label : maxVal * f >= 100000
-      ? `₹${((maxVal * f) / 100000).toFixed(1)}L`
+    label : maxVal * f >= 1e6
+      ? `$${((maxVal * f) / 1e6).toFixed(1)}M`
       : maxVal * f >= 1000
-        ? `₹${((maxVal * f) / 1000).toFixed(0)}k`
-        : `₹${(maxVal * f).toFixed(0)}`,
+        ? `$${((maxVal * f) / 1000).toFixed(0)}k`
+        : `$${(maxVal * f).toFixed(0)}`,
   }));
 
   return (
@@ -599,7 +599,7 @@ function AdminTxRow({ tx, index }) {
       {/* Amount */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-bold ${isCredit ? 'text-green-400' : 'text-red-400'}`}>
-          {isCredit ? '+' : '-'}₹{amount.toLocaleString('en-IN')}
+          {isCredit ? '+' : '-'}${amount.toLocaleString('en-US')}
         </p>
       </div>
     </motion.div>
@@ -972,10 +972,10 @@ export default function AdminDashboardPage() {
         label   : 'Total Volume',
         value   : (() => {
           const vol = parseFloat(stats.totalVolume || 0);
-          if (vol >= 10000000) return `₹${(vol / 10000000).toFixed(2)}Cr`;
-          if (vol >= 100000)   return `₹${(vol / 100000).toFixed(1)}L`;
-          if (vol >= 1000)     return `₹${(vol / 1000).toFixed(0)}k`;
-          return `₹${vol.toFixed(0)}`;
+          if (vol >= 1e9) return `$${(vol / 1e9).toFixed(2)}B`;
+          if (vol >= 1e6) return `$${(vol / 1e6).toFixed(2)}M`;
+          if (vol >= 1000)     return `$${(vol / 1000).toFixed(0)}k`;
+          return `$${vol.toFixed(0)}`;
         })(),
         icon    : RiBarChartLine,
         iconColor : 'text-emerald-400',

@@ -79,7 +79,7 @@ exports.initiateTransfer = async (req, res) => {
 
     // RTGS minimum check
     if (transferMode === 'RTGS' && parsedAmount < 200000)
-      return badRequest(res, 'RTGS minimum transfer amount is ₹2,00,000.');
+      return badRequest(res, 'RTGS minimum transfer amount is $200,000.');
 
     // Check sufficient balance
     if (parseFloat(account.available_balance) < parsedAmount)
@@ -90,7 +90,7 @@ exports.initiateTransfer = async (req, res) => {
     const dailyUsed = parseFloat(account.daily_transferred || 0);
     const dailyLimit = parseFloat(account.daily_transfer_limit);
     if (dailyUsed + parsedAmount > dailyLimit)
-      return badRequest(res, `Daily transfer limit of ₹${dailyLimit.toLocaleString()} exceeded.`);
+      return badRequest(res, `Daily transfer limit of $${dailyLimit.toLocaleString('en-US')} exceeded.`);
 
     // Internal vs external transfer
     const isInternal = await Account.findOne({ where: { account_number: toAccountNumber } });
@@ -236,8 +236,8 @@ const executeTransfer = async ({
       if (receiver) {
         await Notification.create({
           user_id: receiver.id,
-          title: `₹${amount.toLocaleString('en-IN')} credited to your account`,
-          message: `You received ₹${amount.toLocaleString('en-IN')} via ${mode}. Ref: ${referenceNumber}`,
+          title: `$${amount.toLocaleString('en-US')} credited to your account`,
+          message: `You received $${amount.toLocaleString('en-US')} via ${mode}. Ref: ${referenceNumber}`,
           type: 'transaction',
           priority: 'high',
         }, { transaction: t });
@@ -303,7 +303,7 @@ exports.downloadStatement = async (req, res) => {
     doc.font('Helvetica-Bold').text('IFSC Code: ', 50, 156, { continued: true });
     doc.font('Helvetica').text(account.ifsc_code);
     doc.font('Helvetica-Bold').text('Current Balance: ', 50, 174, { continued: true });
-    doc.font('Helvetica').text(`₹${parseFloat(account.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+    doc.font('Helvetica').text(`$${parseFloat(account.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
 
     // Period
     if (startDate && endDate) {

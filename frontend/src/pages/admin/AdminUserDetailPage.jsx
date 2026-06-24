@@ -129,7 +129,7 @@ export default function AdminUserDetailPage() {
               {[
                 ['Phone', user.phone], ['Date of Birth', user.date_of_birth],
                 ['Gender', user.gender], ['Occupation', user.occupation],
-                ['Nationality', user.nationality], ['Annual Income', `₹${(user.annual_income||0).toLocaleString('en-IN')}`],
+                ['Nationality', user.nationality], ['Annual Income', `$${(user.annual_income||0).toLocaleString('en-US')}`],
                 ['PAN Number', user.pan_number], ['Aadhaar', user.aadhaar_number ? '****' + user.aadhaar_number.slice(-4) : '—'],
                 ['Address', `${user.address_line1}, ${user.city}, ${user.state} - ${user.pincode}`],
               ].map(([k,v]) => (
@@ -148,11 +148,11 @@ export default function AdminUserDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   ['Account Number', user.account.account_number],
-                  ['Balance', `₹${parseFloat(user.account.balance).toLocaleString('en-IN')}`],
+                  ['Balance', `$${parseFloat(user.account.balance).toLocaleString('en-US')}`],
                   ['IFSC Code', user.account.ifsc_code],
                   ['Account Type', user.account.account_type?.toUpperCase()],
                   ['Status', user.account.status],
-                  ['Daily Transfer Limit', `₹${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}`],
+                  ['Daily Transfer Limit', `$${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-US')}`],
                 ].map(([k,v]) => (
                   <div key={k}>
                     <p className="text-dark-400 text-xs">{k}</p>
@@ -231,7 +231,7 @@ export default function AdminUserDetailPage() {
                           <td className="py-2.5 px-1">
                             <span className={`badge ${statusBadge(cardItem.status)} text-[10px]`}>{cardItem.status}</span>
                           </td>
-                          <td className="py-2.5 px-1 text-dark-200">₹{parseFloat(cardItem.issuance_fee || 0).toLocaleString('en-IN')}</td>
+                          <td className="py-2.5 px-1 text-dark-200">${parseFloat(cardItem.issuance_fee || 0).toLocaleString('en-US')}</td>
                           <td className="py-2.5 px-1 text-right">
                             <button onClick={() => deleteCard(cardItem.id)}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 text-xs font-medium transition-colors">
@@ -309,7 +309,7 @@ export default function AdminUserDetailPage() {
                     </button>
                   ))}
                 </div>
-                <input type="number" placeholder="Amount (₹)" value={manualTx.amount}
+                <input type="number" placeholder="Amount ($)" value={manualTx.amount}
                   onChange={e => setManualTx(f => ({...f, amount: e.target.value}))}
                   className="input-field text-sm py-2" />
                 <input type="text" placeholder="Description" value={manualTx.description}
@@ -330,12 +330,12 @@ export default function AdminUserDetailPage() {
             <div className="glass-card p-4">
               <p className="text-white font-semibold mb-1 text-sm">Adjust User Transfer Ceiling</p>
               <p className="text-dark-400 text-xs mb-3">
-                Current daily limit: ₹{parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}
+                Current daily limit: ${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-US')}
               </p>
               <div className="space-y-2">
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-300 text-sm">₹</span>
-                  <input type="number" min="0" step="1000" placeholder="New daily ceiling (₹)"
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-300 text-sm">$</span>
+                  <input type="number" min="0" step="1000" placeholder="New daily ceiling ($)"
                     value={ceiling} onChange={(e) => setCeiling(e.target.value)}
                     className="input-field text-sm py-2 pl-7" />
                 </div>

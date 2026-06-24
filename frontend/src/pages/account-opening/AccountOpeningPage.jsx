@@ -6,6 +6,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 import BackToHome from '../../components/common/BackToHome';
+import { getCountry, validateCountryDocuments, DEFAULT_COUNTRY } from '../../data/countries';
 
 // Step components
 import StepPersonal from './steps/StepPersonal';
@@ -24,52 +25,45 @@ const STEPS = [
 
 // ── Field validation patterns (shared with the step components) ───────────────
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE   = /^[6-9]\d{9}$/;          // Indian mobile: 10 digits, starts 6-9
-const AADHAAR_RE = /^\d{12}$/;              // exactly 12 digits (raw, un-spaced)
-const PAN_RE     = /^[A-Z]{5}[0-9]{4}[A-Z]$/; // e.g. ABCDE1234F
-const PINCODE_RE = /^\d{6}$/;
-
-// Required document uploads for the Documents step.
-const REQUIRED_DOCS = [
-  ['aadhaar', 'Aadhaar card'],
-  ['pan', 'PAN card'],
-  ['selfie', 'Live selfie'],
-  ['signature', 'Signature'],
-  ['address_proof', 'Address proof'],
-];
 
 /**
  * Validate a single step's required fields. Returns a map of
  * { fieldKey: 'message' }. An empty map means the step is valid and the user
  * may advance. File-upload errors are keyed as `file_<docKey>`.
+ *
+ * Several rules are country-aware: the phone-number length, the postal-code
+ * length, and the entire Documents step are derived from the country chosen on
+ * Step 1 (see src/data/countries.js).
  */
 export function getStepErrors(step, form, otpVerified) {
   const e = {};
+  const country = getCountry(form.country);
 
   if (step === 1) {
+    if (!form.country?.trim()) e.country = 'Please choose your country.';
     if (!form.firstName?.trim()) e.firstName = 'First name is required.';
     if (!form.lastName?.trim()) e.lastName = 'Last name is required.';
     if (!form.email?.trim()) e.email = 'Email address is required.';
     else if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address.';
-    if (!form.phone?.trim()) e.phone = 'Mobile number is required.';
-    else if (!PHONE_RE.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number.';
+    const phone = (form.phone || '').replace(/\D/g, '');
+    if (!phone) e.phone = 'Mobile number is required.';
+    else if (phone.length !== country.phoneDigits) {
+      e.phone = `Enter a valid ${country.phoneDigits}-digit mobile number.`;
+    }
     if (!form.dateOfBirth) e.dateOfBirth = 'Date of birth is required.';
     if (!form.gender) e.gender = 'Please select your gender.';
     if (!form.accountType) e.accountType = 'Please select an account type.';
   } else if (step === 2) {
     if (!form.addressLine1?.trim()) e.addressLine1 = 'Address line 1 is required.';
     if (!form.city?.trim()) e.city = 'City is required.';
-    if (!form.state) e.state = 'Please select a state.';
-    if (!form.pincode?.trim()) e.pincode = 'PIN code is required.';
-    else if (!PINCODE_RE.test(form.pincode.trim())) e.pincode = 'Enter a valid 6-digit PIN code.';
+    if (!form.state?.trim()) e.state = country.hasStateList ? 'Please select a state.' : 'State / province is required.';
+    const postal = (form.pincode || '').replace(/\D/g, '');
+    if (!postal) e.pincode = `${country.postalLabel} is required.`;
+    else if (postal.length !== country.postalDigits) {
+      e.pincode = `Enter a valid ${country.postalDigits}-digit ${country.postalLabel}.`;
+    }
   } else if (step === 3) {
-    if (!form.aadhaarNumber) e.aadhaarNumber = 'Aadhaar number is required.';
-    else if (!AADHAAR_RE.test(form.aadhaarNumber)) e.aadhaarNumber = 'Aadhaar must be exactly 12 digits.';
-    if (!form.panNumber) e.panNumber = 'PAN number is required.';
-    else if (!PAN_RE.test(form.panNumber)) e.panNumber = 'Enter a valid PAN (e.g. ABCDE1234F).';
-    REQUIRED_DOCS.forEach(([k, label]) => {
-      if (!form.files?.[k]) e[`file_${k}`] = `${label} upload is required.`;
-    });
+    Object.assign(e, validateCountryDocuments(form.country || DEFAULT_COUNTRY, form));
   } else if (step === 4) {
     if (!otpVerified) e.otp = 'Please verify your email with the OTP before continuing.';
   }
@@ -90,9 +84,10 @@ const initForm = {
   maritalStatus: '', nationality: 'Indian', occupation: '', annualIncome: '',
   accountType: 'savings',
   // Address
-  addressLine1: '', addressLine2: '', city: '', state: '', pincode: '', country: 'India',
-  // Documents
+  addressLine1: '', addressLine2: '', city: '', state: '', pincode: '', country: DEFAULT_COUNTRY,
+  // Documents — identity numbers across all supported countries
   aadhaarNumber: '', panNumber: '', passportNumber: '',
+  citizenshipNumber: '', cidNumber: '', nidNumber: '', tinNumber: '',
   // Files
   files: {},
 };

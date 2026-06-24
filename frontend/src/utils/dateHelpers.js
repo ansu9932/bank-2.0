@@ -55,10 +55,10 @@ export function safeRelative(value, fallback = 'Recently') {
  * Returns '0' if the value is NaN/null/undefined.
  *
  * @param {*} value
- * @returns {string}  — formatted Indian locale number (e.g. "1,25,000")
+ * @returns {string}  — formatted US locale number (e.g. "125,000")
  */
 export function safeCurrency(value) {
   const num = parseFloat(value);
   if (isNaN(num)) return '0';
-  return num.toLocaleString('en-IN');
+  return num.toLocaleString('en-US');
 }

@@ -9,11 +9,11 @@ import { Section, SectionTitle, PageHero, RedButton } from '../../components/pub
 import { staggerContainer, fadeUp, inView } from '../../components/public/ui';
 
 const LOANS = [
-  { icon: User, name: 'Personal Loan', amount: '₹50,000 – ₹40 Lakhs', rate: 'From 10.99% p.a.', tenure: '12 – 60 months', note: 'Approval in 24 hours' },
-  { icon: Home, name: 'Home Loan', amount: 'Up to ₹5 Crore', rate: 'From 8.5% p.a.', tenure: 'Up to 30 years', note: 'Tax benefits u/s 80C & 24B' },
-  { icon: Car, name: 'Car Loan', amount: 'Up to ₹30 Lakhs', rate: 'From 8.75% p.a.', tenure: 'Up to 7 years', note: '100% on-road funding' },
+  { icon: User, name: 'Personal Loan', amount: '$5,000 – $400,000', rate: 'From 10.99% p.a.', tenure: '12 – 60 months', note: 'Approval in 24 hours' },
+  { icon: Home, name: 'Home Loan', amount: 'Up to $5 Million', rate: 'From 8.5% p.a.', tenure: 'Up to 30 years', note: 'Attractive tax benefits' },
+  { icon: Car, name: 'Car Loan', amount: 'Up to $300,000', rate: 'From 8.75% p.a.', tenure: 'Up to 7 years', note: '100% on-road funding' },
   { icon: Coins, name: 'Gold Loan', amount: 'Per gram value', rate: 'From 9.5% p.a.', tenure: 'Flexible', note: 'Instant disbursement' },
-  { icon: GraduationCap, name: 'Education Loan', amount: 'Up to ₹20 Lakhs', rate: 'From 9.0% p.a.', tenure: 'Up to 15 years', note: 'India + abroad, moratorium' },
+  { icon: GraduationCap, name: 'Education Loan', amount: 'Up to $200,000', rate: 'From 9.0% p.a.', tenure: 'Up to 15 years', note: 'Domestic + abroad, moratorium' },
 ];
 
 export default function LoansPage() {
@@ -105,7 +105,7 @@ function EligibilityChecker() {
         <Field label="Age">
           <input type="number" required min="18" max="75" value={age} onChange={(e) => setAge(e.target.value)} placeholder="e.g. 30" className="al-input" />
         </Field>
-        <Field label="Monthly Income (₹)">
+        <Field label="Monthly Income ($)">
           <input type="number" required min="0" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="e.g. 60000" className="al-input" />
         </Field>
         <Field label="Employment Type">
@@ -160,9 +160,9 @@ function EligibilityChecker() {
 function formatLimit(income, employment) {
   const multiplier = employment === 'salaried' ? 24 : 18;
   const limit = income * multiplier;
-  if (limit >= 1e7) return '₹' + (limit / 1e7).toFixed(1) + ' Crore';
-  if (limit >= 1e5) return '₹' + (limit / 1e5).toFixed(1) + ' Lakhs';
-  return '₹' + Math.round(limit).toLocaleString('en-IN');
+  if (limit >= 1e9) return '$' + (limit / 1e9).toFixed(1) + ' Billion';
+  if (limit >= 1e6) return '$' + (limit / 1e6).toFixed(1) + ' Million';
+  return '$' + Math.round(limit).toLocaleString('en-US');
 }
 
 function Field({ label, children }) {
