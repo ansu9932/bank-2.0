@@ -23,7 +23,7 @@ function resolveType(explicitType) {
   return 'account-setup';
 }
 
-export default function ExpiredLinkPage({ type, supportEmail = 'support@alisterbank.com' }) {
+export default function ExpiredLinkPage({ type, supportEmail = 'info@alisterbank.online' }) {
   const resolvedType = resolveType(type);
   const isVideoKyc = resolvedType === 'video-kyc';
   const flowLabel = isVideoKyc ? 'Video KYC' : 'Account Setup';

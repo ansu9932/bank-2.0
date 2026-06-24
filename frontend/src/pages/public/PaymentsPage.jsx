@@ -19,10 +19,10 @@ const METHODS = [
 const BILL_CATEGORIES = ['Electricity', 'Water', 'Gas', 'Mobile Recharge', 'DTH', 'Insurance', 'Credit Card', 'Broadband'];
 
 const LIMITS = [
-  ['IMPS', '₹1', '₹5 Lakh', 'Free', 'Instant'],
-  ['NEFT', '₹1', 'No limit', 'Free', '30 min'],
-  ['RTGS', '₹2 Lakh', 'No limit', '₹25', '30 min'],
-  ['UPI', '₹1', '₹1 Lakh', 'Free', 'Instant'],
+  ['IMPS', '$1', '$500,000', 'Free', 'Instant'],
+  ['NEFT', '$1', 'No limit', 'Free', '30 min'],
+  ['RTGS', '$200,000', 'No limit', '$25', '30 min'],
+  ['UPI', '$1', '$100,000', 'Free', 'Instant'],
 ];
 
 export default function PaymentsPage() {

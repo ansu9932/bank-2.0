@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RiCheckLine } from 'react-icons/ri';
 import BackToHome from '../../components/common/BackToHome';
+import api from '../../services/api';
 
 const STEPS = [
   { id: 1, label: 'User ID' },
@@ -30,6 +31,13 @@ export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // ── Non-CAPTCHA bot protection ────────────────────────────────────────────
+  // 1) Honeypot: a hidden field real users never see/fill. Any value = a bot.
+  // 2) Timing trap: a human takes >2.5s to read + type the User ID; near-instant
+  //    submits are scripted. Both checks run silently before the first API call.
+  const [hp, setHp] = useState('');           // honeypot ("company website")
+  const loadedAt = useRef(Date.now());        // page-load timestamp for timing
+
   // Step 1
   const [userId, setUserId] = useState('');
 
@@ -37,24 +45,34 @@ export default function ForgotPasswordPage() {
   const [accountNumber, setAccountNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
 
+  // Step 3 — user must acknowledge the security notice before the link is sent.
+  const [agreed, setAgreed] = useState(false);
+
   // Success
   const [maskedEmail, setMaskedEmail] = useState('');
 
   // ── Step 1: verify the NetBanking User ID ─────────────────────────────────
+  // Uses the shared `api` client (baseURL → backend host). A raw fetch('/api/…')
+  // would resolve to the FRONTEND origin and return index.html (404 HTML).
   const verifyUserId = async () => {
+    // ── Silent bot gate (honeypot + timing) ─────────────────────────────────
+    if (hp.trim() !== '') {
+      // A filled honeypot = automated submission. Fail without revealing why.
+      setError('Unable to verify your request. Please try again.');
+      return;
+    }
+    if (Date.now() - loadedAt.current < 2500) {
+      setError('Please take a moment — fill in your User ID and try again.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/verify-userid', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'User ID not found. Please check and try again.');
+      await api.post('/auth/verify-userid', { userId });
       setCurrentStep(2);
     } catch (err) {
-      setError(err.message);
+      setError(err?.response?.data?.message || 'User ID not found. Please check and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -65,17 +83,11 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/verify-account-details', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, accountNumber, dateOfBirth }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Details do not match our records. Please try again.');
-      setMaskedEmail(data.maskedEmail || '');
+      const { data } = await api.post('/auth/verify-account-details', { userId, accountNumber, dateOfBirth });
+      setMaskedEmail(data?.data?.maskedEmail || '');
       setCurrentStep(3);
     } catch (err) {
-      setError(err.message);
+      setError(err?.response?.data?.message || 'Details do not match our records. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -86,16 +98,10 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/send-reset-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, accountNumber, dateOfBirth }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to send reset link. Please try again.');
+      await api.post('/auth/send-reset-link', { userId, accountNumber, dateOfBirth });
       setCurrentStep('success');
     } catch (err) {
-      setError(err.message);
+      setError(err?.response?.data?.message || 'Failed to send reset link. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -138,6 +144,14 @@ export default function ForgotPasswordPage() {
           margin-right: 8px;
         }
         @media (max-width: 380px) { .fp-step-label { display: none; } }
+        /* Honeypot — visually hidden from humans, still in the DOM for bots. */
+        .fp-hp {
+          position: absolute !important;
+          left: -9999px !important;
+          top: -9999px !important;
+          width: 1px; height: 1px;
+          opacity: 0; pointer-events: none;
+        }
       `}</style>
 
       {/* Back to Home (fixed top-left) */}
@@ -238,6 +252,20 @@ export default function ForgotPasswordPage() {
                     </p>
 
                     {error && <ErrorBanner message={error} />}
+
+                    {/* Honeypot field — hidden from real users; bots fill it. */}
+                    <div className="fp-hp" aria-hidden="true">
+                      <label htmlFor="fp-company-website">Company Website</label>
+                      <input
+                        id="fp-company-website"
+                        type="text"
+                        name="company_website"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={hp}
+                        onChange={(e) => setHp(e.target.value)}
+                      />
+                    </div>
 
                     <div className="mb-[18px]">
                       <label className="block text-[13px] font-medium mb-[7px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
@@ -348,7 +376,7 @@ export default function ForgotPasswordPage() {
 
                     {/* Email display box */}
                     <div
-                      className="rounded-[10px] px-4 py-3.5 mb-6"
+                      className="rounded-[10px] px-4 py-3.5 mb-5"
                       style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
                     >
                       <p className="text-[12px] mb-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
@@ -357,25 +385,56 @@ export default function ForgotPasswordPage() {
                       <p className="text-[15px] font-bold text-white">{maskedEmail || 'your registered email'}</p>
                     </div>
 
+                    {/* Security notice — must be acknowledged before sending */}
+                    <div
+                      className="rounded-[10px] px-4 py-3.5 mb-4 text-[13px] text-left flex items-start gap-2"
+                      style={{ background: 'rgba(204,0,0,0.07)', border: '1px solid rgba(204,0,0,0.25)', color: 'rgba(255,255,255,0.6)' }}
+                    >
+                      <span className="text-[15px] leading-none mt-0.5">⚠️</span>
+                      <span>
+                        <strong className="text-white">Important:</strong> The reset link is valid for <strong className="text-white">5 minutes</strong> and can be used only once.
+                        <span className="block mt-1">Never share this link with anyone — including Alister Bank staff. We will never ask you for it.</span>
+                      </span>
+                    </div>
+
+                    {/* Terms & conditions acknowledgement */}
+                    <label className="flex items-start gap-2.5 mb-6 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={agreed}
+                        onChange={(e) => setAgreed(e.target.checked)}
+                        className="mt-0.5 h-[18px] w-[18px] shrink-0 cursor-pointer accent-[#CC0000]"
+                      />
+                      <span className="text-[13px] leading-[1.6]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        I understand and agree that this reset link is confidential, expires in 5 minutes, and must not be shared with anyone. I accept the{' '}
+                        <a href="/terms" target="_blank" rel="noreferrer" className="font-medium hover:underline" style={{ color: '#CC0000' }}>Terms &amp; Conditions</a>.
+                      </span>
+                    </label>
+
                     <div className="flex flex-col-reverse sm:flex-row gap-3">
                       <motion.button
                         type="button"
-                        onClick={() => { setCurrentStep(2); setError(''); }}
+                        onClick={() => { setCurrentStep(2); setError(''); setAgreed(false); }}
                         whileTap={{ scale: 0.97 }}
                         className={`${GHOST_BTN} w-full sm:w-auto`}
                       >
                         ← Back
                       </motion.button>
-                      <motion.button
-                        type="button"
-                        onClick={sendResetLink}
-                        disabled={isLoading}
-                        whileHover={{ y: -2, boxShadow: '0 8px 25px rgba(204,0,0,0.35)' }}
-                        whileTap={{ scale: 0.97 }}
-                        className={`${PRIMARY_BTN} flex-1`}
-                      >
-                        {isLoading ? <><span className="fp-spin" /> Sending Reset Link...</> : 'Send Reset Link →'}
-                      </motion.button>
+                      {/* Send button only appears once the user has acknowledged the notice */}
+                      {agreed && (
+                        <motion.button
+                          type="button"
+                          onClick={sendResetLink}
+                          disabled={isLoading}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ y: -2, boxShadow: '0 8px 25px rgba(204,0,0,0.35)' }}
+                          whileTap={{ scale: 0.97 }}
+                          className={`${PRIMARY_BTN} flex-1`}
+                        >
+                          {isLoading ? <><span className="fp-spin" /> Sending Reset Link...</> : 'Send Reset Link →'}
+                        </motion.button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -397,7 +456,7 @@ export default function ForgotPasswordPage() {
                     <p className="text-[14px] mt-2 leading-[1.7]" style={{ color: 'rgba(255,255,255,0.5)' }}>
                       We've sent a password reset link to{' '}
                       <span className="text-white font-bold">{maskedEmail || 'your registered email'}</span>.
-                      The link expires in 30 minutes. Check your spam folder if you don't see it.
+                      The link expires in 5 minutes. Check your spam folder if you don't see it.
                     </p>
 
                     <div className="my-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)' }} />

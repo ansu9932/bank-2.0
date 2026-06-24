@@ -52,7 +52,7 @@ export default function SupportPage() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { icon: '📞', label: '24/7 Helpline', value: '1800-XXX-XXXX', sub: 'Toll-free' },
-          { icon: '📧', label: 'Email Support', value: 'support@alisterbank.com', sub: '24hr response' },
+          { icon: '📧', label: 'Email Support', value: 'info@alisterbank.online', sub: '24hr response' },
           { icon: '💬', label: 'Live Chat', value: 'Available Now', sub: 'Mon-Fri 9am-6pm' },
         ].map(c => (
           <div key={c.label} className="glass-card p-4 text-center">

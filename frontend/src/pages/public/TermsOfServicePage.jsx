@@ -41,7 +41,7 @@ const SECTIONS = [
           ]}
         />
         <LP>
-          {'Minimum opening deposit: ₹1,00,000 (INR) or equivalent.\nSavings Account minimum balance: ₹5,00,000 (INR) or equivalent.\nCurrent Account minimum balance: ₹10,00,000 (INR) or equivalent.'}
+          {'Minimum opening deposit: $100,000 (USD) or equivalent.\nSavings Account minimum balance: $500,000 (USD) or equivalent.\nCurrent Account minimum balance: $1,000,000 (USD) or equivalent.'}
         </LP>
       </>
     ),
@@ -206,7 +206,7 @@ const SECTIONS = [
     body: (
       <>
         <LP>
-          {'Alister Bank, N.A. — Legal Department\n350 Park Avenue, 21st Floor\nNew York, NY 10022\nlegal@alisterbank.com\n1-800-425-4783'}
+          {'Alister Bank, N.A. — Legal Department\n350 Park Avenue, 21st Floor\nNew York, NY 10022\ninfo@alisterbank.online\n1-800-425-4783'}
         </LP>
         <LP>To file a complaint with a federal regulator:</LP>
         <LList

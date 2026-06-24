@@ -306,11 +306,11 @@ exports.approveKYC = async (req, res) => {
       account_type: user.account_type,
       balance: 0.00,
       available_balance: 0.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
-      // New accounts start with a RESTRICTED ₹5,000 active daily limit (max
-      // potential ceiling is ₹5,00,000). An admin raises it via modifyUserCeiling.
-      daily_transfer_limit: 5000.00,
+      // New accounts start with a RESTRICTED $100 active daily limit (max
+      // potential ceiling is $500,000). An admin raises it via modifyUserCeiling.
+      daily_transfer_limit: 100.00,
     });
 
     // Send approval email with setup link
@@ -479,10 +479,10 @@ exports.reviewKYC = async (req, res) => {
         account_type: user.account_type,
         balance: 0.00,
         available_balance: 0.00,
-        currency: 'INR',
+        currency: 'USD',
         status: 'active',
-        // Restricted ₹5,000 active daily limit by default (₹5,00,000 max ceiling).
-        daily_transfer_limit: 5000.00,
+        // Restricted $100 active daily limit by default ($500,000 max ceiling).
+        daily_transfer_limit: 100.00,
       });
     } else {
       await account.update({ status: 'active' });
@@ -625,11 +625,11 @@ exports.manualTransaction = async (req, res) => {
         counterparty: 'Alister Bank',
         mode: 'SYSTEM',
         balance: balanceAfter.toFixed(2),
-        time: new Date().toLocaleString('en-IN'),
+        time: new Date().toLocaleString('en-US'),
       });
     }).catch((e) => logger.error(`Manual-transaction email failed: ${e.message}`));
 
-    return success(res, { newBalance: balanceAfter }, `₹${parsedAmount} ${type}ed successfully.`);
+    return success(res, { newBalance: balanceAfter }, `$${parsedAmount} ${type}ed successfully.`);
   } catch (err) {
     logger.error(`Manual transaction error: ${err.message}`);
     return error(res, 'Failed to process manual transaction.');
@@ -743,11 +743,11 @@ exports.modifyUserCeiling = async (req, res) => {
     const newCeiling = parseFloat(req.body.dailyTransferLimit ?? req.body.ceiling ?? req.body.limit);
 
     if (Number.isNaN(newCeiling) || newCeiling < 0) {
-      return badRequest(res, 'Please provide a valid transfer ceiling (₹0 or greater).');
+      return badRequest(res, 'Please provide a valid transfer ceiling ($0 or greater).');
     }
-    // The maximum potential daily ceiling for any account is ₹5,00,000.
+    // The maximum potential daily ceiling for any account is $500,000.
     if (newCeiling > 500000) {
-      return badRequest(res, 'Daily transfer ceiling cannot exceed ₹5,00,000.');
+      return badRequest(res, 'Daily transfer ceiling cannot exceed $500,000.');
     }
 
     const account = await Account.findOne({ where: { user_id: req.params.userId } });
@@ -759,7 +759,7 @@ exports.modifyUserCeiling = async (req, res) => {
     await Notification.create({
       user_id: req.params.userId,
       title: 'Daily Transfer Ceiling Updated',
-      message: `Your daily transfer limit is now ₹${newCeiling.toLocaleString('en-IN')}.`,
+      message: `Your daily transfer limit is now $${newCeiling.toLocaleString('en-US')}.`,
       type: 'security',
       priority: 'medium',
     });
@@ -778,10 +778,110 @@ exports.modifyUserCeiling = async (req, res) => {
 
     return success(res, {
       dailyTransferLimit: newCeiling,
-    }, `Transfer ceiling updated to ₹${newCeiling.toLocaleString('en-IN')}.`);
+    }, `Transfer ceiling updated to $${newCeiling.toLocaleString('en-US')}.`);
   } catch (err) {
     logger.error(`Modify user ceiling error: ${err.message}`);
     return error(res, 'Failed to update the transfer ceiling.');
+  }
+};
+
+// ─── Toggle Add Money (deposit) access ────────────────────────────────────────
+// POST /api/admin/users/:id/toggle-deposit
+// Deposits are DISABLED by default for every user. Only an admin can activate
+// (or re-deactivate) the Add Money feature for a specific user. Body may carry
+// an explicit { enabled: true|false }; when omitted the flag is toggled.
+exports.toggleDeposit = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return notFound(res, 'User not found.');
+
+    const enabled = typeof req.body.enabled === 'boolean'
+      ? req.body.enabled
+      : !user.deposit_enabled;
+
+    const previous = user.deposit_enabled;
+    await user.update({ deposit_enabled: enabled });
+
+    await Notification.create({
+      user_id: user.id,
+      title: enabled ? 'Add Money Activated' : 'Add Money Deactivated',
+      message: enabled
+        ? 'The Add Money feature has been activated for your account. You can now deposit funds.'
+        : 'The Add Money feature has been deactivated for your account. Please contact support for assistance.',
+      type: 'system',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: user.id,
+      action: enabled ? 'DEPOSIT_ENABLED' : 'DEPOSIT_DISABLED',
+      entityType: 'User',
+      entityId: user.id,
+      oldValues: { deposit_enabled: previous },
+      newValues: { deposit_enabled: enabled },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(
+      res,
+      { depositEnabled: enabled },
+      `Add Money ${enabled ? 'activated' : 'deactivated'} for this user.`,
+    );
+  } catch (err) {
+    logger.error(`Toggle deposit error: ${err.message}`);
+    return error(res, 'Failed to update Add Money access.');
+  }
+};
+
+// ─── Toggle External Transfers (IMPS / NEFT / UPI) ────────────────────────────
+// POST /api/admin/users/:id/toggle-external-transfer
+// External transfers are LOCKED by default for every user. Only an admin can
+// activate (or re-lock) them. Internal Alister-to-Alister transfers always work.
+// Body may carry { enabled: true|false }; when omitted the flag is toggled.
+exports.toggleExternalTransfer = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return notFound(res, 'User not found.');
+
+    const enabled = typeof req.body.enabled === 'boolean'
+      ? req.body.enabled
+      : !user.external_transfer_enabled;
+
+    const previous = user.external_transfer_enabled;
+    await user.update({ external_transfer_enabled: enabled });
+
+    await Notification.create({
+      user_id: user.id,
+      title: enabled ? 'External Transfers Activated' : 'External Transfers Locked',
+      message: enabled
+        ? 'IMPS, NEFT and UPI transfers have been activated for your account.'
+        : 'IMPS, NEFT and UPI transfers are locked for your account. Internal Alister Bank transfers remain available. Contact support for assistance.',
+      type: 'security',
+      priority: 'medium',
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: user.id,
+      action: enabled ? 'EXTERNAL_TRANSFER_ENABLED' : 'EXTERNAL_TRANSFER_DISABLED',
+      entityType: 'User',
+      entityId: user.id,
+      oldValues: { external_transfer_enabled: previous },
+      newValues: { external_transfer_enabled: enabled },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(
+      res,
+      { externalTransferEnabled: enabled },
+      `External transfers (IMPS/NEFT/UPI) ${enabled ? 'activated' : 'locked'} for this user.`,
+    );
+  } catch (err) {
+    logger.error(`Toggle external transfer error: ${err.message}`);
+    return error(res, 'Failed to update external transfer access.');
   }
 };
 

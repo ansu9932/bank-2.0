@@ -8,6 +8,10 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 import BackToHome from '../../components/common/BackToHome';
+import Turnstile from '../../components/common/Turnstile';
+
+// Cloudflare Turnstile site key — when set, the adaptive CAPTCHA can render.
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 // Absolute lifespan of the login screen, mirroring the backend login handshake
 // TTL (exactly 10 minutes). If the page sits open/idle past this window, the
@@ -29,9 +33,11 @@ const LINK_CLASS = 'text-[#CC0000] font-medium hover:text-[#FF3333] hover:underl
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { loading, error } = useSelector(s => s.auth);
+  const { loading, error, captchaRequired, captchaMessage } = useSelector(s => s.auth);
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPwd, setShowPwd] = useState(false);
+  // Turnstile token — only needed when the backend flags the attempt as risky.
+  const [captchaToken, setCaptchaToken] = useState('');
   // HDFC-style ephemeral handshake token. Fetched on mount, mirrored into the
   // URL as ?h=, and echoed back on submit so the backend can block replays.
   const [handshakeToken, setHandshakeToken] = useState('');
@@ -103,6 +109,11 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.username || !form.password) { toast.error('Please fill all fields'); return; }
+    // If a CAPTCHA challenge is active, require a solved token before submitting.
+    if (captchaRequired && TURNSTILE_SITE_KEY && !captchaToken) {
+      toast.error('Please complete the security check below.');
+      return;
+    }
     // Prefer in-state token; fall back to the URL param if state was reset.
     const tokenFromUrl = new URLSearchParams(window.location.search).get('h');
     const hToken = handshakeToken || tokenFromUrl || '';
@@ -111,13 +122,15 @@ export default function LoginPage() {
       await initHandshake();
       return;
     }
-    const result = await dispatch(login({ ...form, handshakeToken: hToken }));
+    const result = await dispatch(login({ ...form, handshakeToken: hToken, captchaToken }));
     if (login.fulfilled.match(result)) {
       allowNavigation(); // sanctioned success exit → no redirect-home
       toast.success('Welcome back!');
       navigate('/dashboard');
     } else {
-      // Handshake is single-use; on any failure mint a fresh one for the retry.
+      // Handshake AND Turnstile tokens are single-use; on any failure mint a
+      // fresh handshake and clear the spent CAPTCHA token so the user re-solves.
+      setCaptchaToken('');
       initHandshake();
     }
   };
@@ -269,7 +282,25 @@ export default function LoginPage() {
                 </Link>
               </div>
 
-              {/* Cloudflare Turnstile removed — direct submission to core endpoints. */}
+              {/* Adaptive CAPTCHA — only shown when the backend flags the
+                  attempt as suspicious (repeated failures). Clean logins skip it. */}
+              {captchaRequired && (
+                <div className="space-y-2 rounded-[12px] p-3" style={{ background: 'rgba(255,176,32,0.06)', border: '1px solid rgba(255,176,32,0.25)' }}>
+                  <p className="text-[13px] flex items-start gap-1.5" style={{ color: '#FFB020' }}>
+                    <RiShieldCheckLine className="mt-0.5 shrink-0" />
+                    <span>{captchaMessage || 'For your security, please complete the verification below to continue.'}</span>
+                  </p>
+                  {TURNSTILE_SITE_KEY ? (
+                    <Turnstile
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onVerify={(t) => setCaptchaToken(t)}
+                      onExpire={() => setCaptchaToken('')}
+                    />
+                  ) : (
+                    <p className="text-[12px] text-white/40">Verification is temporarily unavailable. Please try again shortly.</p>
+                  )}
+                </div>
+              )}
 
               <motion.button
                 type="submit"

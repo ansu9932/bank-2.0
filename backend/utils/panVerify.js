@@ -40,11 +40,6 @@ const PAN_RESOURCE_PATH = process.env.CASHFREE_PAN_RESOURCE_PATH || '/pan';
 // caller supplies no real name we inject a neutral placeholder purely to satisfy
 // schema validation — the gateway still returns the true `registered_name`.
 const NAME_PLACEHOLDER = process.env.CASHFREE_PAN_NAME_PLACEHOLDER || 'Alister Bank Customer';
-// Cashfree requires a date-based API version header. Newer accounts expect a
-// current-era version (Cashfree's own Postman docs reference e.g. 2025-01-01);
-// an outdated value can itself trigger a 400 schema rejection. Override via env
-// to match your dashboard; the raw-body logging below reveals the required value.
-const DEFAULT_API_VERSION = '2025-01-01';
 
 /** JSON.stringify that never throws (handles circular / odd payloads). */
 function safeStringify(value) {
@@ -53,6 +48,25 @@ function safeStringify(value) {
   } catch {
     return String(value);
   }
+}
+
+/**
+ * Extract a SHORT, non-PII reason string from an upstream error body so we can
+ * safely surface WHY Cashfree rejected the call (auth/IP/product/version) to the
+ * client for diagnosis. Only known message-like keys are read — never identity
+ * fields like registered_name/dob — and the result is truncated.
+ */
+function extractUpstreamReason(data) {
+  if (!data) return null;
+  if (typeof data === 'string') return data.slice(0, 200);
+  if (typeof data !== 'object') return String(data).slice(0, 200);
+  const keys = ['message', 'error', 'error_description', 'reason', 'subCode', 'sub_code', 'code', 'status', 'type'];
+  const parts = [];
+  for (const k of keys) {
+    const v = data[k];
+    if (typeof v === 'string' && v.trim()) parts.push(`${k}=${v.trim()}`);
+  }
+  return parts.length ? parts.join('; ').slice(0, 200) : null;
 }
 
 /**
@@ -89,9 +103,10 @@ function isValidPanFormat(pan) {
 }
 
 /** Build a structured, classifiable error for the controller to map to a status. */
-function makeError(code, message) {
+function makeError(code, message, extra = {}) {
   const err = new Error(message);
   err.code = code;
+  Object.assign(err, extra);
   return err;
 }
 
@@ -130,18 +145,24 @@ async function verifyPan(pan, name) {
 
   let response;
   try {
+    // Cashfree's Verification Suite PAN endpoints authenticate with just the
+    // client id/secret; their docs examples do NOT send an x-api-version, and a
+    // wrong/future version value is a common cause of a blanket 400 rejection.
+    // So we only attach x-api-version when explicitly configured via env.
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-client-id': process.env.CASHFREE_CLIENT_ID,
+      'x-client-secret': process.env.CASHFREE_CLIENT_SECRET,
+    };
+    if (process.env.CASHFREE_API_VERSION) {
+      headers['x-api-version'] = process.env.CASHFREE_API_VERSION;
+    }
+
     response = await axios.post(
       `${baseUrl()}${PAN_RESOURCE_PATH}`,
       { pan: normalized, name: requestName, verification_id: verificationId },
       {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-id': process.env.CASHFREE_CLIENT_ID,
-          'x-client-secret': process.env.CASHFREE_CLIENT_SECRET,
-          // Cashfree verification APIs require a version header; omitting it is a
-          // common cause of blanket non-2xx rejections (→ the reported 502).
-          'x-api-version': process.env.CASHFREE_API_VERSION || DEFAULT_API_VERSION,
-        },
+        headers,
         timeout: REQUEST_TIMEOUT_MS,
         // Resolve (don't throw) for any status < 500 so we can inspect 4xx bodies
         // and classify them (e.g. a "PAN not found" 422 is a NORMAL outcome, not
@@ -164,7 +185,10 @@ async function verifyPan(pan, name) {
       + `${status ? ` [status=${status}]` : ''}: ${err.message}`
       + ` | body=${safeStringify(err?.response?.data)}`,
     );
-    throw makeError('CASHFREE_UPSTREAM', 'PAN verification service is currently unavailable.');
+    throw makeError('CASHFREE_UPSTREAM', 'PAN verification service is currently unavailable.', {
+      upstreamStatus: status || null,
+      upstreamReason: extractUpstreamReason(err?.response?.data) || err.message || null,
+    });
   }
 
   const { status, data } = response;
@@ -215,7 +239,10 @@ async function verifyPan(pan, name) {
       // Auth/version/quota/etc. — surface as a coded upstream fault. The controller
       // logs the body above and returns a clean 400 JSON (per ops preference), so
       // the load balancer never sees an opaque 502 and the thread stays alive.
-      throw makeError('CASHFREE_UPSTREAM', `PAN verification rejected by gateway (status ${status}).`);
+      throw makeError('CASHFREE_UPSTREAM', `PAN verification rejected by gateway (status ${status}).`, {
+        upstreamStatus: status,
+        upstreamReason: extractUpstreamReason(data),
+      });
     }
 
     if (isValid && registeredName) {
@@ -247,7 +274,7 @@ async function verifyPan(pan, name) {
       `[cashfree:pan] ${verificationId} response-mapping failure: ${mapErr.message}`
       + ` | status=${status} shape=${describeShape(data)}`,
     );
-    throw makeError('CASHFREE_UPSTREAM', 'Unexpected verification response format.');
+    throw makeError('CASHFREE_UPSTREAM', 'Unexpected verification response format.', { upstreamStatus: status || null });
   }
 }
 

@@ -44,7 +44,7 @@ const TxRow = ({ tx }) => {
         </p>
       </div>
       <p className={`text-sm font-bold flex-shrink-0 ${isCredit ? 'text-green-400' : 'text-red-400'}`}>
-        {isCredit ? '+' : '-'}₹{parseFloat(tx.amount).toLocaleString('en-IN')}
+        {isCredit ? '+' : '-'}${parseFloat(tx.amount).toLocaleString('en-US')}
       </p>
     </motion.div>
   );
@@ -74,12 +74,12 @@ export default function DashboardHome() {
   const stats = [
     {
       label: 'Total Credits',
-      value: `₹${transactions.filter(t=>t.transaction_type==='credit').reduce((a,t)=>a+parseFloat(t.amount),0).toLocaleString('en-IN')}`,
+      value: `$${transactions.filter(t=>t.transaction_type==='credit').reduce((a,t)=>a+parseFloat(t.amount),0).toLocaleString('en-US')}`,
       icon: RiArrowDownLine, color: 'text-green-400', bg: 'bg-green-500/10',
     },
     {
       label: 'Total Debits',
-      value: `₹${transactions.filter(t=>t.transaction_type==='debit').reduce((a,t)=>a+parseFloat(t.amount),0).toLocaleString('en-IN')}`,
+      value: `$${transactions.filter(t=>t.transaction_type==='debit').reduce((a,t)=>a+parseFloat(t.amount),0).toLocaleString('en-US')}`,
       icon: RiArrowUpLine, color: 'text-red-400', bg: 'bg-red-500/10',
     },
     {
@@ -144,7 +144,7 @@ export default function DashboardHome() {
               { label: 'Account Number', value: account?.account_number || '—' },
               { label: 'IFSC Code', value: account?.ifsc_code || 'ALST0000001' },
               { label: 'SWIFT Code', value: account?.swift_code || 'ALSTINBB' },
-              { label: 'Daily Limit', value: `₹${parseFloat(account?.daily_transfer_limit || 500000).toLocaleString('en-IN')}` },
+              { label: 'Daily Limit', value: `$${parseFloat(account?.daily_transfer_limit || 500000).toLocaleString('en-US')}` },
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between text-sm">
                 <span className="text-dark-300">{label}</span>
@@ -180,10 +180,10 @@ export default function DashboardHome() {
                   </defs>
                   <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#555', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+                    tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
                   <Tooltip
                     contentStyle={{ background: '#1e1e2e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 }}
-                    formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, '']}
+                    formatter={(v) => [`$${v.toLocaleString('en-US')}`, '']}
                   />
                   <Area type="monotone" dataKey="credit" stroke="#22c55e" fill="url(#credit)" strokeWidth={2} />
                   <Area type="monotone" dataKey="debit" stroke="#ef4444" fill="url(#debit)" strokeWidth={2} />

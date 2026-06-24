@@ -14,8 +14,8 @@ export default function AccountCard() {
     : '**** **** **** ****';
 
   const formatBalance = (bal) => {
-    if (!balanceVisible) return '₹ ••••••';
-    return `₹ ${parseFloat(bal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    if (!balanceVisible) return '$ ••••••';
+    return `$ ${parseFloat(bal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
   };
 
   return (

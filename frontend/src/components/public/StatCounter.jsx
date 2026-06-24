@@ -27,7 +27,7 @@ export default function StatCounter({ value, decimals = 0, prefix = '', suffix =
   const formatted =
     decimals > 0
       ? display.toFixed(decimals)
-      : Math.round(display).toLocaleString('en-IN');
+      : Math.round(display).toLocaleString('en-US');
 
   return (
     <span ref={ref}>

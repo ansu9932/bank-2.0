@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { formatINR } from './ui';
+import { formatUSD } from './ui';
 
 // Interactive EMI calculator with live sliders and an animated principal vs
 // interest pie chart. Reusable across the Loans and Accounts pages.
@@ -52,7 +52,7 @@ export default function EMICalculator({
         <Slider
           label="Loan Amount"
           value={amount}
-          display={formatINR(amount)}
+          display={formatUSD(amount)}
           min={minAmount}
           max={maxAmount}
           step={amountStep}
@@ -100,17 +100,17 @@ export default function EMICalculator({
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Monthly EMI</p>
-            <p className="text-2xl font-bold text-white">{formatINR(emi)}</p>
+            <p className="text-2xl font-bold text-white">{formatUSD(emi)}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-6">
-          <Stat label="Principal" value={formatINR(amount)} dot="#2D2D2D" />
-          <Stat label="Total Interest" value={formatINR(totalInterest)} dot="#CC0000" />
+          <Stat label="Principal" value={formatUSD(amount)} dot="#2D2D2D" />
+          <Stat label="Total Interest" value={formatUSD(totalInterest)} dot="#CC0000" />
         </div>
         <div className="mt-3 rounded-xl py-3 px-4" style={{ background: 'rgba(204,0,0,0.1)', border: '1px solid rgba(204,0,0,0.25)' }}>
           <p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Total Payment</p>
-          <p className="text-xl font-bold text-white">{formatINR(totalPayment)}</p>
+          <p className="text-xl font-bold text-white">{formatUSD(totalPayment)}</p>
         </div>
       </div>
     </div>

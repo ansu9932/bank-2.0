@@ -25,7 +25,7 @@ app.use(hpp());
 
 // ─── CORS (Updated Fallback to Hostinger Frontend) ────────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://powderblue-yak-779749.hostingersite.com',
+  origin: process.env.FRONTEND_URL || 'https://alisterbank.online',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Registration-Token'],
@@ -202,6 +202,72 @@ async function ensureCardRequestColumns() {
   }
 }
 
+/**
+ * Idempotently add the new user columns introduced by the USD / multi-country
+ * KYC / Add-Money features to an EXISTING users table. Plain sequelize.sync()
+ * never alters existing tables, so without this every `users` query (including
+ * login) would fail with "Unknown column" once the model defines them.
+ * Surgical: only the named columns, only when absent, zero index changes.
+ */
+async function ensureUserColumns() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  let table;
+  try {
+    table = await qi.describeTable('users');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  const columns = {
+    // Add Money (deposit) access — disabled by default, admin-activated.
+    deposit_enabled: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+    // External transfers (IMPS/NEFT/UPI) — locked by default, admin-activated.
+    external_transfer_enabled: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+    // Country-specific identity numbers (Nepal / Bhutan / Bangladesh).
+    citizenship_number: { type: DataTypes.STRING(50), allowNull: true },
+    cid_number: { type: DataTypes.STRING(50), allowNull: true },
+    national_id_number: { type: DataTypes.STRING(50), allowNull: true },
+    tin_number: { type: DataTypes.STRING(50), allowNull: true },
+  };
+
+  for (const [name, def] of Object.entries(columns)) {
+    if (!table[name]) {
+      try {
+        await qi.addColumn('users', name, def);
+        logger.info(`users: added column '${name}'.`);
+      } catch (e) {
+        logger.error(`users: could not add column '${name}': ${e.message}`);
+      }
+    }
+  }
+}
+
+/**
+ * The kyc_documents.document_type ENUM gained country-specific values
+ * (citizenship, cid, national_id, nominee_id, tin). On MySQL an existing
+ * constrained ENUM would reject those on insert, so widen it to a plain STRING.
+ * Best-effort and non-fatal.
+ */
+async function ensureKycDocumentSchema() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  try {
+    await qi.describeTable('kyc_documents');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  try {
+    await qi.changeColumn('kyc_documents', 'document_type', { type: DataTypes.STRING(30), allowNull: false });
+    logger.info("kyc_documents: widened 'document_type' to STRING.");
+  } catch (e) {
+    logger.warn(`kyc_documents: document_type widen skipped: ${e.message}`);
+  }
+}
+
 const start = async () => {
   try {
     // Guarantee the uploads tree exists before anything serves/writes to it.
@@ -263,6 +329,21 @@ const start = async () => {
     } catch (colErr) {
       logger.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
       console.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
+    }
+
+    // ─── Idempotent backfill for users + kyc_documents (USD / country KYC /
+    //     Add-Money features). Same surgical, index-free approach as above. ────
+    try {
+      await ensureUserColumns();
+    } catch (colErr) {
+      logger.error(`users column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`users column backfill failed (non-fatal): ${colErr.message}`);
+    }
+    try {
+      await ensureKycDocumentSchema();
+    } catch (colErr) {
+      logger.error(`kyc_documents schema backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`kyc_documents schema backfill failed (non-fatal): ${colErr.message}`);
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).

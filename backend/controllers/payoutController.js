@@ -23,7 +23,7 @@ const INSTANT_MODES = ['IMPS', 'UPI'];
 // half-hourly NEFT cycles at a demo-friendly cadence; override via env.
 const NEFT_SETTLEMENT_MS = (parseInt(process.env.NEFT_SETTLEMENT_MINUTES, 10) || 3) * 60 * 1000;
 
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 /**
  * In-memory tracker of pending NEFT settlement timers so they can be inspected
@@ -165,6 +165,13 @@ exports.verifyIfsc = async (req, res) => {
 // the daily ceiling, and attached req.transferAccount + req.transferLimitSnapshot.
 exports.disbursePayout = async (req, res) => {
   try {
+    // External transfers (IMPS/NEFT/UPI) are locked by default — an admin must
+    // activate them per user. Internal Alister transfers use a separate route
+    // and stay available regardless of this flag.
+    if (!req.user.external_transfer_enabled) {
+      return error(res, 'External transfers (IMPS, NEFT, UPI) are locked for your account. Please contact the admin to activate them. Internal Alister Bank transfers remain available.', 403);
+    }
+
     const {
       mode, amount, beneficiaryName, accountNumber, confirmAccountNumber,
       ifsc, vpa, email, description, securityPin,

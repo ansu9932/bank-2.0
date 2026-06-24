@@ -1,4 +1,6 @@
 import React from 'react';
+import CountrySelect from '../../../components/common/CountrySelect';
+import { getCountry, ALL_ID_KEYS } from '../../../data/countries';
 
 const Field = ({ label, error, children, hint }) => (
   <div>
@@ -12,10 +14,28 @@ const Field = ({ label, error, children, hint }) => (
 export default function StepPersonal({ form, update, errors = {}, nameLocked = false }) {
   const set = (k) => (e) => update({ [k]: e.target.value });
 
-  // Digit-only handler for the mobile number, capped at 10 digits.
+  const country = getCountry(form.country);
+
+  // Digit-only handler for the mobile number, capped at the country's length.
   const setPhone = (e) => {
-    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+    const digits = e.target.value.replace(/\D/g, '').slice(0, country.phoneDigits);
     update({ phone: digits });
+  };
+
+  // Selecting a country also sets nationality and clears any previously-entered
+  // identity numbers that don't apply to the newly chosen country's documents.
+  const onCountry = (name) => {
+    const next = getCountry(name);
+    const cleared = ALL_ID_KEYS.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
+    update({
+      ...cleared,
+      country: name,
+      nationality: next.nationality,
+      // Trim the phone to the new country's max length.
+      phone: (form.phone || '').replace(/\D/g, '').slice(0, next.phoneDigits),
+      // Clear uploaded files since the required document set changes per country.
+      files: {},
+    });
   };
 
   // Red ring helper for invalid fields.
@@ -32,6 +52,17 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
           <span>Your name has been verified against the PAN registry and locked to match your tax records.</span>
         </div>
       )}
+
+      {/* Country of account — drives which KYC documents are required later. */}
+      <div className="mb-6">
+        <Field
+          label="Choose Your Country *"
+          error={errors.country}
+          hint={`We'll request the documents banks in ${country.name} require to open your account.`}
+        >
+          <CountrySelect value={form.country} onSelect={onCountry} error={Boolean(errors.country)} />
+        </Field>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="First Name *" error={errors.firstName} hint={nameLocked ? 'Auto-filled from PAN verification' : undefined}>
@@ -51,8 +82,17 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
         <Field label="Email Address *" error={errors.email}>
           <input className={`input-field${ring('email')}`} type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
         </Field>
-        <Field label="Mobile Number *" error={errors.phone}>
-          <input className={`input-field${ring('phone')}`} type="tel" inputMode="numeric" value={form.phone} onChange={setPhone} placeholder="9876543210" maxLength={10} />
+        <Field label="Mobile Number *" error={errors.phone} hint={`Enter your ${country.phoneHint}`}>
+          <div className="flex">
+            <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-white/[0.08] bg-white/[0.04] text-dark-200 text-sm">
+              {country.dialCode}
+            </span>
+            <input
+              className={`input-field rounded-l-none${ring('phone')}`}
+              type="tel" inputMode="numeric" value={form.phone} onChange={setPhone}
+              placeholder="9876543210" maxLength={country.phoneDigits}
+            />
+          </div>
         </Field>
         <Field label="Date of Birth *" error={errors.dateOfBirth}>
           <input className={`input-field${ring('dateOfBirth')}`} type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} max={new Date(Date.now() - 18*365*24*60*60*1000).toISOString().split('T')[0]} />
@@ -83,8 +123,8 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
         <Field label="Occupation">
           <input className="input-field" value={form.occupation} onChange={set('occupation')} placeholder="Software Engineer" />
         </Field>
-        <Field label="Annual Income (₹)">
-          <input className="input-field" type="number" value={form.annualIncome} onChange={set('annualIncome')} placeholder="1500000" />
+        <Field label="Annual Income ($)">
+          <input className="input-field" type="number" value={form.annualIncome} onChange={set('annualIncome')} placeholder="50000" />
         </Field>
         <Field label="Account Type *" error={errors.accountType}>
           <select className={`input-field${ring('accountType')}`} value={form.accountType} onChange={set('accountType')}>

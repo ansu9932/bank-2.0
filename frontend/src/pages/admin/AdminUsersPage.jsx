@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
             </div>
             <div className="hidden sm:block sm:col-span-2">
               <p className="text-dark-300 text-xs font-mono">{u.account?.account_number?.slice(-4) ? `****${u.account.account_number.slice(-4)}` : '—'}</p>
-              {u.account && <p className="text-dark-500 text-[10px]">₹{parseFloat(u.account.balance||0).toLocaleString('en-IN')}</p>}
+              {u.account && <p className="text-dark-500 text-[10px]">${parseFloat(u.account.balance||0).toLocaleString('en-US')}</p>}
             </div>
             <div className="hidden sm:block sm:col-span-2">
               <span className={`badge ${kycBadge[u.kyc_status]} text-[10px]`}>{u.kyc_status?.replace(/_/g,' ')}</span>

@@ -15,6 +15,9 @@ router.post('/create-qr', protect, paymentController.createQR);
 router.get('/status/:orderRef', protect, paymentController.getStatus);
 // High-value Checkout deposit (Card / Net Banking) for amounts > ₹1L.
 router.post('/create-deposit-order', protect, depositController.createDepositOrder);
+// Fallback when the embedded Checkout script is blocked client-side: hosted
+// Razorpay Payment Link the browser is redirected to (no checkout.js needed).
+router.post('/create-deposit-link', protect, depositController.createDepositLink);
 
 // ─── Outgoing payouts (Opfin / RazorpayX Payroll unified API) ─────────────────
 // Real-time UPI provider lookup (debounced from the client).

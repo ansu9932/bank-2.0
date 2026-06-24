@@ -1,9 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
-const { User, Account, OTP, Session, Notification } = require('../models');
+const { User, Account, OTP, Session, Notification, AuditLog } = require('../models');
 const { generateToken } = require('../middleware/auth');
-const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
+const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendPasswordChangedEmail, sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const {
   generateOTP, hashValue, getOTPExpiry, generateSecureToken,
@@ -18,6 +18,39 @@ const { verifyTurnstile } = require('../utils/captcha');
 // generateSecureToken() = crypto.randomBytes(64).toString('hex') → 128 hex chars.
 // Used to reject obviously-malformed tokens before any DB lookup.
 const RESET_TOKEN_PATTERN = /^[a-f0-9]{128}$/;
+
+// ─── Adaptive (risk-based) CAPTCHA config ────────────────────────────────────
+// A login is treated as "suspicious" (→ a CAPTCHA challenge is required) when
+// EITHER the targeted account already has recent failed attempts, OR this IP
+// has produced several recent failed logins. Clean, first-time logins are never
+// challenged. All thresholds are env-overridable.
+const LOGIN_RISK_WINDOW_MIN = parseInt(process.env.LOGIN_RISK_WINDOW_MIN, 10) || 15;
+const LOGIN_RISK_USER_ATTEMPTS = parseInt(process.env.LOGIN_RISK_USER_ATTEMPTS, 10) || 2;
+const LOGIN_RISK_IP_FAILURES = parseInt(process.env.LOGIN_RISK_IP_FAILURES, 10) || 3;
+
+/**
+ * Decide whether the current login attempt is risky enough to require a CAPTCHA.
+ * @param {string} ip       request IP
+ * @param {object|null} user the matched user (may be null for unknown username)
+ * @returns {Promise<boolean>} true → challenge with CAPTCHA before proceeding
+ */
+async function isLoginRisky(ip, user) {
+  // Signal 1 — the targeted account already has recent failed attempts.
+  if (user && Number(user.login_attempts) >= LOGIN_RISK_USER_ATTEMPTS) return true;
+
+  // Signal 2 (best-effort) — many recent failed logins from this IP. Wrapped in
+  // try/catch so a transient audit-log query issue can never block login.
+  try {
+    const since = new Date(Date.now() - LOGIN_RISK_WINDOW_MIN * 60 * 1000);
+    const ipFailures = await AuditLog.count({
+      where: { action: 'LOGIN_FAILED', ip_address: ip, created_at: { [Op.gte]: since } },
+    });
+    if (ipFailures >= LOGIN_RISK_IP_FAILURES) return true;
+  } catch (e) {
+    logger.warn(`Login risk IP-failure check skipped: ${e.message}`);
+  }
+  return false;
+}
 
 // ─── Login Handshake (HDFC-style ephemeral SSO nonce) ────────────────────────
 // GET /api/auth/login-handshake → mints a short-lived, single-use state token
@@ -36,7 +69,7 @@ exports.loginHandshake = async (req, res) => {
 // ─── Login ─────────────────────────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
-    const { username, password, handshakeToken } = req.body;
+    const { username, password, handshakeToken, captchaToken } = req.body;
 
     // ── Ephemeral handshake validation (anti-replay) ─────────────────────────
     // The token must be present, unexpired, single-use, and IP-consistent.
@@ -54,6 +87,26 @@ exports.login = async (req, res) => {
     const user = await User.findOne({
       where: { [Op.or]: [{ username }, { email: username }] },
     });
+
+    // ── Adaptive (risk-based) CAPTCHA ────────────────────────────────────────
+    // Only suspicious logins are challenged; a clean first attempt sails through
+    // with no CAPTCHA. When risk is detected we require a valid Turnstile token
+    // BEFORE the password check / "invalid credentials" response, so this also
+    // throttles brute-forcing and username enumeration. verifyTurnstile() skips
+    // gracefully when TURNSTILE_SECRET_KEY is unset (dev), making this a no-op
+    // until bot-protection keys are configured.
+    if (await isLoginRisky(req.ip, user)) {
+      const captcha = await verifyTurnstile(captchaToken, req.ip);
+      if (!captcha.success) {
+        return res.status(200).json({
+          success: false,
+          captchaRequired: true,
+          message: captchaToken
+            ? 'Security check failed. Please complete the verification again.'
+            : 'For your security, please complete the verification below to continue.',
+        });
+      }
+    }
 
     if (!user) {
       return unauthorized(res, 'Invalid credentials.');
@@ -157,6 +210,8 @@ exports.login = async (req, res) => {
         kycStatus: user.kyc_status,
         darkMode: user.dark_mode,
         twoFactorEnabled: user.two_factor_enabled,
+        depositEnabled: user.deposit_enabled,
+        externalTransferEnabled: user.external_transfer_enabled,
       },
     }, 'Login successful.');
   } catch (err) {
@@ -341,6 +396,16 @@ exports.forgotPassword = async (req, res) => {
     // Always return success to prevent email enumeration
     if (!user) return success(res, {}, 'If an account exists, a reset link has been sent.');
 
+    // ── Single active link ───────────────────────────────────────────────────
+    // If an unused, unexpired reset link already exists, do NOT issue a new one
+    // (anti-spam, and the email already in their inbox is still valid).
+    const activeLink = await SecureLink.findOne({
+      where: { user_id: user.id, purpose: 'password_reset', used: false },
+    });
+    if (activeLink && !isExpired(activeLink.expires_at)) {
+      return success(res, { alreadyActive: true }, 'A reset link was already sent and is still valid (expires within 5 minutes). Please check your email.');
+    }
+
     const token = generateSecureToken();
     const expiresAt = getSecureLinkExpiry(5);
 
@@ -352,8 +417,9 @@ exports.forgotPassword = async (req, res) => {
       ip_address: req.ip,
     });
 
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.first_name || 'Customer';
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-    await sendPasswordResetEmail(user.email, user.first_name, resetLink);
+    await sendPasswordResetEmail(user.email, fullName, resetLink);
 
     return success(res, {}, 'Password reset link sent to your email (expires in 5 minutes).');
   } catch (err) {
@@ -455,6 +521,16 @@ exports.sendResetLink = async (req, res) => {
     const user = await findVerifiedUserForReset(userId, accountNumber, dateOfBirth);
     if (!user) return badRequest(res, IDENTITY_MISMATCH_MSG);
 
+    // ── Single active link ───────────────────────────────────────────────────
+    // If the user already holds an unused, unexpired reset link, do NOT generate
+    // a new one — the existing email is still valid (and this blocks resend spam).
+    const activeLink = await SecureLink.findOne({
+      where: { user_id: user.id, purpose: 'password_reset', used: false },
+    });
+    if (activeLink && !isExpired(activeLink.expires_at)) {
+      return success(res, { alreadyActive: true }, 'A reset link was already sent to your registered email and is still valid (expires within 5 minutes). Please use that link.');
+    }
+
     const token = generateSecureToken();
     const expiresAt = getSecureLinkExpiry(5);
 
@@ -466,8 +542,9 @@ exports.sendResetLink = async (req, res) => {
       ip_address: req.ip,
     });
 
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.first_name || 'Customer';
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-    await sendPasswordResetEmail(user.email, user.first_name, resetLink);
+    await sendPasswordResetEmail(user.email, fullName, resetLink);
 
     await createAuditLog({
       userId: user.id,
@@ -530,6 +607,15 @@ exports.resetPassword = async (req, res) => {
     await link.update({ used: true, used_at: new Date() });
 
     await Session.update({ is_active: false }, { where: { user_id: link.user_id } });
+
+    // ── Confirmation / security alert email (don't block the response) ───────
+    if (user?.email) {
+      const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.first_name || 'Customer';
+      sendPasswordChangedEmail(user.email, fullName, {
+        time: new Date().toLocaleString('en-IN'),
+        ip: req.ip,
+      }).catch((e) => logger.error(`Password-changed alert email failed: ${e.message}`));
+    }
 
     await createAuditLog({
       userId: link.user_id,

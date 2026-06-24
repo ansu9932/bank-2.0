@@ -25,6 +25,11 @@ const User = sequelize.define('User', {
   aadhaar_number: { type: DataTypes.STRING(12) },
   pan_number: { type: DataTypes.STRING(10) },
   passport_number: { type: DataTypes.STRING(20) },
+  // Country-specific identity numbers (Nepal / Bhutan / Bangladesh)
+  citizenship_number: { type: DataTypes.STRING(50) },
+  cid_number: { type: DataTypes.STRING(50) },
+  national_id_number: { type: DataTypes.STRING(50) },
+  tin_number: { type: DataTypes.STRING(50) },
   username: { type: DataTypes.STRING(100), unique: true },
   password_hash: { type: DataTypes.STRING(255) },
   security_pin: { type: DataTypes.STRING(255) },
@@ -33,6 +38,13 @@ const User = sequelize.define('User', {
   account_status: { type: DataTypes.ENUM('pending', 'active', 'frozen', 'closed'), defaultValue: 'pending' },
   email_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
   two_factor_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // Add Money / deposit access. DISABLED by default — only an admin can
+  // activate it per user (see adminController.toggleDeposit).
+  deposit_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // External transfers (IMPS / NEFT / UPI). LOCKED by default — only an admin
+  // can activate them per user (see adminController.toggleExternalTransfer).
+  // Internal Alister-to-Alister transfers are always allowed regardless.
+  external_transfer_enabled: { type: DataTypes.BOOLEAN, defaultValue: false },
   profile_picture: { type: DataTypes.STRING(500) },
   last_login: { type: DataTypes.DATE },
   login_attempts: { type: DataTypes.INTEGER, defaultValue: 0 },

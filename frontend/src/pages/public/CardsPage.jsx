@@ -13,21 +13,21 @@ const CARDS = [
     network: 'VISA · RuPay',
     fee: 'FREE with savings account',
     gradient: 'linear-gradient(145deg, #1A1A1A, #0A0A0A)',
-    features: ['5 free ATM withdrawals / month', 'Contactless tap & pay', 'Daily limit ₹50,000', 'Zero liability on fraud'],
+    features: ['5 free ATM withdrawals / month', 'Contactless tap & pay', 'Daily limit $50,000', 'Zero liability on fraud'],
   },
   {
     name: 'Premium Platinum',
     network: 'VISA Signature',
-    fee: '₹999 annual fee',
+    fee: '$199 annual fee',
     gradient: 'linear-gradient(145deg, #2D2D2D, #1A0000, #2D0000)',
     premium: true,
-    features: ['Airport lounge access', '₹2 lakh daily limit', 'Complimentary travel insurance', '24/7 concierge service'],
+    features: ['Airport lounge access', '$200,000 daily limit', 'Complimentary travel insurance', '24/7 concierge service'],
   },
 ];
 
 const COMPARE = [
-  ['Annual Fee', 'Free', '₹999'],
-  ['Daily ATM Limit', '₹50,000', '₹2,00,000'],
+  ['Annual Fee', 'Free', '$199'],
+  ['Daily ATM Limit', '$50,000', '$200,000'],
   ['Lounge Access', false, true],
   ['Travel Insurance', false, true],
   ['Contactless', true, true],

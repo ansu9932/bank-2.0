@@ -5,7 +5,7 @@ import { Check, X, Wallet, Building2, ShieldAlert } from 'lucide-react';
 import PageTransition from '../../components/public/PageTransition';
 import FAQAccordion from '../../components/public/FAQAccordion';
 import { Section, SectionTitle, PageHero, RedButton } from '../../components/public/sections';
-import { staggerContainer, fadeUp, inView, formatINR } from '../../components/public/ui';
+import { staggerContainer, fadeUp, inView, formatUSD } from '../../components/public/ui';
 
 const ACCOUNTS = [
   {
@@ -14,8 +14,8 @@ const ACCOUNTS = [
     badge: 'Most Popular',
     desc: 'Grow your money with attractive interest and everyday banking essentials.',
     benefits: ['Up to 7% interest p.a.', 'Free RuPay/VISA debit card', 'Free NetBanking & mobile app', 'UPI & instant transfers'],
-    minBalance: '₹5,00,000',
-    eligibility: 'India-based, invited under the Corporate Partnership Program',
+    minBalance: '$500,000',
+    eligibility: 'Invited under the Corporate Partnership Program',
     cta: 'Request Account Access',
   },
   {
@@ -23,17 +23,17 @@ const ACCOUNTS = [
     name: 'Current Account',
     badge: 'For Business',
     desc: 'High-limit banking for businesses, with overdraft and bulk payments.',
-    benefits: ['High transaction limits', 'Overdraft facility', 'Bulk & vendor payments', 'GST-ready statements'],
-    minBalance: '₹10,00,000',
-    eligibility: 'India-based businesses, invited under the Corporate Partnership Program',
+    benefits: ['High transaction limits', 'Overdraft facility', 'Bulk & vendor payments', 'Tax-ready statements'],
+    minBalance: '$1,000,000',
+    eligibility: 'Businesses invited under the Corporate Partnership Program',
     cta: 'Request Account Access',
   },
 ];
 
 const COMPARE_ROWS = [
-  ['Eligible Users', 'India (Invited Only)', 'India (Invited Only)'],
-  ['Opening Deposit', '₹1,00,000', '₹1,00,000'],
-  ['Minimum Balance', '₹5,00,000', '₹10,00,000'],
+  ['Eligible Users', 'Invited Only', 'Invited Only'],
+  ['Opening Deposit', '$100,000', '$100,000'],
+  ['Minimum Balance', '$500,000', '$1,000,000'],
   ['Interest Rate', '4% – 7% p.a.', 'Non-interest bearing'],
   ['Transaction Limits', 'Standard', 'High / Bulk supported'],
   ['Overdraft Facility', false, true],
@@ -86,7 +86,7 @@ export default function AccountsPage() {
           className="rounded-2xl px-6 py-5 text-center"
           style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}
         >
-          <p className="text-white font-bold text-lg sm:text-xl">Minimum Account Opening Deposit: ₹1,00,000</p>
+          <p className="text-white font-bold text-lg sm:text-xl">Minimum Account Opening Deposit: $100,000</p>
         </motion.div>
       </Section>
 
@@ -186,7 +186,7 @@ function DepositCalculator() {
       <div>
         <div className="flex items-center justify-between mb-2.5">
           <span className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Deposit Amount</span>
-          <span className="text-sm font-bold px-3 py-1 rounded-lg" style={{ color: '#FF3333', background: 'rgba(204,0,0,0.12)' }}>{formatINR(amount)}</span>
+          <span className="text-sm font-bold px-3 py-1 rounded-lg" style={{ color: '#FF3333', background: 'rgba(204,0,0,0.12)' }}>{formatUSD(amount)}</span>
         </div>
         <input type="range" className="al-range" min={10000} max={2000000} step={10000} value={amount} onChange={(e) => setAmount(Number(e.target.value))} aria-label="Deposit Amount" />
       </div>
@@ -200,11 +200,11 @@ function DepositCalculator() {
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl px-4 py-4 text-center" style={{ background: 'rgba(255,255,255,0.03)' }}>
           <p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Interest Earned</p>
-          <p className="text-lg font-bold mt-1" style={{ color: '#FF3333' }}>{formatINR(interest)}</p>
+          <p className="text-lg font-bold mt-1" style={{ color: '#FF3333' }}>{formatUSD(interest)}</p>
         </div>
         <div className="rounded-xl px-4 py-4 text-center" style={{ background: 'rgba(204,0,0,0.1)', border: '1px solid rgba(204,0,0,0.25)' }}>
           <p className="text-xs uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Maturity Amount</p>
-          <p className="text-lg font-bold text-white mt-1">{formatINR(maturity)}</p>
+          <p className="text-lg font-bold text-white mt-1">{formatUSD(maturity)}</p>
         </div>
       </div>
       <p className="text-xs text-center" style={{ color: 'rgba(255,255,255,0.4)' }}>Illustrative at {rate}% p.a. compounded annually.</p>

@@ -28,6 +28,80 @@ function buildOrderRef() {
 }
 
 /**
+ * Turn Razorpay's BRANDED QR poster (Powered-by-Razorpay header, BHIM/UPI band,
+ * the QR, "Scan & Pay" text, GPay/PhonePe/Paytm icons, merchant name) into a
+ * CLEAN, branding-free square QR returned as a data: URI.
+ *
+ * Layered strategy — each step falls back to the next, so we always return at
+ * least the original poster and never fail QR creation:
+ *
+ *   1) DECODE + REGENERATE (best): read the QR payload out of the poster with
+ *      jsQR and regenerate a pristine square QR from that EXACT payload via the
+ *      `qrcode` lib. No branding, full quiet zone, crisp at any size, and it
+ *      scans to the same UPI intent so payment still captures through Razorpay.
+ *   2) PROPORTIONAL CROP: if decode fails, sharp extracts the centred QR square
+ *      (~36%-68% down the poster, computed from the image's own dimensions).
+ *   3) RAW POSTER: inline the original image unchanged.
+ *
+ * @param {string} posterUrl  Razorpay `qr.image_url`.
+ * @returns {Promise<string>} A `data:image/...;base64,...` URI.
+ */
+async function buildCleanQrDataUri(posterUrl) {
+  const { data } = await axios.get(posterUrl, { responseType: 'arraybuffer', timeout: 8000 });
+  const buffer = Buffer.from(data);
+
+  // ── 1) decode the poster's QR, then regenerate a clean square QR ─────────────
+  try {
+    const sharp = require('sharp');
+    const jsQR = require('jsqr');
+    const QRCode = require('qrcode');
+    const { data: rgba, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const decoded = jsQR(new Uint8ClampedArray(rgba), info.width, info.height);
+    if (decoded && decoded.data) {
+      return QRCode.toDataURL(decoded.data, {
+        margin: 2,                  // built-in quiet zone (modules)
+        width: 600,                 // crisp; CSS scales it down to the frame
+        errorCorrectionLevel: 'M',
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+    }
+    logger.warn('QR poster decode returned no payload; falling back to crop.');
+  } catch (decodeErr) {
+    logger.error(`QR decode/regenerate failed: ${decodeErr.message}`);
+  }
+
+  // ── 2) proportional crop of the QR square out of the poster ──────────────────
+  try {
+    const sharp = require('sharp');
+    const meta = await sharp(buffer).metadata();
+    const W = meta.width;
+    const H = meta.height;
+    if (W && H) {
+      // Razorpay poster layout, as fractions of HEIGHT: the QR square sits
+      // roughly between these two lines, horizontally centred. The square's
+      // side === its vertical span. Tune these two constants if the crop is off.
+      const QR_TOP_FRAC = 0.36;
+      const QR_BOTTOM_FRAC = 0.68;
+      let size = Math.round((QR_BOTTOM_FRAC - QR_TOP_FRAC) * H);
+      size = Math.min(size, W, H);                         // stay within bounds
+      let left = Math.max(0, Math.min(Math.round((W - size) / 2), W - size));
+      let top = Math.max(0, Math.min(Math.round(QR_TOP_FRAC * H), H - size));
+      const cropped = await sharp(buffer)
+        .extract({ left, top, width: size, height: size })
+        .resize(600, 600, { fit: 'contain', background: '#ffffff' })
+        .png()
+        .toBuffer();
+      return `data:image/png;base64,${cropped.toString('base64')}`;
+    }
+  } catch (cropErr) {
+    logger.error(`QR proportional crop failed: ${cropErr.message}`);
+  }
+
+  // ── 3) raw poster (never breaks QR creation) ─────────────────────────────────
+  return `data:image/png;base64,${buffer.toString('base64')}`;
+}
+
+/**
  * Cryptographically verify a Razorpay webhook using the standard `crypto` lib.
  * Razorpay signs the EXACT raw request body with HMAC-SHA256 keyed on the
  * webhook secret; the hex digest must equal the `x-razorpay-signature` header.
@@ -61,13 +135,18 @@ exports.createQR = async (req, res) => {
       return error(res, 'Payment gateway is not configured. Please try again later.', 503);
     }
 
+    // Add Money is disabled by default — an admin must activate it per user.
+    if (!req.user.deposit_enabled) {
+      return error(res, 'Add Money is currently deactivated for your account. Please contact support to enable deposits.', 403);
+    }
+
     const amount = parseFloat(req.body.amount);
     if (!amount || Number.isNaN(amount) || amount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');
     }
-    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is ₹${MIN_DEPOSIT}.`);
+    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is $${MIN_DEPOSIT}.`);
     if (amount > MAX_DEPOSIT) {
-      return badRequest(res, `Maximum deposit per QR is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
+      return badRequest(res, `Maximum deposit per QR is $${MAX_DEPOSIT.toLocaleString('en-US')}.`);
     }
 
     const account = await Account.findOne({ where: { user_id: req.user.id } });
@@ -94,19 +173,16 @@ exports.createQR = async (req, res) => {
       closeBy: Math.floor(Date.now() / 1000) + QR_TTL_SECONDS,
     });
 
-    // Fetch the QR image from Razorpay and inline it as a base64 data URI so the
-    // frontend never has to load a cross-origin image (avoids CSP/img-src and
-    // hotlink issues, and renders instantly). If the fetch fails for any reason
-    // we fall back to the raw Razorpay image_url rather than failing the whole
-    // QR creation.
+    // Convert Razorpay's branded QR poster into a CLEAN, branding-free square QR
+    // (decode + regenerate, else crop, else raw) and inline it as a data: URI so
+    // the frontend renders only the scannable QR with no logos/app-icons/text.
+    // Any failure falls back to the raw Razorpay image rather than breaking the
+    // QR flow.
     let qrImage = qr.image_url;
     try {
-      const imgResponse = await axios.get(qr.image_url, { responseType: 'arraybuffer', timeout: 8000 });
-      const base64 = Buffer.from(imgResponse.data).toString('base64');
-      const mimeType = imgResponse.headers['content-type'] || 'image/png';
-      qrImage = `data:${mimeType};base64,${base64}`;
+      qrImage = await buildCleanQrDataUri(qr.image_url);
     } catch (imgErr) {
-      logger.error(`QR image fetch failed (${orderRef}); falling back to image_url: ${imgErr.message}`);
+      logger.error(`QR image processing failed (${orderRef}); falling back to image_url: ${imgErr.message}`);
     }
 
     // Pre-create the deposit as a PENDING ledger record keyed on orderRef. The
@@ -130,14 +206,14 @@ exports.createQR = async (req, res) => {
       logger.error(`Pending deposit record creation failed (${orderRef}): ${txErr.message}`);
     }
 
-    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=₹${amount} user=${req.user.id}`);
+    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=$${amount} user=${req.user.id}`);
 
     return success(res, {
       orderRef,
       qrId: qr.id,
       image_url: qrImage,
       amount,
-      currency: 'INR',
+      currency: 'USD',
       description,
       status: qr.status,
       expiresAt: qr.close_by ? new Date(qr.close_by * 1000).toISOString() : null,
@@ -240,14 +316,14 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
 
     await Notification.create({
       user_id: locked.user_id,
-      title: `₹${paymentAmount.toLocaleString('en-IN')} added to your account`,
+      title: `$${paymentAmount.toLocaleString('en-US')} added to your account`,
       message: `${DEPOSIT_DESCRIPTION}. Ref: ${paymentId || orderRef}`,
       type: 'transaction',
       priority: 'high',
     }, { transaction: t });
 
     await t.commit();
-    logger.info(`Deposit credited: ₹${paymentAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}).`);
+    logger.info(`Deposit credited: $${paymentAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}).`);
 
     createAuditLog({
       userId: locked.user_id,
@@ -255,7 +331,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
       entityType: 'Transaction',
       entityId: String(orderRef || paymentId).slice(0, 100),
       status: 'success',
-      description: `UPI deposit of ₹${paymentAmount} credited.`,
+      description: `UPI deposit of $${paymentAmount} credited.`,
     }).catch(() => {});
 
     // Transaction alert email — every successful CREDIT notifies the user.
@@ -268,7 +344,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
         counterparty: 'UPI Instant Deposit',
         mode: 'UPI',
         balance: balanceAfter.toFixed(2),
-        time: new Date().toLocaleString('en-IN'),
+        time: new Date().toLocaleString('en-US'),
       });
     }).catch((e) => logger.error(`Deposit credit email failed: ${e.message}`));
 
@@ -298,23 +374,31 @@ exports.webhook = async (req, res) => {
     const payload = req.body?.payload || {};
     logger.info(`Razorpay webhook verified — event=${event}`);
 
-    // 2) Act only on a confirmed successful capture / QR credit.
-    if (event === 'payment.captured' || event === 'qr_code.credited') {
+    // 2) Act only on a confirmed successful capture / QR credit / payment link.
+    if (event === 'payment.captured' || event === 'qr_code.credited' || event === 'payment_link.paid') {
+      // The payment may arrive under different payload keys depending on the
+      // event: `payment.entity` (captured/qr), and for a paid Payment Link the
+      // payload carries both `payment.entity` and `payment_link.entity`.
       const paymentEntity = payload.payment?.entity;
-      if (!paymentEntity) {
-        logger.warn(`Webhook ${event} had no payment entity — acknowledged.`);
+      const linkEntity = payload.payment_link?.entity;
+      const qrEntity = payload.qr_code?.entity;
+
+      const notes = paymentEntity?.notes || linkEntity?.notes || qrEntity?.notes || {};
+      const orderRef = notes.orderRef || null;
+      const paymentId = paymentEntity?.id || linkEntity?.id || null;
+      const amountPaise = paymentEntity?.amount ?? linkEntity?.amount;
+
+      if (!orderRef && !paymentId) {
+        logger.warn(`Webhook ${event} had no payment/link entity — acknowledged.`);
         return res.status(200).json({ success: true, received: true });
       }
 
-      const notes = paymentEntity.notes || payload.qr_code?.entity?.notes || {};
-      const orderRef = notes.orderRef || null;
-
-      logger.info(`Crediting deposit — orderRef=${orderRef} payment=${paymentEntity.id} amount(paise)=${paymentEntity.amount}`);
+      logger.info(`Crediting deposit — event=${event} orderRef=${orderRef} payment=${paymentId} amount(paise)=${amountPaise}`);
 
       await creditDeposit({
         orderRef,
-        paymentId: paymentEntity.id,
-        amountPaise: paymentEntity.amount,
+        paymentId,
+        amountPaise,
         notes,
       });
 
