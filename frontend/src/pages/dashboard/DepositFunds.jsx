@@ -548,34 +548,36 @@ export default function DepositFunds() {
                 {order.image_url && (
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                    className="relative rounded-3xl bg-white p-4"
-                    style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* `order.image_url` is now a base64 data URI of the Razorpay QR
-                        (the backend fetches the QR image and inlines it), so it can be
-                        rendered directly by a plain <img> with no external request.
-                        The box is a responsive square and the QR is `contain`-fit so
-                        the entire code always sits neatly inside the white box. */}
+                    className="relative rounded-2xl bg-white"
+                    style={{ padding: '14px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
+                    {/* `order.image_url` is a base64 data URI of the Razorpay QR.
+                        Razorpay's PNG carries a wide white quiet-zone border, so the
+                        actual scannable matrix looks small. We crop that outer margin
+                        (square, overflow-hidden wrapper + a slightly up-scaled image)
+                        so ONLY the QR matrix shows, filling the box edge-to-edge. The
+                        white padding on this box provides the quiet zone scanners need.
+                        No border-radius on the image itself — that would clip the
+                        corner finder squares. */}
                     <div
                       style={{
+                        position: 'relative',
                         width: '100%',
                         maxWidth: '240px',
                         aspectRatio: '1 / 1',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        background: '#ffffff',
-                        borderRadius: '12px',
                         overflow: 'hidden',
+                        background: '#ffffff',
                       }}>
                       <img
                         src={order.image_url}
                         alt="UPI payment QR code"
                         style={{
-                          display: 'block',
-                          width: '100%',
-                          height: '100%',
+                          position: 'absolute',
+                          top: '-8%',
+                          left: '-8%',
+                          width: '116%',
+                          height: '116%',
                           objectFit: 'contain',
-                          borderRadius: '8px',
+                          imageRendering: 'pixelated',
                         }}
                       />
                     </div>
