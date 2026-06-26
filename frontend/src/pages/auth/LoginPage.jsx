@@ -182,7 +182,7 @@ export default function LoginPage() {
           ))}
         </div>
 
-        <p className="text-white/30 text-xs relative z-10">© 2024 Alister Bank. IFSC: ALST0000001 · SWIFT: ALSTINBB</p>
+        <p className="text-white/30 text-xs relative z-10">© 2024 Alister Bank. SWIFT: ALSTINBB</p>
       </motion.div>
 
       {/* Right — login form */}

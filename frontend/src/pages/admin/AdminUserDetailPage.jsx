@@ -26,6 +26,7 @@ const TRANSFER_METHOD_DEFS = [
   { key: 'neft', label: 'NEFT', desc: 'Batch-settled external transfer' },
   { key: 'upi', label: 'UPI', desc: 'Pay to any UPI ID' },
   { key: 'internal', label: 'Alister Internal', desc: 'On-us Alister → Alister' },
+  { key: 'add_money', label: 'Add Money', desc: 'Deposit / top-up funds' },
 ];
 
 export default function AdminUserDetailPage() {
@@ -37,7 +38,7 @@ export default function AdminUserDetailPage() {
   const [ceiling, setCeiling] = useState('');
   const [ceilingLoading, setCeilingLoading] = useState(false);
   // Per-user transfer-method locks (IMPS/NEFT/UPI off by default, internal on).
-  const [methods, setMethods] = useState({ imps: false, neft: false, upi: false, internal: true });
+  const [methods, setMethods] = useState({ imps: false, neft: false, upi: false, internal: true, add_money: false });
   const [methodsLoading, setMethodsLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
@@ -56,6 +57,7 @@ export default function AdminUserDetailPage() {
         neft: parsed?.neft === true,
         upi: parsed?.upi === true,
         internal: parsed ? parsed.internal !== false : true,
+        add_money: parsed?.add_money === true,
       });
     } catch { toast.error('Failed to load user'); }
     finally { setLoading(false); }
@@ -388,7 +390,7 @@ export default function AdminUserDetailPage() {
             <div className="glass-card p-4">
               <p className="text-white font-semibold mb-1 text-sm">Transfer Methods</p>
               <p className="text-dark-400 text-xs mb-3">
-                IMPS, NEFT &amp; UPI are locked by default. Enable a rail to let this user transfer through it.
+                IMPS, NEFT, UPI &amp; Add Money are locked by default. Enable a feature to activate it for this user.
               </p>
               <div className="space-y-2">
                 {TRANSFER_METHOD_DEFS.map(({ key, label, desc }) => {

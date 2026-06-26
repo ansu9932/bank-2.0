@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -9,6 +9,7 @@ import {
   RiBankCard2Line, RiLockLine,
 } from 'react-icons/ri';
 import { logout } from '../../store/slices/authSlice';
+import { fetchAccount } from '../../store/slices/accountSlice';
 
 // ─── Route definitions ────────────────────────────────────────────────────────
 const ADMIN_NAV_ITEMS = [
@@ -22,7 +23,7 @@ const ADMIN_NAV_ITEMS = [
 const CUSTOMER_NAV_ITEMS = [
   { to: '/dashboard',              icon: RiDashboardLine, label: 'Dashboard',      end: true  },
   { to: '/dashboard/transactions', icon: RiExchangeLine,  label: 'Transactions',   end: false },
-  { to: '/dashboard/deposit',      icon: RiSecurePaymentLine, label: 'Add Money',  end: false, locked: true },
+  { to: '/dashboard/deposit',      icon: RiSecurePaymentLine, label: 'Add Money',  end: false },
   { to: '/dashboard/transfer',     icon: RiSendPlaneLine, label: 'Transfer Money', end: false },
   { to: '/dashboard/cards',        icon: RiBankCard2Line, label: 'Cards',          end: false },
   { to: '/dashboard/beneficiaries',icon: RiGroupLine,     label: 'Beneficiaries',  end: false },
@@ -101,8 +102,24 @@ export default function Sidebar({ onNavigate = () => {} }) {
   const reduxUser = useSelector((state) => state.auth.user);
   const user      = useSafeUser(reduxUser);
 
+  // Per-user feature flags live on the account (transfer_methods). "Add Money"
+  // is admin-activated and locked by default, so the sidebar entry reflects it.
+  const account = useSelector((state) => state.account?.account);
+  const addMoneyEnabled = (() => {
+    const tm = account?.transfer_methods;
+    let parsed = tm;
+    if (typeof tm === 'string') { try { parsed = JSON.parse(tm); } catch { parsed = null; } }
+    return parsed?.add_money === true;
+  })();
+
   const rawRole = typeof user.role === 'string' ? user.role.toLowerCase().trim() : '';
   const isAdmin = rawRole === 'admin';
+
+  // Customers: make sure the account (with its feature flags) is loaded so the
+  // "Add Money" lock state in the sidebar is accurate on every page.
+  useEffect(() => {
+    if (!isAdmin && !account) dispatch(fetchAccount());
+  }, [isAdmin, account, dispatch]);
 
   const primaryNavItems   = isAdmin ? ADMIN_NAV_ITEMS : CUSTOMER_NAV_ITEMS;
   const secondaryNavItems = isAdmin ? []              : CUSTOMER_SETTINGS_ITEMS;
@@ -143,7 +160,13 @@ export default function Sidebar({ onNavigate = () => {} }) {
           {isAdmin ? 'Administration' : 'Banking'}
         </p>
         {primaryNavItems.map((item) => (
-          <SidebarNavItem key={item.to} {...item} currentPath={currentPath} onNavigate={onNavigate} />
+          <SidebarNavItem
+            key={item.to}
+            {...item}
+            locked={item.to === '/dashboard/deposit' ? !addMoneyEnabled : item.locked}
+            currentPath={currentPath}
+            onNavigate={onNavigate}
+          />
         ))}
 
         {secondaryNavItems.length > 0 && (

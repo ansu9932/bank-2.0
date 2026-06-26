@@ -7,6 +7,7 @@ const { createUpiQr, isConfigured } = require('../utils/razorpay');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { sendTransferAlertEmail } = require('../services/emailService');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
+const { normalizeTransferMethods } = require('../utils/transferMethods');
 const logger = require('../utils/logger');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -72,6 +73,12 @@ exports.createQR = async (req, res) => {
 
     const account = await Account.findOne({ where: { user_id: req.user.id } });
     if (!account) return notFound(res, 'No active bank account found for this profile.');
+
+    // ── Add Money lock ────────────────────────────────────────────────────────
+    // Deposits are an admin-activated feature, disabled by default per account.
+    if (!normalizeTransferMethods(account.transfer_methods).add_money) {
+      return error(res, 'Add Money is currently disabled on your account. Please contact Alister Bank to enable it.', 403);
+    }
 
     const userName = `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || 'Customer';
     const orderRef = buildOrderRef();

@@ -142,7 +142,6 @@ export default function DashboardHome() {
             <p className="text-dark-300 text-xs uppercase tracking-widest font-medium">Account Details</p>
             {[
               { label: 'Account Number', value: account?.account_number || '—' },
-              { label: 'IFSC Code', value: account?.ifsc_code || 'ALST0000001' },
               { label: 'SWIFT Code', value: account?.swift_code || 'ALSTINBB' },
               { label: 'Daily Limit', value: `$${parseFloat(account?.daily_transfer_limit || 500000).toLocaleString('en-US')}` },
             ].map(({ label, value }) => (

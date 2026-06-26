@@ -70,7 +70,7 @@ export default function StatementPage() {
           {[
             { label: 'Current Balance', value: `$${parseFloat(account?.balance || 0).toLocaleString('en-US')}` },
             { label: 'Available Balance', value: `$${parseFloat(account?.available_balance || 0).toLocaleString('en-US')}` },
-            { label: 'IFSC Code', value: account?.ifsc_code || 'ALST0000001' },
+            { label: 'SWIFT Code', value: account?.swift_code || 'ALSTINBB' },
             { label: 'Account Type', value: account?.account_type?.toUpperCase() || 'SAVINGS' },
           ].map(({ label, value }) => (
             <div key={label} className="bg-dark-700/50 rounded-xl p-3">
@@ -119,7 +119,7 @@ export default function StatementPage() {
       </div>
 
       <div className="glass-card p-4 text-xs text-dark-400">
-        🔒 Statements are official documents with a QR code for verification. Issued by Alister Bank. IFSC: ALST0000001 · SWIFT: ALSTINBB
+        🔒 Statements are official documents with a QR code for verification. Issued by Alister Bank. SWIFT: ALSTINBB
       </div>
     </div>
   );

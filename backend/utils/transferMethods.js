@@ -20,6 +20,9 @@ const DEFAULT_TRANSFER_METHODS = Object.freeze({
   neft: false,
   upi: false,
   internal: true,
+  // "Add Money" (deposit / top-up) is an admin-activated feature, locked by
+  // default for every account — only an admin can switch it on.
+  add_money: false,
 });
 
 // Human-readable labels for messages / UI.
@@ -28,10 +31,11 @@ const METHOD_LABELS = Object.freeze({
   neft: 'NEFT',
   upi: 'UPI',
   internal: 'Alister Internal',
+  add_money: 'Add Money',
 });
 
-// The four canonical method keys.
-const METHOD_KEYS = Object.freeze(['imps', 'neft', 'upi', 'internal']);
+// The canonical method keys.
+const METHOD_KEYS = Object.freeze(['imps', 'neft', 'upi', 'internal', 'add_money']);
 
 /**
  * Map a transfer mode/string (as used by the controllers / frontend) to the
@@ -70,6 +74,8 @@ function normalizeTransferMethods(raw) {
     upi: parsed.upi === true,
     // Internal on-us transfers stay enabled unless explicitly turned off.
     internal: parsed.internal !== false,
+    // Add Money is locked unless explicitly enabled by an admin.
+    add_money: parsed.add_money === true,
   };
 }
 

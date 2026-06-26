@@ -1151,10 +1151,9 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   { label: 'Bank Name',  value: 'Alister Bank' },
-                  { label: 'IFSC Code',  value: account?.ifsc_code  || 'ALST0000001' },
                   { label: 'SWIFT Code', value: account?.swift_code || 'ALSTINBB' },
                   { label: 'Branch',     value: account?.branch_name || 'Main Branch' },
-                  { label: 'Currency',   value: account?.currency    || 'USD' },
+                  { label: 'Currency',   value: 'USD' },
                   {
                     label: 'Min Balance',
                     value: `$${parseFloat(
