@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const { User, SecureLink, Account } = require('../models');
-const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC } = require('../utils/helpers');
+const { generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry, generateAccountNumber, generateIFSC } = require('../utils/helpers');
 const { sendVideoKYCEmail, sendAccountApprovedEmail, sendActivationDepositEmail } = require('../services/emailService');
 const { issueDepositToken } = require('../utils/depositLink');
 const logger = require('../utils/logger');
@@ -43,7 +43,11 @@ const runKYCWorkflow = () => {
 
         if (!existingLink) {
           const token = generateSecureToken();
-          const expiresAt = getSecureLinkExpiry(5);
+          // 24-hour expiry (matches the email copy + the admin-approval path).
+          // Previously this was 5 minutes, which silently expired before users
+          // finished, so their Video KYC never advanced and the deposit email
+          // never triggered.
+          const expiresAt = getOnboardingLinkExpiry();
 
           await SecureLink.create({
             user_id: user.id,
