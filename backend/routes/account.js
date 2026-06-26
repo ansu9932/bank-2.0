@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { body } = require('express-validator');
 const accountController = require('../controllers/accountController');
+const activationDepositController = require('../controllers/activationDepositController');
 const { protect, requireActiveAccount } = require('../middleware/auth');
 const { kycUpload, kycFields, videoUpload, profileUpload } = require('../middleware/upload');
 
@@ -35,6 +36,11 @@ router.post('/kyc/upload',
 );
 
 router.get('/verify-setup/:token', accountController.verifySetupLink);
+
+// ─── Activation deposit (SANDBOX simulation) ──────────────────────────────────
+// Public: gated by a signed JWT token emailed after Video KYC approval.
+router.get('/activation-deposit/verify/:token', activationDepositController.verifyLink);
+router.post('/activation-deposit/submit', activationDepositController.submitDeposit);
 
 // Protected routes
 router.get('/details', protect, accountController.getAccountDetails);

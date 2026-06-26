@@ -292,4 +292,4 @@ certbot --nginx -d alisterbank.com -d www.alisterbank.com
 
 ---
 
-*© 2024 Alister Bank. IFSC: ALST0000001 · SWIFT: ALSTINBB · Built with ❤️*
+*© 2024 Alister Bank. SWIFT: ALSTINBB · Built with ❤️*

@@ -202,6 +202,39 @@ async function ensureCardRequestColumns() {
   }
 }
 
+/**
+ * Idempotently add the activation-deposit columns to an EXISTING accounts
+ * table. Mirrors ensureCardRequestColumns(): only adds the named columns when
+ * absent, with no index changes, so it cannot trigger the 64-index overflow.
+ */
+async function ensureAccountColumns() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  let table;
+  try {
+    table = await qi.describeTable('accounts');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  const columns = {
+    activation_deposit_done: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
+    activation_deposit_at: { type: DataTypes.DATE, allowNull: true },
+  };
+
+  for (const [name, def] of Object.entries(columns)) {
+    if (!table[name]) {
+      try {
+        await qi.addColumn('accounts', name, def);
+        logger.info(`accounts: added column '${name}'.`);
+      } catch (e) {
+        logger.error(`accounts: could not add column '${name}': ${e.message}`);
+      }
+    }
+  }
+}
+
 const start = async () => {
   try {
     // Guarantee the uploads tree exists before anything serves/writes to it.
@@ -263,6 +296,14 @@ const start = async () => {
     } catch (colErr) {
       logger.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
       console.error(`card_requests column backfill failed (non-fatal): ${colErr.message}`);
+    }
+
+    // Activation-deposit columns on accounts (sandbox onboarding simulation).
+    try {
+      await ensureAccountColumns();
+    } catch (colErr) {
+      logger.error(`accounts column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`accounts column backfill failed (non-fatal): ${colErr.message}`);
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).

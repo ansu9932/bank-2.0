@@ -1,8 +1,9 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
-const { User, SecureLink } = require('../models');
-const { generateSecureToken, getSecureLinkExpiry } = require('../utils/helpers');
-const { sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
+const { User, SecureLink, Account } = require('../models');
+const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC } = require('../utils/helpers');
+const { sendVideoKYCEmail, sendAccountApprovedEmail, sendActivationDepositEmail } = require('../services/emailService');
+const { issueDepositToken } = require('../utils/depositLink');
 const logger = require('../utils/logger');
 
 /**
@@ -63,7 +64,9 @@ const runKYCWorkflow = () => {
     }
   });
 
-  // Step 2: Auto-approve + send setup link after 10 minutes of video_kyc_pending with video completed
+  // Step 2: Auto-approve + send ACTIVATION DEPOSIT link after 10 minutes of
+  // video_kyc_pending with video completed. (Account-setup link follows in
+  // Step 3, ~1 minute after the simulated activation deposit is received.)
   cron.schedule('* * * * *', async () => {
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -77,6 +80,58 @@ const runKYCWorkflow = () => {
       });
 
       for (const user of users) {
+        // Create account if missing.
+        let account = await Account.findOne({ where: { user_id: user.id } });
+        if (!account) {
+          account = await Account.create({
+            user_id: user.id,
+            account_number: generateAccountNumber(),
+            ifsc_code: generateIFSC('000001'),
+            swift_code: process.env.BANK_SWIFT || 'ALSTINBB',
+            account_type: user.account_type,
+            balance: 0.00,
+            available_balance: 0.00,
+            currency: 'INR',
+            status: 'active',
+          });
+        }
+
+        // Mark approved and email the (simulated) activation-deposit link.
+        const { token } = issueDepositToken(user.id);
+        const depositLink = `${process.env.FRONTEND_URL}/activate-deposit?token=${token}`;
+        await sendActivationDepositEmail(user.email, user.first_name, {
+          depositLink,
+          minimumBalance: parseFloat(account.minimum_balance || 1000),
+          accountNumber: account.account_number,
+        });
+
+        await user.update({ kyc_status: 'approved' });
+        logger.info(`Activation deposit link sent to ${user.email}`);
+      }
+    } catch (err) {
+      logger.error(`KYC Workflow Step 2 error: ${err.message}`);
+    }
+  });
+
+  // Step 3: ~1 minute after the (simulated) activation deposit is received,
+  // email the account-setup link. Gated so it only fires once per user (no
+  // existing unused account_setup link) and survives a process restart.
+  cron.schedule('* * * * *', async () => {
+    try {
+      const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+      const accounts = await Account.findAll({
+        where: {
+          activation_deposit_done: true,
+          activation_deposit_at: { [Op.lte]: oneMinuteAgo },
+        },
+        limit: 20,
+      });
+
+      for (const account of accounts) {
+        const user = await User.findByPk(account.user_id);
+        if (!user || user.setup_completed) continue;
+
+        // Skip if a setup link was already issued (prevents duplicate emails).
         const existingSetup = await SecureLink.findOne({
           where: {
             user_id: user.id,
@@ -85,44 +140,22 @@ const runKYCWorkflow = () => {
             expires_at: { [Op.gt]: new Date() },
           },
         });
+        if (existingSetup) continue;
 
-        if (!existingSetup) {
-          // Create account
-          const { Account } = require('../models');
-          const { generateAccountNumber, generateIFSC } = require('../utils/helpers');
+        const setupToken = generateSecureToken();
+        await SecureLink.create({
+          user_id: user.id,
+          token: setupToken,
+          purpose: 'account_setup',
+          expires_at: getSecureLinkExpiry(60 * 24), // 24h
+        });
 
-          let account = await Account.findOne({ where: { user_id: user.id } });
-          if (!account) {
-            account = await Account.create({
-              user_id: user.id,
-              account_number: generateAccountNumber(),
-              ifsc_code: generateIFSC('000001'),
-              swift_code: process.env.BANK_SWIFT || 'ALSTINBB',
-              account_type: user.account_type,
-              balance: 0.00,
-              available_balance: 0.00,
-              currency: 'INR',
-              status: 'active',
-            });
-          }
-
-          const setupToken = generateSecureToken();
-          await SecureLink.create({
-            user_id: user.id,
-            token: setupToken,
-            purpose: 'account_setup',
-            expires_at: getSecureLinkExpiry(5),
-          });
-
-          const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
-          await sendAccountApprovedEmail(user.email, user.first_name, setupLink, account.account_number);
-
-          await user.update({ kyc_status: 'approved' });
-          logger.info(`Account approved and setup link sent to ${user.email}`);
-        }
+        const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
+        await sendAccountApprovedEmail(user.email, user.first_name, setupLink, account.account_number);
+        logger.info(`Account setup link sent (post-deposit) to ${user.email}`);
       }
     } catch (err) {
-      logger.error(`KYC Workflow Step 2 error: ${err.message}`);
+      logger.error(`KYC Workflow Step 3 error: ${err.message}`);
     }
   });
 

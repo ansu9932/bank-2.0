@@ -1,15 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { RiMailLine, RiCheckDoubleLine, RiRefreshLine } from 'react-icons/ri';
+import { RiMailLine, RiCheckDoubleLine, RiRefreshLine, RiEdit2Line, RiCloseLine } from 'react-icons/ri';
 import api from '../../../services/api';
 import toast from 'react-hot-toast';
 
-export default function StepOTPVerify({ email, verified, onVerified }) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export default function StepOTPVerify({ email, verified, onVerified, onEmailChange }) {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [sent, setSent] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  // Inline "change email" editor state — lets a user correct a wrong email
+  // address WITHOUT going back to Step 1 and losing OTP progress.
+  const [editing, setEditing] = useState(false);
+  const [draftEmail, setDraftEmail] = useState(email || '');
   const refs = useRef([]);
 
   useEffect(() => {
@@ -32,6 +38,21 @@ export default function StepOTPVerify({ email, verified, onVerified }) {
     } finally {
       setSendingOtp(false);
     }
+  };
+
+  // Commit an inline email change: validate, push up to the wizard form (which
+  // also resets verification), and reset the local OTP entry state so the user
+  // can request a fresh code for the corrected address.
+  const saveEmail = () => {
+    const next = draftEmail.trim();
+    if (!EMAIL_RE.test(next)) { toast.error('Enter a valid email address.'); return; }
+    if (next === email) { setEditing(false); return; }
+    onEmailChange?.(next);
+    setEditing(false);
+    setSent(false);
+    setCountdown(0);
+    setOtp(['', '', '', '', '', '']);
+    toast.success('Email updated. Send a new OTP to verify it.');
   };
 
   const handleChange = (i, val) => {
@@ -90,15 +111,60 @@ export default function StepOTPVerify({ email, verified, onVerified }) {
       <h3 className="font-display text-xl font-700 text-white mb-1">Email Verification</h3>
       <p className="text-dark-300 text-sm mb-6">We'll send a 6-digit OTP to verify your email address.</p>
 
-      {/* Email display */}
-      <div className="flex items-center gap-3 p-4 rounded-xl bg-dark-700 border border-white/[0.06] mb-6">
-        <div className="w-10 h-10 rounded-full bg-brand-500/15 flex items-center justify-center flex-shrink-0">
-          <RiMailLine className="text-brand-400 text-xl" />
-        </div>
-        <div>
-          <p className="text-dark-300 text-xs">OTP will be sent to</p>
-          <p className="text-white font-medium text-sm">{email || 'No email provided'}</p>
-        </div>
+      {/* Email display + inline "change email" editor */}
+      <div className="p-4 rounded-xl bg-dark-700 border border-white/[0.06] mb-6">
+        {!editing ? (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-brand-500/15 flex items-center justify-center flex-shrink-0">
+              <RiMailLine className="text-brand-400 text-xl" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-dark-300 text-xs">OTP will be sent to</p>
+              <p className="text-white font-medium text-sm truncate">{email || 'No email provided'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setDraftEmail(email || ''); setEditing(true); }}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 text-brand-400 hover:text-brand-300 text-xs font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
+            >
+              <RiEdit2Line /> Change
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-dark-300 text-xs">Update your email address</p>
+              <button
+                type="button"
+                onClick={() => { setEditing(false); setDraftEmail(email || ''); }}
+                className="text-dark-400 hover:text-white text-xs inline-flex items-center gap-1"
+              >
+                <RiCloseLine /> Cancel
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="email"
+                value={draftEmail}
+                onChange={(e) => setDraftEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveEmail(); }}
+                placeholder="you@example.com"
+                autoFocus
+                className="input-field text-sm flex-1"
+              />
+              <button
+                type="button"
+                onClick={saveEmail}
+                className="btn-primary text-sm py-2.5 px-5 whitespace-nowrap"
+              >
+                Save Email
+              </button>
+            </div>
+            <p className="text-dark-400 text-[11px] mt-2">
+              You can correct your email here without going back — we'll send the OTP to the new address.
+            </p>
+          </div>
+        )}
       </div>
 
       {!sent ? (

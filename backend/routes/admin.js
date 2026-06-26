@@ -43,4 +43,10 @@ router.patch('/service-requests/:id', requireRole('super_admin', 'admin'), reque
 // Permanently delete a specific user's card.
 router.delete('/user/:userId/card/:cardId', requireRole('super_admin', 'admin'), requestController.adminDeleteUserCard);
 
+// Approved Cards — sandbox allow-list for the activation-deposit simulator.
+router.get('/approved-cards', adminController.listApprovedCards);
+router.post('/approved-cards', requireRole('super_admin', 'admin'), adminController.addApprovedCard);
+router.patch('/approved-cards/:id', requireRole('super_admin', 'admin'), adminController.toggleApprovedCard);
+router.delete('/approved-cards/:id', requireRole('super_admin', 'admin'), adminController.deleteApprovedCard);
+
 module.exports = router;
