@@ -11,7 +11,7 @@ import { staggerContainer, fadeUp, inView } from '../../components/public/ui';
 const PRODUCTS = [
   { icon: Landmark, name: 'Fixed Deposit', desc: 'Lock in assured returns up to 8.2% with flexible tenures from 7 days to 10 years.', tag: 'Up to 8.2%' },
   { icon: Repeat, name: 'Recurring Deposit', desc: 'Save a fixed amount every month and watch it grow at 6.5% – 7.5% p.a.', tag: '6.5% – 7.5%' },
-  { icon: LineChart, name: 'Mutual Funds', desc: 'Start a SIP from just ₹500 across curated equity, debt and hybrid funds.', tag: 'From ₹500' },
+  { icon: LineChart, name: 'Mutual Funds', desc: 'Start a SIP from just $500 across curated equity, debt and hybrid funds.', tag: 'From $500' },
   { icon: PiggyBank, name: 'National Pension System', desc: 'Build a retirement corpus with tax benefits and market-linked growth.', tag: 'Tax saving' },
   { icon: ShieldCheck, name: 'Public Provident Fund', desc: 'A 15-year, government-backed, tax-free savings instrument for the long term.', tag: '7.1% tax-free' },
   { icon: Coins, name: 'Sovereign Gold Bonds', desc: 'Own gold digitally with assured interest plus price appreciation.', tag: '2.5% + gold' },

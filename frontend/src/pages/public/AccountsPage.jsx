@@ -14,7 +14,7 @@ const ACCOUNTS = [
     badge: 'Most Popular',
     desc: 'Grow your money with attractive interest and everyday banking essentials.',
     benefits: ['Up to 7% interest p.a.', 'Free RuPay/VISA debit card', 'Free NetBanking & mobile app', 'UPI & instant transfers'],
-    minBalance: '₹5,00,000',
+    minBalance: '$500,000',
     eligibility: 'India-based, invited under the Corporate Partnership Program',
     cta: 'Request Account Access',
   },
@@ -24,7 +24,7 @@ const ACCOUNTS = [
     badge: 'For Business',
     desc: 'High-limit banking for businesses, with overdraft and bulk payments.',
     benefits: ['High transaction limits', 'Overdraft facility', 'Bulk & vendor payments', 'GST-ready statements'],
-    minBalance: '₹10,00,000',
+    minBalance: '$1,000,000',
     eligibility: 'India-based businesses, invited under the Corporate Partnership Program',
     cta: 'Request Account Access',
   },
@@ -32,8 +32,8 @@ const ACCOUNTS = [
 
 const COMPARE_ROWS = [
   ['Eligible Users', 'India (Invited Only)', 'India (Invited Only)'],
-  ['Opening Deposit', '₹1,00,000', '₹1,00,000'],
-  ['Minimum Balance', '₹5,00,000', '₹10,00,000'],
+  ['Opening Deposit', '$100,000', '$100,000'],
+  ['Minimum Balance', '$500,000', '$1,000,000'],
   ['Interest Rate', '4% – 7% p.a.', 'Non-interest bearing'],
   ['Transaction Limits', 'Standard', 'High / Bulk supported'],
   ['Overdraft Facility', false, true],
@@ -86,7 +86,7 @@ export default function AccountsPage() {
           className="rounded-2xl px-6 py-5 text-center"
           style={{ background: 'linear-gradient(135deg, #CC0000, #990000)' }}
         >
-          <p className="text-white font-bold text-lg sm:text-xl">Minimum Account Opening Deposit: ₹1,00,000</p>
+          <p className="text-white font-bold text-lg sm:text-xl">Minimum Account Opening Deposit: $100,000</p>
         </motion.div>
       </Section>
 

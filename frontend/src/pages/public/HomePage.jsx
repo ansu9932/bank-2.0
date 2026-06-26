@@ -16,7 +16,7 @@ import { Section, SectionTitle, RedButton, GhostButton } from '../../components/
 import { staggerContainer, fadeUp, fadeLeft, fadeRight, inView } from '../../components/public/ui';
 
 const STATS = [
-  { value: 50000, prefix: '₹', suffix: '+ Cr', label: 'Transactions Processed' },
+  { value: 50000, prefix: '$', suffix: '+ Cr', label: 'Transactions Processed' },
   { value: 2.5, decimals: 1, suffix: 'M+', label: 'Happy Customers' },
   { value: 99.9, decimals: 1, suffix: '%', label: 'Uptime Guaranteed' },
   { value: 2, prefix: '< ', suffix: ' Sec', label: 'Average Transfer Time' },
@@ -27,7 +27,7 @@ const PRODUCTS = [
   { emoji: '🏠', title: 'Home Loan', subtitle: 'Starting at 8.5% p.a.', to: '/loans' },
   { emoji: '🚗', title: 'Car Loan', subtitle: 'Quick approval in 24 hrs', to: '/loans' },
   { emoji: '💰', title: 'Fixed Deposit', subtitle: 'Up to 8.2% assured returns', to: '/investments' },
-  { emoji: '📊', title: 'Mutual Funds', subtitle: 'Start a SIP from just ₹500', to: '/investments' },
+  { emoji: '📊', title: 'Mutual Funds', subtitle: 'Start a SIP from just $500', to: '/investments' },
   { emoji: '🛡️', title: 'Insurance', subtitle: 'Comprehensive coverage plans', to: '/investments' },
 ];
 
@@ -445,7 +445,7 @@ function AppBanner() {
             <div className="h-1.5 w-14 mx-auto rounded-full bg-white/20 mb-3" />
             <div className="flex-1 rounded-3xl p-4 flex flex-col gap-3" style={{ background: 'linear-gradient(160deg, rgba(204,0,0,0.18), rgba(10,10,10,0.6))' }}>
               <p className="text-[11px] uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.5)' }}>Total Balance</p>
-              <p className="font-serif-display font-bold text-2xl text-white">₹12,84,500</p>
+              <p className="font-serif-display font-bold text-2xl text-white">$12,84,500</p>
               <div className="h-px bg-white/10 my-1" />
               {['Transfer', 'Pay Bills', 'Invest'].map((a) => (
                 <div key={a} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.05)' }}>

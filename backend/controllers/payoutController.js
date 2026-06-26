@@ -24,7 +24,7 @@ const INSTANT_MODES = ['IMPS', 'UPI'];
 // half-hourly NEFT cycles at a demo-friendly cadence; override via env.
 const NEFT_SETTLEMENT_MS = (parseInt(process.env.NEFT_SETTLEMENT_MINUTES, 10) || 3) * 60 * 1000;
 
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 /**
  * In-memory tracker of pending NEFT settlement timers so they can be inspected

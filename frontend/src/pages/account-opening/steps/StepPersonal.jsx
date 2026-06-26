@@ -83,7 +83,7 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
         <Field label="Occupation">
           <input className="input-field" value={form.occupation} onChange={set('occupation')} placeholder="Software Engineer" />
         </Field>
-        <Field label="Annual Income (₹)">
+        <Field label="Annual Income ($)">
           <input className="input-field" type="number" value={form.annualIncome} onChange={set('annualIncome')} placeholder="1500000" />
         </Field>
         <Field label="Account Type *" error={errors.accountType}>

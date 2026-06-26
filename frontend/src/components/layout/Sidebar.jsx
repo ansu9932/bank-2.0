@@ -6,7 +6,7 @@ import {
   RiFileTextLine, RiBarChartLine, RiUserLine, RiShieldLine,
   RiCustomerService2Line, RiLogoutBoxLine, RiBankLine,
   RiShieldCheckLine, RiFileShield2Line, RiSecurePaymentLine,
-  RiBankCard2Line,
+  RiBankCard2Line, RiLockLine,
 } from 'react-icons/ri';
 import { logout } from '../../store/slices/authSlice';
 
@@ -22,7 +22,7 @@ const ADMIN_NAV_ITEMS = [
 const CUSTOMER_NAV_ITEMS = [
   { to: '/dashboard',              icon: RiDashboardLine, label: 'Dashboard',      end: true  },
   { to: '/dashboard/transactions', icon: RiExchangeLine,  label: 'Transactions',   end: false },
-  { to: '/dashboard/deposit',      icon: RiSecurePaymentLine, label: 'Add Money',  end: false },
+  { to: '/dashboard/deposit',      icon: RiSecurePaymentLine, label: 'Add Money',  end: false, locked: true },
   { to: '/dashboard/transfer',     icon: RiSendPlaneLine, label: 'Transfer Money', end: false },
   { to: '/dashboard/cards',        icon: RiBankCard2Line, label: 'Cards',          end: false },
   { to: '/dashboard/beneficiaries',icon: RiGroupLine,     label: 'Beneficiaries',  end: false },
@@ -55,7 +55,22 @@ function useSafeUser(reduxUser) {
 }
 
 // ─── Single nav link ──────────────────────────────────────────────────────────
-function SidebarNavItem({ to, icon: Icon, label, end, currentPath, onNavigate }) {
+function SidebarNavItem({ to, icon: Icon, label, end, locked, currentPath, onNavigate }) {
+  // Locked items render as a disabled, non-navigable row with a lock badge.
+  if (locked) {
+    return (
+      <div
+        className="nav-item opacity-50 cursor-not-allowed select-none"
+        title="This feature is currently locked"
+        aria-disabled="true"
+      >
+        <Icon className="text-lg flex-shrink-0" />
+        <span className="text-sm whitespace-nowrap">{label}</span>
+        <RiLockLine className="text-xs ml-auto flex-shrink-0" />
+      </div>
+    );
+  }
+
   const isActive = end
     ? currentPath === to
     : currentPath === to || currentPath.startsWith(`${to}/`);

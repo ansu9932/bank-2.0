@@ -68,8 +68,8 @@ export default function StatementPage() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Current Balance', value: `₹${parseFloat(account?.balance || 0).toLocaleString('en-IN')}` },
-            { label: 'Available Balance', value: `₹${parseFloat(account?.available_balance || 0).toLocaleString('en-IN')}` },
+            { label: 'Current Balance', value: `$${parseFloat(account?.balance || 0).toLocaleString('en-US')}` },
+            { label: 'Available Balance', value: `$${parseFloat(account?.available_balance || 0).toLocaleString('en-US')}` },
             { label: 'IFSC Code', value: account?.ifsc_code || 'ALST0000001' },
             { label: 'Account Type', value: account?.account_type?.toUpperCase() || 'SAVINGS' },
           ].map(({ label, value }) => (

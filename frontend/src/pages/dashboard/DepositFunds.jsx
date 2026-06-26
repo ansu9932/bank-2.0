@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   RiQrCodeLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
   RiSecurePaymentLine, RiArrowLeftLine, RiArrowRightLine,
-  RiBankCardLine, RiBankLine, RiInformationLine,
+  RiBankCardLine, RiBankLine, RiInformationLine, RiLockLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -14,15 +14,21 @@ import { fetchTransactions } from '../../store/slices/transactionSlice';
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT (Add Money)
-   • Amount <= ₹1,00,000 → dynamic UPI QR (scan + webhook credit + polling).
-   • Amount  > ₹1,00,000 → UPI/QR disabled; Card / Net Banking method cards
+   • Amount <= $100,000 → dynamic UPI QR (scan + webhook credit + polling).
+   • Amount  > $100,000 → UPI/QR disabled; Card / Net Banking method cards
      open the Razorpay Checkout widget (method forced by selection).
    Theme: matte-black #0d0e12 · charcoal surfaces · crimson #c8102e accents.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
+
+// ── Feature lock ─────────────────────────────────────────────────────────────
+// The "Add Money" / deposit feature is currently LOCKED. While locked, the page
+// shows a locked notice instead of the amount form, and the sidebar entry is
+// disabled. Flip to false to re-enable UPI QR + Razorpay card / net-banking.
+const ADD_MONEY_LOCKED = true;
 const QUICK_ADD = [500, 1000, 5000];
-const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling (₹1L)
+const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling ($1L)
 
 // Net-banking partner grid. The selected code is forwarded to the hosted
 // Razorpay widget via prefill.bank so it routes straight to the bank's
@@ -107,7 +113,7 @@ export default function DepositFunds() {
   }, []);
 
   const numericAmount = parseFloat(amount) || 0;
-  // Conditional gate: anything over ₹1L cannot use UPI/QR.
+  // Conditional gate: anything over $1L cannot use UPI/QR.
   const isHighValue = numericAmount > UPI_QR_CAP;
 
   const handleQuickAdd = (inc) => setAmount((prev) => String((parseFloat(prev) || 0) + inc));
@@ -117,7 +123,7 @@ export default function DepositFunds() {
     if (/^\d*\.?\d*$/.test(v)) setAmount(v); // digits + single optional decimal
   };
 
-  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   // ── Handle a confirmed credit (shared by QR + Checkout flows) ──────────────
   const handleCredited = useCallback((payload) => {
@@ -162,10 +168,10 @@ export default function DepositFunds() {
     }, POLL_INTERVAL_MS);
   }, [handleCredited, stopPolling]);
 
-  // ── ≤ ₹1L: generate the UPI QR ──────────────────────────────────────────────
+  // ── ≤ $1L: generate the UPI QR ──────────────────────────────────────────────
   const handleGenerate = async () => {
     if (numericAmount <= 0) { toast.error('Please enter a valid amount.'); return; }
-    if (isHighValue) { toast.error('Maximum deposit per QR is ₹1,00,000.'); return; }
+    if (isHighValue) { toast.error('Maximum deposit per QR is $100,000.'); return; }
     setGenerating(true);
     try {
       const { data } = await api.post('/payments/create-qr', { amount: numericAmount });
@@ -182,7 +188,7 @@ export default function DepositFunds() {
     }
   };
 
-  // ── > ₹1L: open the re-skinned Razorpay hosted widget for Card / Net Banking ─
+  // ── > $1L: open the re-skinned Razorpay hosted widget for Card / Net Banking ─
   // Card data (PAN/CVV) is collected *inside* Razorpay's iframe, never in our
   // DOM, so we stay in PCI SAQ A scope. For Net Banking we forward the chosen
   // bank via prefill so the widget routes straight to that bank's redirect.
@@ -272,6 +278,57 @@ export default function DepositFunds() {
     setPhase('form');
   };
 
+  // ── Locked state ────────────────────────────────────────────────────────────
+  // When the feature is locked, show a clear notice instead of the deposit form.
+  if (ADD_MONEY_LOCKED) {
+    return (
+      <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>
+        <div className="max-w-2xl mx-auto px-1 py-6 sm:py-8">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center border border-brand-500/30"
+              style={{ background: 'rgba(200,16,46,0.12)', boxShadow: `0 0 22px ${CRIMSON}33` }}>
+              <RiSecurePaymentLine className="text-2xl" style={{ color: '#ff3d52' }} />
+            </div>
+            <div>
+              <h1 className="font-display font-bold text-white text-xl leading-tight"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Add Money
+              </h1>
+              <p className="text-slate-400 text-xs mt-0.5">Account funding</p>
+            </div>
+          </div>
+
+          {/* Locked notice card */}
+          <div className="bg-[#15161c] border border-white/[0.06] rounded-3xl p-8 sm:p-10 flex flex-col items-center text-center"
+            style={{ boxShadow: '0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 border"
+              style={{ background: 'rgba(200,16,46,0.1)', borderColor: 'rgba(200,16,46,0.35)' }}>
+              <RiLockLine className="text-4xl" style={{ color: '#ff3d52' }} />
+            </div>
+            <h2 className="font-display font-bold text-white text-2xl tracking-tight"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              Add Money is Locked
+            </h2>
+            <p className="text-slate-400 text-sm mt-3 max-w-md leading-relaxed">
+              The Add Money feature is currently unavailable on your account. Please contact
+              Alister Bank support if you need to fund your account.
+            </p>
+            <button type="button" onClick={() => navigate('/dashboard')}
+              className="mt-7 py-3.5 px-6 rounded-2xl font-semibold text-sm tracking-wide uppercase text-white flex items-center justify-center gap-2 transition-all active:scale-95"
+              style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)`, boxShadow: `0 0 24px ${CRIMSON}44` }}>
+              <RiArrowLeftLine className="text-lg" /> Back to Dashboard
+            </button>
+          </div>
+
+          <p className="text-center text-slate-600 text-[11px] mt-5">
+            🔒 Secured by Alister Bank Core Ecosystem
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>
       <div className="max-w-2xl mx-auto px-1 py-6 sm:py-8">
@@ -313,7 +370,7 @@ export default function DepositFunds() {
                 </label>
 
                 <div className="relative">
-                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-semibold text-slate-400">₹</span>
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-semibold text-slate-400">$</span>
                   <input
                     type="text" inputMode="decimal" value={amount} onChange={handleAmountChange}
                     placeholder="0" autoFocus
@@ -326,12 +383,12 @@ export default function DepositFunds() {
                   {QUICK_ADD.map((inc) => (
                     <button key={inc} type="button" onClick={() => handleQuickAdd(inc)}
                       className="py-2.5 rounded-xl text-sm font-semibold text-slate-200 border border-white/[0.08] bg-white/[0.03] hover:border-brand-500/50 hover:text-white hover:bg-brand-500/10 transition-all active:scale-95">
-                      +₹{inc.toLocaleString('en-IN')}
+                      +${inc.toLocaleString('en-US')}
                     </button>
                   ))}
                 </div>
 
-                {/* ── ≤ ₹1L: UPI QR generation ─────────────────────────────── */}
+                {/* ── ≤ $1L: UPI QR generation ─────────────────────────────── */}
                 {!isHighValue && (
                   <>
                     <button type="button" onClick={handleGenerate} disabled={generating || numericAmount <= 0}
@@ -348,7 +405,7 @@ export default function DepositFunds() {
                   </>
                 )}
 
-                {/* ── > ₹1L: Card / Net Banking method cards ───────────────── */}
+                {/* ── > $1L: Card / Net Banking method cards ───────────────── */}
                 {isHighValue && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -358,7 +415,7 @@ export default function DepositFunds() {
                       style={{ background: 'rgba(200,16,46,0.07)', borderColor: 'rgba(200,16,46,0.28)' }}>
                       <RiInformationLine className="mt-0.5 flex-shrink-0" style={{ color: '#ff8090' }} />
                       <p className="text-xs leading-relaxed" style={{ color: '#ffb3bf' }}>
-                        ℹ UPI/QR payments are capped at ₹1 Lakh. Please select Card or Net Banking to complete this transaction safely.
+                        ℹ UPI/QR payments are capped at $100,000. Please select Card or Net Banking to complete this transaction safely.
                       </p>
                     </div>
 

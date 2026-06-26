@@ -20,7 +20,7 @@ import BackToHome from '../../components/common/BackToHome';
 const CRIMSON = '#c8102e';
 const PAGE_BG = { background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 50%, #2D0000 100%)' };
 
-const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 // Group a card number into 4-digit blocks for display.
 const groupCard = (v) => v.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
@@ -202,7 +202,7 @@ export default function ActivateDepositPage() {
                 <div>
                   <label className="block text-white/50 text-xs mb-1.5">Deposit Amount</label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">₹</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50">$</span>
                     <input value={amount} onChange={(e) => { const v = e.target.value; if (/^\d*\.?\d*$/.test(v)) setAmount(v); }}
                       inputMode="decimal"
                       className="w-full bg-[#0d0e12] border border-white/[0.1] rounded-xl pl-8 pr-4 py-3 text-white outline-none focus:border-brand-500 tabular-nums" />

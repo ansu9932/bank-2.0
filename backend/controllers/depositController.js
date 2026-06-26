@@ -7,16 +7,16 @@ const logger = require('../utils/logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALISTER BANK · CONDITIONAL DEPOSIT GATEWAY
-   High-value deposits (> ₹1,00,000) cannot use UPI/QR (NPCI per-txn cap), so
+   High-value deposits (> $100,000) cannot use UPI/QR (NPCI per-txn cap), so
    they open the Razorpay Checkout widget against a server-created Order with a
    forced method preference (Card or Net Banking). The shared webhook in
    paymentController credits the balance on `payment.captured`.
    ────────────────────────────────────────────────────────────────────────── */
 
-// ₹1,00,000 — the UPI/QR per-transaction ceiling.
+// $100,000 — the UPI/QR per-transaction ceiling.
 const UPI_QR_CAP = 100000;
 const MIN_DEPOSIT = 1;
-// Razorpay hard cap for a single order (₹5,00,00,000). Keeps payloads sane.
+// Razorpay hard cap for a single order ($50,000,000). Keeps payloads sane.
 const MAX_DEPOSIT = 50000000;
 
 // Methods routed through the Checkout Order flow (this controller).
@@ -49,7 +49,7 @@ function buildOrderRef() {
 // ─── Create a Checkout deposit order ──────────────────────────────────────────
 // POST /api/payments/create-deposit-order   (protected)
 // Body: { amount, paymentMethod }  where paymentMethod ∈ 'card' | 'netbanking'
-//       (and 'upi'/'qr' are explicitly rejected above the ₹1L cap).
+//       (and 'upi'/'qr' are explicitly rejected above the $1L cap).
 exports.createDepositOrder = async (req, res) => {
   try {
     if (!isConfigured()) {
@@ -66,16 +66,16 @@ exports.createDepositOrder = async (req, res) => {
     if (!amount || Number.isNaN(amount) || amount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');
     }
-    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is ₹${MIN_DEPOSIT}.`);
+    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is $${MIN_DEPOSIT}.`);
     if (amount > MAX_DEPOSIT) {
-      return badRequest(res, `Maximum deposit per transaction is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
+      return badRequest(res, `Maximum deposit per transaction is $${MAX_DEPOSIT.toLocaleString('en-US')}.`);
     }
 
-    // ── Conditional rule: UPI/QR is hard-capped at ₹1,00,000 ──────────────────
+    // ── Conditional rule: UPI/QR is hard-capped at $100,000 ──────────────────
     if (amount > UPI_QR_CAP && QR_METHODS.includes(paymentMethod)) {
       return badRequest(
         res,
-        `UPI/QR payments are capped at ₹${UPI_QR_CAP.toLocaleString('en-IN')}. Please choose Card or Net Banking for this amount.`
+        `UPI/QR payments are capped at $${UPI_QR_CAP.toLocaleString('en-US')}. Please choose Card or Net Banking for this amount.`
       );
     }
 
@@ -144,7 +144,7 @@ exports.createDepositOrder = async (req, res) => {
       ? { card: true, netbanking: false, upi: false, wallet: false, paylater: false }
       : { netbanking: true, card: false, upi: false, wallet: false, paylater: false };
 
-    logger.info(`Deposit order created: orderRef=${orderRef} rzpOrder=${order.id} amount=₹${amount} method=${paymentMethod} user=${req.user.id}`);
+    logger.info(`Deposit order created: orderRef=${orderRef} rzpOrder=${order.id} amount=$${amount} method=${paymentMethod} user=${req.user.id}`);
 
     createAuditLog({
       userId: req.user.id,
@@ -153,7 +153,7 @@ exports.createDepositOrder = async (req, res) => {
       entityId: orderRef,
       ipAddress: req.ip,
       status: 'success',
-      description: `Checkout deposit order of ₹${amount} via ${paymentMethod}.`,
+      description: `Checkout deposit order of $${amount} via ${paymentMethod}.`,
     }).catch(() => {});
 
     return success(res, {
@@ -162,7 +162,7 @@ exports.createDepositOrder = async (req, res) => {
       keyId: process.env.RAZORPAY_KEY_ID,
       amount,
       amountPaise: order.amount,
-      currency: order.currency || 'INR',
+      currency: order.currency || 'USD',
       paymentMethod,
       methodConfig,
       // Echoed back so the client can route the hosted widget straight to the

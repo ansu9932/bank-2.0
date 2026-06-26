@@ -79,8 +79,8 @@ const maskAccountNumber = (accountNumber) => {
 /**
  * Format currency
  */
-const formatCurrency = (amount, currency = 'INR') => {
-  return new Intl.NumberFormat('en-IN', {
+const formatCurrency = (amount, currency = 'USD') => {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,

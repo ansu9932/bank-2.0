@@ -87,7 +87,7 @@ exports.submitDeposit = async (req, res) => {
       return badRequest(res, 'Please enter a valid deposit amount.');
     }
     if (depositAmount < minimum) {
-      return badRequest(res, `The minimum activation deposit is ₹${minimum.toLocaleString('en-IN')}.`);
+      return badRequest(res, `The minimum activation deposit is $${minimum.toLocaleString('en-US')}.`);
     }
 
     // ── Card validation (sandbox) ──────────────────────────────────────────
@@ -147,7 +147,7 @@ exports.submitDeposit = async (req, res) => {
 
       await Notification.create({
         user_id: locked.user_id,
-        title: `₹${depositAmount.toLocaleString('en-IN')} activation deposit received`,
+        title: `$${depositAmount.toLocaleString('en-US')} activation deposit received`,
         message: 'Your activation deposit was received (simulated). Your account setup link will arrive shortly.',
         type: 'transaction',
         priority: 'high',
@@ -167,7 +167,7 @@ exports.submitDeposit = async (req, res) => {
       entityId: account.id,
       ipAddress: req.ip,
       status: 'success',
-      description: `Simulated activation deposit of ₹${depositAmount} via Credit Card ending ${last4}.`,
+      description: `Simulated activation deposit of $${depositAmount} via Credit Card ending ${last4}.`,
     }).catch(() => {});
 
     // Simulated credit confirmation email (mode "Credit Card", no bank name).
@@ -177,7 +177,7 @@ exports.submitDeposit = async (req, res) => {
       cardHolder: String(cardHolder).trim(),
       balance: balanceAfter.toFixed(2),
       reference,
-      time: new Date().toLocaleString('en-IN'),
+      time: new Date().toLocaleString('en-US'),
     }).catch((e) => logger.error(`Activation deposit credit email failed: ${e.message}`));
 
     return success(res, {

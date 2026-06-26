@@ -91,7 +91,7 @@ const runKYCWorkflow = () => {
             account_type: user.account_type,
             balance: 0.00,
             available_balance: 0.00,
-            currency: 'INR',
+            currency: 'USD',
             status: 'active',
           });
         }

@@ -64,7 +64,7 @@ const seed = async () => {
       account_type: 'savings',
       balance: 254750.00,
       available_balance: 254750.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
       interest_rate: 4.00,
       minimum_balance: 1000.00,
@@ -114,7 +114,7 @@ const seed = async () => {
       account_type: 'current',
       balance: 182500.00,
       available_balance: 182500.00,
-      currency: 'INR',
+      currency: 'USD',
       status: 'active',
       // Demo showcase account — all rails enabled + workable daily ceiling.
       daily_transfer_limit: 100000.00,
@@ -184,8 +184,8 @@ const seed = async () => {
 
     // ── Notifications ────────────────────────────────────────────────────────
     await Notification.bulkCreate([
-      { user_id: user1.id, title: 'Salary Credited ✅', message: '₹1,20,000 credited to your account. Enjoy your month!', type: 'transaction', priority: 'high', is_read: false },
-      { user_id: user1.id, title: 'Transfer Successful', message: '₹25,000 transferred to Priya Nair via IMPS.', type: 'transaction', priority: 'medium', is_read: true },
+      { user_id: user1.id, title: 'Salary Credited ✅', message: '$1,20,000 credited to your account. Enjoy your month!', type: 'transaction', priority: 'high', is_read: false },
+      { user_id: user1.id, title: 'Transfer Successful', message: '$25,000 transferred to Priya Nair via IMPS.', type: 'transaction', priority: 'medium', is_read: true },
       { user_id: user1.id, title: 'Welcome to Alister Bank! 🎉', message: 'Your account is active. Explore all banking features.', type: 'kyc', priority: 'medium', is_read: true },
       { user_id: user1.id, title: 'New Login Detected', message: 'Login from Chrome, Windows, Bangalore.', type: 'security', priority: 'medium', is_read: false },
     ]);

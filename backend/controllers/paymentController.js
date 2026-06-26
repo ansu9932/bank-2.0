@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const MIN_DEPOSIT = 1;
-const MAX_DEPOSIT = 100000;           // UPI/QR per-transaction ceiling (₹1L)
+const MAX_DEPOSIT = 100000;           // UPI/QR per-transaction ceiling ($1L)
 const QR_TTL_SECONDS = 60 * 60; // single-use QR valid for 1 hour
 const DEPOSIT_DESCRIPTION = 'Instant Funds Deposited via Secure UPI QR';
 const PENDING_DESCRIPTION = 'UPI deposit via Secure QR (awaiting payment)';
@@ -65,9 +65,9 @@ exports.createQR = async (req, res) => {
     if (!amount || Number.isNaN(amount) || amount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');
     }
-    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is ₹${MIN_DEPOSIT}.`);
+    if (amount < MIN_DEPOSIT) return badRequest(res, `Minimum deposit is $${MIN_DEPOSIT}.`);
     if (amount > MAX_DEPOSIT) {
-      return badRequest(res, `Maximum deposit per QR is ₹${MAX_DEPOSIT.toLocaleString('en-IN')}.`);
+      return badRequest(res, `Maximum deposit per QR is $${MAX_DEPOSIT.toLocaleString('en-US')}.`);
     }
 
     const account = await Account.findOne({ where: { user_id: req.user.id } });
@@ -130,14 +130,14 @@ exports.createQR = async (req, res) => {
       logger.error(`Pending deposit record creation failed (${orderRef}): ${txErr.message}`);
     }
 
-    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=₹${amount} user=${req.user.id}`);
+    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=$${amount} user=${req.user.id}`);
 
     return success(res, {
       orderRef,
       qrId: qr.id,
       image_url: qrImage,
       amount,
-      currency: 'INR',
+      currency: 'USD',
       description,
       status: qr.status,
       expiresAt: qr.close_by ? new Date(qr.close_by * 1000).toISOString() : null,
@@ -240,14 +240,14 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
 
     await Notification.create({
       user_id: locked.user_id,
-      title: `₹${paymentAmount.toLocaleString('en-IN')} added to your account`,
+      title: `$${paymentAmount.toLocaleString('en-US')} added to your account`,
       message: `${DEPOSIT_DESCRIPTION}. Ref: ${paymentId || orderRef}`,
       type: 'transaction',
       priority: 'high',
     }, { transaction: t });
 
     await t.commit();
-    logger.info(`Deposit credited: ₹${paymentAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}).`);
+    logger.info(`Deposit credited: $${paymentAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}).`);
 
     createAuditLog({
       userId: locked.user_id,
@@ -255,7 +255,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
       entityType: 'Transaction',
       entityId: String(orderRef || paymentId).slice(0, 100),
       status: 'success',
-      description: `UPI deposit of ₹${paymentAmount} credited.`,
+      description: `UPI deposit of $${paymentAmount} credited.`,
     }).catch(() => {});
 
     // Transaction alert email — every successful CREDIT notifies the user.
@@ -268,7 +268,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
         counterparty: 'UPI Instant Deposit',
         mode: 'UPI',
         balance: balanceAfter.toFixed(2),
-        time: new Date().toLocaleString('en-IN'),
+        time: new Date().toLocaleString('en-US'),
       });
     }).catch((e) => logger.error(`Deposit credit email failed: ${e.message}`));
 

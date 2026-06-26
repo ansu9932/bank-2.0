@@ -55,7 +55,7 @@ const DEFAULT_CONTROLS = {
   international_limit: 0,
 };
 
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 // ─── Cheque Book request (free) ───────────────────────────────────────────────
 // POST /api/requests/checkbook   (protect + requireActiveAccount)
@@ -362,7 +362,7 @@ exports.updateCardControls = async (req, res) => {
       tier: card.card_tier,
       maskedNumber: card.card_number ? maskCardNumber(card.card_number) : null,
       changes: summary,
-      time: new Date().toLocaleString('en-IN'),
+      time: new Date().toLocaleString('en-US'),
     }).catch((e) => logger.error(`Control alert email failed: ${e.message}`));
 
     createAuditLog({
@@ -661,7 +661,7 @@ async function refundCardFee(request, ip) {
 
     await request.update({ fee_status: 'refunded' }, { transaction: t });
     await t.commit();
-    logger.info(`Card fee refunded: ${refundRef} (₹${fee}) for card ${request.id}.`);
+    logger.info(`Card fee refunded: ${refundRef} ($${fee}) for card ${request.id}.`);
     return { amount: fee, reference: refundRef };
   } catch (e) {
     await t.rollback();

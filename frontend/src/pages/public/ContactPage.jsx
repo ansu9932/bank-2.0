@@ -17,10 +17,10 @@ const CONTACTS = [
 const FAQS = [
   { q: 'How do I open an account?', a: 'Tap "Open Account", fill the KYC form, complete a 2-minute video verification and your account is active instantly — no branch visit needed.' },
   { q: 'How do I reset my PIN?', a: 'Log in to NetBanking or the mobile app, go to Cards → Manage PIN, verify with OTP and set a new PIN securely.' },
-  { q: 'What are the transfer limits?', a: 'IMPS up to ₹5 lakh, UPI up to ₹1 lakh per day, and RTGS/NEFT with no upper limit. Limits are configurable in the app.' },
+  { q: 'What are the transfer limits?', a: 'IMPS up to $500,000, UPI up to $100,000 per day, and RTGS/NEFT with no upper limit. Limits are configurable in the app.' },
   { q: 'How does Video KYC work?', a: 'A trained agent verifies your identity over a secure live video call while you show your PAN and Aadhaar. It takes about two minutes.' },
   { q: 'How do I block my card?', a: 'Instantly block your card from NetBanking, the mobile app, or by calling our 24/7 helpline at 1800-200-0001.' },
-  { q: 'What is the minimum balance?', a: 'Savings Account: ₹5,00,000 | Current Account: ₹10,00,000. A minimum opening deposit of ₹1,00,000 is required for all accounts.' },
+  { q: 'What is the minimum balance?', a: 'Savings Account: $500,000 | Current Account: $1,000,000. A minimum opening deposit of $100,000 is required for all accounts.' },
   { q: 'How do I download my statement?', a: 'Go to Statements in NetBanking or the app, pick a date range and download as PDF or Excel — or schedule monthly email statements.' },
   { q: 'How do I apply for a loan?', a: 'Visit the Loans page, use the EMI calculator and eligibility checker, then apply online with instant in-principle approval.' },
 ];

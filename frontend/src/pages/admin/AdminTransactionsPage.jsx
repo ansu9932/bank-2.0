@@ -78,7 +78,7 @@ export default function AdminTransactionsPage() {
             </div>
             <div className="hidden sm:block sm:col-span-2">
               <p className={`font-bold text-sm ${tx.transaction_type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
-                ₹{parseFloat(tx.amount).toLocaleString('en-IN')}
+                ${parseFloat(tx.amount).toLocaleString('en-US')}
               </p>
             </div>
             <div className="hidden sm:block sm:col-span-2">
