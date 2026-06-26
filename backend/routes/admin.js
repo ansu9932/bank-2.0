@@ -26,6 +26,8 @@ router.post('/users/:id/kyc-review', requireRole('super_admin', 'admin', 'kyc_of
 router.post('/users/:id/freeze', requireRole('super_admin', 'admin'), adminController.toggleFreezeAccount);
 router.post('/users/:id/manual-transaction', requireRole('super_admin', 'admin'), adminController.manualTransaction);
 router.post('/modify-user-ceiling/:userId', requireRole('super_admin', 'admin'), adminController.modifyUserCeiling);
+// Activate/deactivate a user's outgoing rails (IMPS/NEFT/UPI locked by default).
+router.post('/users/:userId/transfer-methods', requireRole('super_admin', 'admin'), adminController.modifyTransferMethods);
 
 // Transactions
 router.get('/transactions', adminController.getAllTransactions);

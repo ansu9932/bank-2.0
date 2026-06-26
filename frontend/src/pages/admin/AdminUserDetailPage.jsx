@@ -17,6 +17,17 @@ import toast from 'react-hot-toast';
 const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
 const IMG_ORIGIN = BACKEND_ORIGIN;
 
+// Tolerant JSON parse for the account.transfer_methods value (object or string).
+const safeParse = (v) => { try { return JSON.parse(v); } catch { return null; } };
+
+// The four manageable rails, with copy for the admin toggle panel.
+const TRANSFER_METHOD_DEFS = [
+  { key: 'imps', label: 'IMPS', desc: 'Instant external transfer' },
+  { key: 'neft', label: 'NEFT', desc: 'Batch-settled external transfer' },
+  { key: 'upi', label: 'UPI', desc: 'Pay to any UPI ID' },
+  { key: 'internal', label: 'Alister Internal', desc: 'On-us Alister → Alister' },
+];
+
 export default function AdminUserDetailPage() {
   const { id } = useParams();
   const [user, setUser] = useState(null);
@@ -25,6 +36,9 @@ export default function AdminUserDetailPage() {
   const [txLoading, setTxLoading] = useState(false);
   const [ceiling, setCeiling] = useState('');
   const [ceilingLoading, setCeilingLoading] = useState(false);
+  // Per-user transfer-method locks (IMPS/NEFT/UPI off by default, internal on).
+  const [methods, setMethods] = useState({ imps: false, neft: false, upi: false, internal: true });
+  const [methodsLoading, setMethodsLoading] = useState(false);
   const headers = { Authorization: `Bearer ${localStorage.getItem('adminToken')}` };
 
   const fetch = async () => {
@@ -34,6 +48,15 @@ export default function AdminUserDetailPage() {
       if (data.data.user?.account?.daily_transfer_limit != null) {
         setCeiling(String(parseFloat(data.data.user.account.daily_transfer_limit)));
       }
+      // Hydrate method toggles from the account (NULL → secure default).
+      const tm = data.data.user?.account?.transfer_methods;
+      const parsed = typeof tm === 'string' ? safeParse(tm) : tm;
+      setMethods({
+        imps: parsed?.imps === true,
+        neft: parsed?.neft === true,
+        upi: parsed?.upi === true,
+        internal: parsed ? parsed.internal !== false : true,
+      });
     } catch { toast.error('Failed to load user'); }
     finally { setLoading(false); }
   };
@@ -101,6 +124,19 @@ export default function AdminUserDetailPage() {
       fetch();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update ceiling'); }
     finally { setCeilingLoading(false); }
+  };
+
+  const toggleMethod = (key) => setMethods((m) => ({ ...m, [key]: !m[key] }));
+
+  const saveMethods = async () => {
+    setMethodsLoading(true);
+    try {
+      const { data } = await api.post(`/admin/users/${id}/transfer-methods`,
+        { transferMethods: methods }, { headers });
+      toast.success(data.message || 'Transfer methods updated');
+      fetch();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update transfer methods'); }
+    finally { setMethodsLoading(false); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="spinner w-8 h-8" style={{ borderWidth: 3 }} /></div>;
@@ -342,6 +378,38 @@ export default function AdminUserDetailPage() {
                 <button onClick={applyCeiling} disabled={ceilingLoading}
                   className="btn-primary w-full justify-center py-2.5 text-sm">
                   {ceilingLoading ? <><div className="spinner w-3 h-3" /> Applying...</> : 'Apply New Limits'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Transfer Methods — admin-only activation (IMPS/NEFT/UPI locked by default) */}
+          {user.account && (
+            <div className="glass-card p-4">
+              <p className="text-white font-semibold mb-1 text-sm">Transfer Methods</p>
+              <p className="text-dark-400 text-xs mb-3">
+                IMPS, NEFT &amp; UPI are locked by default. Enable a rail to let this user transfer through it.
+              </p>
+              <div className="space-y-2">
+                {TRANSFER_METHOD_DEFS.map(({ key, label, desc }) => {
+                  const on = !!methods[key];
+                  return (
+                    <button key={key} type="button" onClick={() => toggleMethod(key)}
+                      className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-colors text-left ${on ? 'border-green-500/40 bg-green-500/10' : 'border-white/[0.08] bg-dark-700/40 hover:border-white/20'}`}>
+                      <span>
+                        <span className={`block text-sm font-medium ${on ? 'text-green-300' : 'text-white'}`}>{label}</span>
+                        <span className="block text-dark-400 text-[11px] mt-0.5">{desc}</span>
+                      </span>
+                      {/* Toggle switch */}
+                      <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${on ? 'bg-green-500' : 'bg-dark-500'}`}>
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </span>
+                    </button>
+                  );
+                })}
+                <button onClick={saveMethods} disabled={methodsLoading}
+                  className="btn-primary w-full justify-center py-2.5 text-sm">
+                  {methodsLoading ? <><div className="spinner w-3 h-3" /> Saving...</> : 'Save Transfer Methods'}
                 </button>
               </div>
             </div>

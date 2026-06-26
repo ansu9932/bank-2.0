@@ -221,6 +221,10 @@ async function ensureAccountColumns() {
   const columns = {
     activation_deposit_done: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
     activation_deposit_at: { type: DataTypes.DATE, allowNull: true },
+    // Per-user transfer-method locks (IMPS/NEFT/UPI default-off, internal on).
+    // Added with NO DB-level default (avoids MySQL JSON-default constraints on
+    // older versions); application code normalizes NULL → the secure default.
+    transfer_methods: { type: DataTypes.JSON, allowNull: true },
   };
 
   for (const [name, def] of Object.entries(columns)) {

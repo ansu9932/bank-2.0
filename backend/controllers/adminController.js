@@ -12,6 +12,7 @@ const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sen
 const { issueDepositToken } = require('../utils/depositLink');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
+const { normalizeTransferMethods, METHOD_LABELS } = require('../utils/transferMethods');
 const logger = require('../utils/logger');
 const { paginate } = require('../utils/helpers');
 
@@ -310,9 +311,13 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'INR',
       status: 'active',
-      // New accounts start with a RESTRICTED ₹5,000 active daily limit (max
-      // potential ceiling is ₹5,00,000). An admin raises it via modifyUserCeiling.
-      daily_transfer_limit: 5000.00,
+      // New accounts start with a RESTRICTED daily limit of 100 (product
+      // default; intended as 100 USD — amounts currently render with ₹). An
+      // admin raises it via modifyUserCeiling.
+      daily_transfer_limit: 100.00,
+      // External rails (IMPS/NEFT/UPI) locked by default; internal stays on.
+      // Admin activates rails per user via modifyTransferMethods.
+      transfer_methods: { imps: false, neft: false, upi: false, internal: true },
     });
 
     // Send approval email with setup link
@@ -478,8 +483,12 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'INR',
         status: 'active',
-        // Restricted ₹5,000 active daily limit by default (₹5,00,000 max ceiling).
-        daily_transfer_limit: 5000.00,
+        // Restricted daily limit of 100 by default (product default; intended
+        // as 100 USD — amounts currently render with ₹). Admin raises it via
+        // modifyUserCeiling.
+        daily_transfer_limit: 100.00,
+        // External rails (IMPS/NEFT/UPI) locked by default; internal stays on.
+        transfer_methods: { imps: false, neft: false, upi: false, internal: true },
       });
     } else {
       await account.update({ status: 'active' });
@@ -780,6 +789,74 @@ exports.modifyUserCeiling = async (req, res) => {
   } catch (err) {
     logger.error(`Modify user ceiling error: ${err.message}`);
     return error(res, 'Failed to update the transfer ceiling.');
+  }
+};
+
+// ─── Modify User Transfer Methods (admin-only activation system) ──────────────
+// POST /api/admin/users/:userId/transfer-methods   (admin only)
+// Activates / deactivates the per-user outgoing rails. IMPS / NEFT / UPI are
+// LOCKED by default for every account; only an admin can switch them on here.
+// Accepts a partial { transferMethods: { imps?, neft?, upi?, internal? } } and
+// merges it over the user's current (normalized) flags.
+exports.modifyTransferMethods = async (req, res) => {
+  try {
+    // Support both a nested { transferMethods: {...} } and a flat body.
+    const payload = (req.body && typeof req.body.transferMethods === 'object' && req.body.transferMethods)
+      ? req.body.transferMethods
+      : req.body;
+
+    if (!payload || typeof payload !== 'object') {
+      return badRequest(res, 'Provide the transfer methods to update.');
+    }
+
+    const account = await Account.findOne({ where: { user_id: req.params.userId } });
+    if (!account) return notFound(res, 'Account not found for this user.');
+
+    const current = normalizeTransferMethods(account.transfer_methods);
+    const next = {
+      imps: typeof payload.imps === 'boolean' ? payload.imps : current.imps,
+      neft: typeof payload.neft === 'boolean' ? payload.neft : current.neft,
+      upi: typeof payload.upi === 'boolean' ? payload.upi : current.upi,
+      internal: typeof payload.internal === 'boolean' ? payload.internal : current.internal,
+    };
+
+    await account.update({ transfer_methods: next });
+
+    // Build a concise "what changed" summary for the notification + audit log.
+    const enabled = Object.keys(next).filter((k) => next[k] && !current[k]).map((k) => METHOD_LABELS[k]);
+    const disabled = Object.keys(next).filter((k) => !next[k] && current[k]).map((k) => METHOD_LABELS[k]);
+    const parts = [];
+    if (enabled.length) parts.push(`Enabled: ${enabled.join(', ')}`);
+    if (disabled.length) parts.push(`Disabled: ${disabled.join(', ')}`);
+    const summary = parts.length ? parts.join(' · ') : 'No changes';
+
+    if (enabled.length || disabled.length) {
+      await Notification.create({
+        user_id: req.params.userId,
+        title: 'Transfer Methods Updated',
+        message: `Your available transfer methods were updated by Alister Bank. ${summary}.`,
+        type: 'security',
+        priority: 'medium',
+      });
+    }
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      userId: req.params.userId,
+      action: 'TRANSFER_METHODS_MODIFIED',
+      entityType: 'Account',
+      entityId: account.id,
+      oldValues: current,
+      newValues: next,
+      ipAddress: req.ip,
+      status: 'success',
+      description: summary,
+    });
+
+    return success(res, { transferMethods: next }, `Transfer methods updated. ${summary}.`);
+  } catch (err) {
+    logger.error(`Modify transfer methods error: ${err.message}`);
+    return error(res, 'Failed to update the transfer methods.');
   }
 };
 

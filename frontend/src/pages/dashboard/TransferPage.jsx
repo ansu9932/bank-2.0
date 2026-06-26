@@ -5,7 +5,7 @@ import {
   RiSendPlaneLine, RiCheckDoubleLine, RiArrowLeftLine, RiInformationLine,
   RiBankLine, RiSmartphoneLine, RiShieldCheckLine, RiLoader4Line,
   RiTimer2Line, RiCheckLine, RiErrorWarningLine, RiWallet3Line,
-  RiExchangeLine, RiGroupLine,
+  RiExchangeLine, RiGroupLine, RiLockLine,
 } from 'react-icons/ri';
 import api from '../../services/api';
 import { fetchAccount } from '../../store/slices/accountSlice';
@@ -21,6 +21,11 @@ const MODES = [
   { value: 'UPI', label: 'UPI Transfer', desc: 'Instant · Pay to any UPI ID', kind: 'upi', icon: RiSmartphoneLine },
   { value: 'ALISTER', label: 'Alister Internal', desc: 'Instant · Alister to Alister', kind: 'internal', icon: RiExchangeLine },
 ];
+
+// Maps a UI mode to its per-user transfer-method flag key (see backend
+// utils/transferMethods.js). IMPS/NEFT/UPI are locked by default; an admin must
+// activate them per user. Internal ('ALISTER') is enabled by default.
+const MODE_TO_KEY = { IMPS: 'imps', NEFT: 'neft', UPI: 'upi', ALISTER: 'internal' };
 
 // Structural VPA check used to gate the debounced lookup.
 const VPA_REGEX = /^[\w.\-]{2,}@[a-zA-Z][\w.\-]{1,}$/;
@@ -56,6 +61,16 @@ export default function TransferPage() {
 
   const isUpi = mode === 'UPI';
   const isInternal = mode === 'ALISTER';
+
+  // Per-user transfer-method locks (delivered by /payments/transfer-limit).
+  // Until the limit info loads we don't lock the UI — the backend still
+  // enforces every lock server-side regardless of what the client shows.
+  const transferMethods = limitInfo?.transferMethods || null;
+  const isModeEnabled = useCallback((m) => {
+    if (!transferMethods) return true;
+    const key = MODE_TO_KEY[m];
+    return key ? transferMethods[key] === true : true;
+  }, [transferMethods]);
 
   const loadLimit = useCallback(async () => {
     try {
@@ -185,6 +200,11 @@ export default function TransferPage() {
   }, []);
 
   const switchMode = (m) => {
+    // Guard: an admin must enable IMPS/NEFT/UPI before the user can pick them.
+    if (!isModeEnabled(m)) {
+      toast.error(`${m === 'ALISTER' ? 'Alister Internal' : m} is disabled on your account. Contact the bank to enable it.`);
+      return;
+    }
     setMode(m);
     setVpaStatus('idle');
     setVpaProvider('');
@@ -195,7 +215,23 @@ export default function TransferPage() {
     setForm((f) => ({ ...f, ifsc: m === 'ALISTER' ? '' : (m === 'UPI' ? '' : f.ifsc) }));
   };
 
+  // If the currently-selected rail is locked for this user, jump to the first
+  // enabled rail (internal/Alister is enabled by default).
+  useEffect(() => {
+    if (!transferMethods || isModeEnabled(mode)) return;
+    const firstEnabled = MODES.find((m) => isModeEnabled(m.value));
+    if (firstEnabled) {
+      setMode(firstEnabled.value);
+      setForm((f) => ({ ...f, ifsc: firstEnabled.value === 'ALISTER' || firstEnabled.value === 'UPI' ? '' : f.ifsc }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transferMethods]);
+
   const validateForm = () => {
+    if (!isModeEnabled(mode)) {
+      toast.error(`${isInternal ? 'Alister Internal' : mode} is disabled on your account. Contact the bank to enable it.`);
+      return false;
+    }
     const amount = parseFloat(form.amount);
     if (!amount || amount <= 0) { toast.error('Enter a valid amount'); return false; }
     if (account && amount > parseFloat(account.available_balance || 0)) {
@@ -389,12 +425,24 @@ export default function TransferPage() {
                   {MODES.map((m) => {
                     const Icon = m.icon;
                     const active = mode === m.value;
+                    const locked = !isModeEnabled(m.value);
                     return (
                       <button key={m.value} type="button" onClick={() => switchMode(m.value)}
-                        className={`p-3 rounded-xl border transition-all text-left ${active ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'}`}>
-                        <Icon className={active ? 'text-brand-400' : 'text-dark-300'} />
-                        <p className={`text-sm font-bold mt-1 ${active ? 'text-brand-400' : 'text-white'}`}>{m.label}</p>
-                        <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">{m.desc}</p>
+                        disabled={locked} aria-disabled={locked}
+                        title={locked ? 'Disabled on your account — contact the bank to enable' : undefined}
+                        className={`relative p-3 rounded-xl border transition-all text-left ${
+                          locked ? 'border-white/[0.06] opacity-50 cursor-not-allowed'
+                            : active ? 'border-brand-500 bg-brand-500/10' : 'border-white/[0.08] hover:border-white/20'}`}>
+                        {locked && (
+                          <span className="absolute top-2 right-2 text-dark-300" title="Disabled">
+                            <RiLockLine className="text-xs" />
+                          </span>
+                        )}
+                        <Icon className={active && !locked ? 'text-brand-400' : 'text-dark-300'} />
+                        <p className={`text-sm font-bold mt-1 ${active && !locked ? 'text-brand-400' : 'text-white'}`}>{m.label}</p>
+                        <p className="text-dark-400 text-[10px] mt-0.5 leading-tight">
+                          {locked ? 'Disabled · contact bank' : m.desc}
+                        </p>
                       </button>
                     );
                   })}

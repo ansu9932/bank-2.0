@@ -68,6 +68,11 @@ const seed = async () => {
       status: 'active',
       interest_rate: 4.00,
       minimum_balance: 1000.00,
+      // Demo showcase account: all rails enabled + a workable daily ceiling so
+      // the seeded experience can transfer immediately. New real accounts are
+      // locked down (externals off, internal on, default limit 100).
+      daily_transfer_limit: 100000.00,
+      transfer_methods: { imps: true, neft: true, upi: true, internal: true },
     });
 
     // ── Demo User 2 ──────────────────────────────────────────────────────────
@@ -111,6 +116,9 @@ const seed = async () => {
       available_balance: 182500.00,
       currency: 'INR',
       status: 'active',
+      // Demo showcase account — all rails enabled + workable daily ceiling.
+      daily_transfer_limit: 100000.00,
+      transfer_methods: { imps: true, neft: true, upi: true, internal: true },
     });
 
     // ── Seed Transactions for user1 ──────────────────────────────────────────

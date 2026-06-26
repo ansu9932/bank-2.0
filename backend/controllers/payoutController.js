@@ -5,6 +5,7 @@ const { Account, Transaction, User, Notification } = require('../models');
 const opfin = require('../utils/opfin');
 const { resolveUpiProvider, isValidVpa } = require('../utils/upiProviders');
 const { generateReferenceNumber } = require('../utils/helpers');
+const { isMethodEnabled, methodBlockedMessage, normalizeTransferMethods } = require('../utils/transferMethods');
 const { sendTransferAlertEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
@@ -201,6 +202,13 @@ exports.disbursePayout = async (req, res) => {
     const account = req.transferAccount || await Account.findOne({ where: { user_id: req.user.id } });
     if (!account) return notFound(res, 'No active bank account found for this profile.');
 
+    // ── Per-user transfer-method lock ─────────────────────────────────────────
+    // IMPS / NEFT / UPI are disabled by default; an admin must activate the rail
+    // for this user before it can be used.
+    if (!isMethodEnabled(account, upperMode)) {
+      return error(res, methodBlockedMessage(upperMode), 403);
+    }
+
     // ── Security PIN verification ─────────────────────────────────────────────
     const user = await User.findByPk(req.user.id);
     if (!user?.security_pin) return badRequest(res, 'No security PIN set. Please contact support.');
@@ -384,6 +392,8 @@ exports.getTransferLimit = async (req, res) => {
       usedDailyLimit: used,
       remaining: Math.max(limit - used, 0),
       availableBalance: parseFloat(account.available_balance),
+      // Per-user transfer-method locks so the UI can disable blocked rails.
+      transferMethods: normalizeTransferMethods(account.transfer_methods),
     });
   } catch (err) {
     logger.error(`getTransferLimit error: ${err.message}`);
@@ -421,6 +431,12 @@ exports.internalTransfer = async (req, res) => {
     if (!senderAccount) return notFound(res, 'No active bank account found for this profile.');
     if (senderAccount.status === 'frozen') {
       return error(res, 'Your account is frozen. Contact support.', 403);
+    }
+
+    // ── Per-user transfer-method lock ─────────────────────────────────────────
+    // Alister Internal is enabled by default, but an admin can still disable it.
+    if (!isMethodEnabled(senderAccount, 'ALISTER')) {
+      return error(res, methodBlockedMessage('ALISTER'), 403);
     }
 
     // Prevent self-transfer.
