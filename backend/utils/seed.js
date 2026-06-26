@@ -67,7 +67,7 @@ const seed = async () => {
       currency: 'USD',
       status: 'active',
       interest_rate: 4.00,
-      minimum_balance: 1000.00,
+      minimum_balance: 5298.00,
     });
 
     // ── Demo User 2 ──────────────────────────────────────────────────────────
@@ -111,6 +111,7 @@ const seed = async () => {
       available_balance: 182500.00,
       currency: 'USD',
       status: 'active',
+      minimum_balance: 10598.00,
     });
 
     // ── Seed Transactions for user1 ──────────────────────────────────────────

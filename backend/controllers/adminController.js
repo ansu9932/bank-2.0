@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest } = require('../models');
 const { generateAdminToken } = require('../middleware/auth');
 const {
-  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
+  generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry, minimumBalanceForType,
 } = require('../utils/helpers');
 const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
@@ -308,6 +308,7 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'USD',
       status: 'active',
+      minimum_balance: minimumBalanceForType(user.account_type),
       // New accounts start with a RESTRICTED $100 active daily limit (max
       // potential ceiling is $500,000). An admin raises it via modifyUserCeiling.
       daily_transfer_limit: 100.00,
@@ -481,6 +482,7 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'USD',
         status: 'active',
+        minimum_balance: minimumBalanceForType(user.account_type),
         // Restricted $100 active daily limit by default ($500,000 max ceiling).
         daily_transfer_limit: 100.00,
       });

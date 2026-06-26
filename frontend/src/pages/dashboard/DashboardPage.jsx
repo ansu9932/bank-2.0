@@ -1162,7 +1162,8 @@ export default function DashboardPage() {
                   {
                     label: 'Min Balance',
                     value: `$${parseFloat(
-                      account?.minimum_balance || 1000
+                      account?.minimum_balance ||
+                        (account?.account_type === 'current' ? 10598 : 5298)
                     ).toLocaleString('en-US')}`,
                   },
                 ].map(({ label, value }) => (
