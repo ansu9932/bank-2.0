@@ -552,23 +552,31 @@ export default function DepositFunds() {
                     style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
                     {/* `order.image_url` is now a base64 data URI of the Razorpay QR
                         (the backend fetches the QR image and inlines it), so it can be
-                        rendered directly by a plain <img> with no external request. */}
+                        rendered directly by a plain <img> with no external request.
+                        The box is a responsive square and the QR is `contain`-fit so
+                        the entire code always sits neatly inside the white box. */}
                     <div
                       style={{
-                        width: '220px',
-                        height: '220px',
+                        width: '100%',
+                        maxWidth: '240px',
+                        aspectRatio: '1 / 1',
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center',
                         background: '#ffffff',
                         borderRadius: '12px',
+                        overflow: 'hidden',
                       }}>
                       <img
                         src={order.image_url}
                         alt="UPI payment QR code"
-                        width={200}
-                        height={200}
-                        style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          borderRadius: '8px',
+                        }}
                       />
                     </div>
                   </motion.div>
