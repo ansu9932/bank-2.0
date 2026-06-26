@@ -78,8 +78,8 @@ export default function AccountCard() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-white/40 text-[10px] uppercase mb-1">IFSC</p>
-            <p className="text-white/70 text-xs font-mono">{account?.ifsc_code || 'ALST0000001'}</p>
+            <p className="text-white/40 text-[10px] uppercase mb-1">SWIFT</p>
+            <p className="text-white/70 text-xs font-mono">{account?.swift_code || 'ALSTINBB'}</p>
           </div>
         </div>
 

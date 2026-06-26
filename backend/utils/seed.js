@@ -72,7 +72,7 @@ const seed = async () => {
       // the seeded experience can transfer immediately. New real accounts are
       // locked down (externals off, internal on, default limit 100).
       daily_transfer_limit: 100000.00,
-      transfer_methods: { imps: true, neft: true, upi: true, internal: true },
+      transfer_methods: { imps: true, neft: true, upi: true, internal: true, add_money: true },
     });
 
     // ── Demo User 2 ──────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ const seed = async () => {
       status: 'active',
       // Demo showcase account — all rails enabled + workable daily ceiling.
       daily_transfer_limit: 100000.00,
-      transfer_methods: { imps: true, neft: true, upi: true, internal: true },
+      transfer_methods: { imps: true, neft: true, upi: true, internal: true, add_money: true },
     });
 
     // ── Seed Transactions for user1 ──────────────────────────────────────────

@@ -22,11 +22,6 @@ import { fetchTransactions } from '../../store/slices/transactionSlice';
 
 const CRIMSON = '#c8102e';
 
-// ── Feature lock ─────────────────────────────────────────────────────────────
-// The "Add Money" / deposit feature is currently LOCKED. While locked, the page
-// shows a locked notice instead of the amount form, and the sidebar entry is
-// disabled. Flip to false to re-enable UPI QR + Razorpay card / net-banking.
-const ADD_MONEY_LOCKED = true;
 const QUICK_ADD = [500, 1000, 5000];
 const UPI_QR_CAP = 100000;            // UPI/QR per-transaction ceiling ($1L)
 
@@ -279,8 +274,18 @@ export default function DepositFunds() {
   };
 
   // ── Locked state ────────────────────────────────────────────────────────────
-  // When the feature is locked, show a clear notice instead of the deposit form.
-  if (ADD_MONEY_LOCKED) {
+  // "Add Money" is an admin-activated feature: locked by default on every
+  // account until an admin enables it (Account.transfer_methods.add_money). The
+  // null/loading account also resolves to locked (fail-safe). The backend
+  // enforces this independently on /payments/create-qr & create-deposit-order.
+  const addMoneyEnabled = (() => {
+    const tm = account?.transfer_methods;
+    let parsed = tm;
+    if (typeof tm === 'string') { try { parsed = JSON.parse(tm); } catch { parsed = null; } }
+    return parsed?.add_money === true;
+  })();
+
+  if (!addMoneyEnabled) {
     return (
       <div className="w-full max-w-full" style={{ background: '#0d0e12' }}>
         <div className="max-w-2xl mx-auto px-1 py-6 sm:py-8">

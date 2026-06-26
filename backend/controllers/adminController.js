@@ -317,7 +317,7 @@ exports.approveKYC = async (req, res) => {
       daily_transfer_limit: 100.00,
       // External rails (IMPS/NEFT/UPI) locked by default; internal stays on.
       // Admin activates rails per user via modifyTransferMethods.
-      transfer_methods: { imps: false, neft: false, upi: false, internal: true },
+      transfer_methods: { imps: false, neft: false, upi: false, internal: true, add_money: false },
     });
 
     // Send approval email with setup link
@@ -488,7 +488,7 @@ exports.reviewKYC = async (req, res) => {
         // modifyUserCeiling.
         daily_transfer_limit: 100.00,
         // External rails (IMPS/NEFT/UPI) locked by default; internal stays on.
-        transfer_methods: { imps: false, neft: false, upi: false, internal: true },
+        transfer_methods: { imps: false, neft: false, upi: false, internal: true, add_money: false },
       });
     } else {
       await account.update({ status: 'active' });
@@ -818,6 +818,7 @@ exports.modifyTransferMethods = async (req, res) => {
       neft: typeof payload.neft === 'boolean' ? payload.neft : current.neft,
       upi: typeof payload.upi === 'boolean' ? payload.upi : current.upi,
       internal: typeof payload.internal === 'boolean' ? payload.internal : current.internal,
+      add_money: typeof payload.add_money === 'boolean' ? payload.add_money : current.add_money,
     };
 
     await account.update({ transfer_methods: next });

@@ -308,8 +308,8 @@ exports.downloadStatement = async (req, res) => {
     doc.font('Helvetica').text(`${user.first_name} ${user.last_name}`);
     doc.font('Helvetica-Bold').text('Account Number: ', 50, 138, { continued: true });
     doc.font('Helvetica').text(maskAccountNumber(account.account_number));
-    doc.font('Helvetica-Bold').text('IFSC Code: ', 50, 156, { continued: true });
-    doc.font('Helvetica').text(account.ifsc_code);
+    doc.font('Helvetica-Bold').text('SWIFT Code: ', 50, 156, { continued: true });
+    doc.font('Helvetica').text(account.swift_code || 'ALSTINBB');
     doc.font('Helvetica-Bold').text('Current Balance: ', 50, 174, { continued: true });
     doc.font('Helvetica').text(`$${parseFloat(account.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
 
@@ -355,7 +355,7 @@ exports.downloadStatement = async (req, res) => {
     // Footer
     doc.moveDown(2);
     doc.fontSize(8).fillColor('#888').text(
-      'This is a system-generated statement. © Alister Bank. IFSC: ALST0000001. SWIFT: ALSTINBB.',
+      'This is a system-generated statement. © Alister Bank. SWIFT: ALSTINBB.',
       50, y + 20, { align: 'center', width: 512 }
     );
 

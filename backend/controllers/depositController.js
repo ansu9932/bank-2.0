@@ -3,6 +3,7 @@ const { Account, Transaction } = require('../models');
 const { createOrder, isConfigured } = require('../utils/razorpay');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
+const { normalizeTransferMethods } = require('../utils/transferMethods');
 const logger = require('../utils/logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -54,6 +55,14 @@ exports.createDepositOrder = async (req, res) => {
   try {
     if (!isConfigured()) {
       return error(res, 'Payment gateway is not configured. Please try again later.', 503);
+    }
+
+    // ── Add Money lock ────────────────────────────────────────────────────────
+    // Deposits are an admin-activated feature, disabled by default per account.
+    const depositAccount = await Account.findOne({ where: { user_id: req.user.id } });
+    if (!depositAccount) return notFound(res, 'No active bank account found for this profile.');
+    if (!normalizeTransferMethods(depositAccount.transfer_methods).add_money) {
+      return error(res, 'Add Money is currently disabled on your account. Please contact Alister Bank to enable it.', 403);
     }
 
     const amount = parseFloat(req.body.amount);
