@@ -13,9 +13,21 @@ const Account = sequelize.define('Account', {
   hold_amount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   currency: { type: DataTypes.STRING(5), defaultValue: 'INR' },
   status: { type: DataTypes.ENUM('active', 'frozen', 'dormant', 'closed'), defaultValue: 'active' },
-  // Active daily transaction limit. New accounts start RESTRICTED at ₹5,000;
-  // an admin can raise it up to the ₹5,00,000 max ceiling via modifyUserCeiling.
-  daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 5000.00 },
+  // Active daily transaction limit. New accounts start RESTRICTED at 100 (the
+  // product-mandated default; intended as 100 USD — note the app currently
+  // renders amounts with the ₹ symbol). An admin can raise it up to the
+  // ₹5,00,000 max ceiling via modifyUserCeiling.
+  daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 100.00 },
+  // ── Per-user transfer-method locks ──────────────────────────────────────────
+  // Which outgoing rails this customer may use. By policy the external rails
+  // (IMPS / NEFT / UPI) are LOCKED by default and only an admin can activate
+  // them per user; the on-us "Alister Internal" transfer stays enabled. See
+  // utils/transferMethods.js (normalizeTransferMethods treats NULL as this
+  // secure default so the lock holds even before the column backfill runs).
+  transfer_methods: {
+    type: DataTypes.JSON,
+    defaultValue: { imps: false, neft: false, upi: false, internal: true },
+  },
   daily_transferred: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   last_limit_reset: { type: DataTypes.DATE },
   interest_rate: { type: DataTypes.DECIMAL(5, 2), defaultValue: 4.00 },

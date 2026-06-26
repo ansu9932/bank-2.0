@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const sequelize = require('../config/database');
 const { Account, Transaction, Beneficiary, User, Notification } = require('../models');
 const { generateReferenceNumber, maskAccountNumber, formatCurrency, paginate } = require('../utils/helpers');
+const { isMethodEnabled, methodBlockedMessage } = require('../utils/transferMethods');
 const { sendTransferAlertEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, forbidden } = require('../utils/apiResponse');
@@ -95,6 +96,13 @@ exports.initiateTransfer = async (req, res) => {
     // Internal vs external transfer
     const isInternal = await Account.findOne({ where: { account_number: toAccountNumber } });
     const effectiveMode = isInternal ? 'INTERNAL' : transferMode;
+
+    // ── Per-user transfer-method lock ─────────────────────────────────────────
+    // External IMPS / NEFT / UPI are disabled by default; internal stays on.
+    // Unmanaged rails (e.g. RTGS) are left to the existing validation above.
+    if (!isMethodEnabled(account, effectiveMode)) {
+      return forbidden(res, methodBlockedMessage(effectiveMode));
+    }
 
     const referenceNumber = generateReferenceNumber(effectiveMode);
 
