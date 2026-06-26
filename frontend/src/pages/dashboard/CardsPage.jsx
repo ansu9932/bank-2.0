@@ -26,7 +26,7 @@ const TIERS = [
 const TIER_MAP = TIERS.reduce((m, t) => { m[t.key] = t; return m; }, {});
 const NETWORKS = ['Visa', 'Mastercard'];
 
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 // ─── Premium card visual (tier-themed) ────────────────────────────────────────
 function CardVisual({ card, revealed, onEyeClick }) {

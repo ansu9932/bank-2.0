@@ -354,10 +354,10 @@ function TransactionRow({ tx, index }) {
             isCredit ? 'text-green-400' : 'text-red-400'
           }`}
         >
-          {isCredit ? '+' : '-'}₹{amount.toLocaleString('en-IN')}
+          {isCredit ? '+' : '-'}${amount.toLocaleString('en-US')}
         </p>
         <p className="text-slate-600 text-[10px] mt-0.5">
-          Bal ₹{balanceAfter.toLocaleString('en-IN')}
+          Bal ${balanceAfter.toLocaleString('en-US')}
         </p>
       </div>
     </motion.div>
@@ -400,9 +400,9 @@ function InlineAccountCard({ account, user }) {
   }, [account?.account_number]);
 
   const formattedBalance = useMemo(() => {
-    if (!showBalance) return '₹ ••••••';
+    if (!showBalance) return '$ ••••••';
     const bal = parseFloat(account?.balance ?? 0);
-    return `₹ ${bal.toLocaleString('en-IN', {
+    return `$ ${bal.toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
@@ -880,14 +880,14 @@ export default function DashboardPage() {
               {[
                 {
                   label : 'Total Credits',
-                  value : `₹${totalCreditAmount.toLocaleString('en-IN')}`,
+                  value : `$${totalCreditAmount.toLocaleString('en-US')}`,
                   icon  : RiArrowDownLine,
                   color : 'text-green-400',
                   bg    : 'bg-green-500/10',
                 },
                 {
                   label : 'Total Debits',
-                  value : `₹${totalDebitAmount.toLocaleString('en-IN')}`,
+                  value : `$${totalDebitAmount.toLocaleString('en-US')}`,
                   icon  : RiArrowUpLine,
                   color : 'text-red-400',
                   bg    : 'bg-red-500/10',
@@ -965,10 +965,6 @@ export default function DashboardPage() {
                   value : account?.swift_code || 'ALSTINBB',
                 },
                 {
-                  label : 'SWIFT Code',
-                  value : account?.swift_code || 'ALSTINBB',
-                },
-                {
                   label : 'Account Type',
                   value : account?.account_type
                     ? account.account_type.toUpperCase()
@@ -976,9 +972,9 @@ export default function DashboardPage() {
                 },
                 {
                   label : 'Daily Transfer Limit',
-                  value : `₹${parseFloat(
+                  value : `$${parseFloat(
                     account?.daily_transfer_limit || 500000
-                  ).toLocaleString('en-IN')}`,
+                  ).toLocaleString('en-US')}`,
                 },
                 {
                   label : 'Interest Rate',
@@ -1041,16 +1037,16 @@ export default function DashboardPage() {
                         : 'text-red-400'
                     }`}
                   >
-                    {totalCreditAmount >= totalDebitAmount ? '+' : '-'}₹
+                    {totalCreditAmount >= totalDebitAmount ? '+' : '-'}$
                     {Math.abs(totalCreditAmount - totalDebitAmount).toLocaleString(
-                      'en-IN'
+                      'en-US'
                     )}
                   </p>
                 </div>
                 <div className="text-center">
                   <p className="text-slate-500 text-xs mb-1">Avg Credit</p>
                   <p className="text-green-400 font-bold text-sm">
-                    ₹
+                    $
                     {totalTransactionCount > 0 &&
                     transactions.filter((t) => t.transaction_type === 'credit').length > 0
                       ? Math.round(
@@ -1058,14 +1054,14 @@ export default function DashboardPage() {
                             transactions.filter(
                               (t) => t.transaction_type === 'credit'
                             ).length
-                        ).toLocaleString('en-IN')
+                        ).toLocaleString('en-US')
                       : '0'}
                   </p>
                 </div>
                 <div className="text-center">
                   <p className="text-slate-500 text-xs mb-1">Avg Debit</p>
                   <p className="text-red-400 font-bold text-sm">
-                    ₹
+                    $
                     {totalTransactionCount > 0 &&
                     transactions.filter((t) => t.transaction_type === 'debit').length > 0
                       ? Math.round(
@@ -1073,7 +1069,7 @@ export default function DashboardPage() {
                             transactions.filter(
                               (t) => t.transaction_type === 'debit'
                             ).length
-                        ).toLocaleString('en-IN')
+                        ).toLocaleString('en-US')
                       : '0'}
                   </p>
                 </div>
@@ -1158,12 +1154,12 @@ export default function DashboardPage() {
                   { label: 'IFSC Code',  value: account?.ifsc_code  || 'ALST0000001' },
                   { label: 'SWIFT Code', value: account?.swift_code || 'ALSTINBB' },
                   { label: 'Branch',     value: account?.branch_name || 'Main Branch' },
-                  { label: 'Currency',   value: account?.currency    || 'INR' },
+                  { label: 'Currency',   value: account?.currency    || 'USD' },
                   {
                     label: 'Min Balance',
-                    value: `₹${parseFloat(
+                    value: `$${parseFloat(
                       account?.minimum_balance || 1000
-                    ).toLocaleString('en-IN')}`,
+                    ).toLocaleString('en-US')}`,
                   },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-[#161622] border border-white/[0.04] rounded-xl p-3">

@@ -293,15 +293,15 @@ const sendTransferAlertEmail = async (email, name, txData) => {
     ${para(`Dear ${hl(name)},`)}
     ${para(`A transaction has been ${isDebit ? 'debited from' : 'credited to'} your account.`)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-      ${detailRow('Amount', `₹${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
+      ${detailRow('Amount', `$${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
       ${noteRow}
       ${detailRow(isDebit ? 'To Account' : 'From', txData.counterparty)}
       ${detailRow('Mode', txData.mode)}
-      ${detailRow('Balance', `₹${txData.balance}`)}
+      ${detailRow('Balance', `$${txData.balance}`)}
       ${detailRow('Date &amp; Time', txData.time)}
     </table>
   `));
-  return sendEmail({ to: email, subject: `Alister Bank — ${isDebit ? 'Debit' : 'Credit'} Alert: ₹${txData.amount}`, html });
+  return sendEmail({ to: email, subject: `Alister Bank — ${isDebit ? 'Debit' : 'Credit'} Alert: $${txData.amount}`, html });
 };
 
 const sendPasswordResetEmail = async (email, name, resetLink) => {
@@ -321,7 +321,7 @@ const sendPasswordResetEmail = async (email, name, resetLink) => {
  * passes the duplicate gate. `serviceLabel` is human-readable (e.g. "Debit Card").
  */
 const sendServiceRequestEmail = async (email, name, { serviceLabel, requestId, createdAt }) => {
-  const when = createdAt ? new Date(createdAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+  const when = createdAt ? new Date(createdAt).toLocaleString('en-US') : new Date().toLocaleString('en-US');
   const html = baseTemplate(bodyShell(`
     ${badge('&#128221; Request Received')}
     ${heading(`Your ${serviceLabel} Request is Under Review`)}
@@ -374,7 +374,7 @@ const sendCardRejectedEmail = async (email, name, { tier, reason, refundAmount }
     ${infoBox(`<strong>Reason:</strong> ${reason || 'Your application did not meet the current issuance criteria.'}`)}
     ${refunded
       ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-          ${detailRow('Issuance Fee Refunded', `₹${Number(refundAmount).toLocaleString('en-IN')}`, '#22c55e')}
+          ${detailRow('Issuance Fee Refunded', `$${Number(refundAmount).toLocaleString('en-US')}`, '#22c55e')}
           ${detailRow('Credited To', 'Your Alister Bank account')}
         </table>`
       : ''}
@@ -412,7 +412,7 @@ const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, chan
     ${para(`A change was just made to your <strong>${tier || ''}</strong> card${maskedNumber ? ` (${maskedNumber})` : ''}:`)}
     ${infoBox(list || 'Card controls were updated.')}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-      ${detailRow('When', time || new Date().toLocaleString('en-IN'))}
+      ${detailRow('When', time || new Date().toLocaleString('en-US'))}
     </table>
     ${infoBox('&#9888;&#65039; If you did NOT make this change, freeze your card immediately and contact support — your account security may be at risk.')}
   `));
@@ -435,7 +435,7 @@ const sandboxNotice = (text) => `
  * simulation so it can never be mistaken for a real funding request.
  */
 const sendActivationDepositEmail = async (email, name, { depositLink, minimumBalance, accountNumber }) => {
-  const minLabel = `₹${Number(minimumBalance || 0).toLocaleString('en-IN')}`;
+  const minLabel = `$${Number(minimumBalance || 0).toLocaleString('en-US')}`;
   const html = baseTemplate(bodyShell(`
     ${badge('&#9989; Account Approved')}
     ${heading('Activate Your Account — Minimum Balance Deposit')}
@@ -465,18 +465,18 @@ const sendSimulatedDepositCreditEmail = async (email, name, { amount, last4, car
     ${para(`Dear ${hl(name)},`)}
     ${para('Your activation deposit has been received and credited to your account.')}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
-      ${detailRow('Amount Credited', `₹${amount}`, '#22c55e')}
+      ${detailRow('Amount Credited', `$${amount}`, '#22c55e')}
       ${detailRow('Payment Mode', 'Credit Card')}
       ${detailRow('Card', `Credit Card ending ${last4 || '••••'}`)}
       ${detailRow('Card Holder', cardHolder || '—')}
       ${detailRow('Reference', reference || '—')}
-      ${detailRow('Account Balance', `₹${balance}`)}
+      ${detailRow('Account Balance', `$${balance}`)}
       ${detailRow('Date &amp; Time', time)}
     </table>
     ${sandboxNotice('This is a simulated deposit for demonstration. No real payment was processed and no card was charged.')}
     ${para('Your account setup link will arrive in your inbox shortly so you can complete your login credentials.')}
   `));
-  return sendEmail({ to: email, subject: `Alister Bank — Activation Deposit Confirmed: ₹${amount}`, html });
+  return sendEmail({ to: email, subject: `Alister Bank — Activation Deposit Confirmed: $${amount}`, html });
 };
 
 /**

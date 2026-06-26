@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
  * Schema mapping note: the live `accounts` table already carries the three
  * fields described in the spec (DB sync is locked to alter:false, so we REUSE
  * them rather than adding duplicate columns):
- *   - daily_transfer_limit  → spec "dailyTransferLimit" (default ₹5,00,000)
+ *   - daily_transfer_limit  → spec "dailyTransferLimit" (default $500,000)
  *   - daily_transferred     → spec "usedDailyLimit"
  *   - last_limit_reset      → spec "lastLimitResetTimestamp"
  *
@@ -17,7 +17,7 @@ const logger = require('../utils/logger');
  *      never set), reset daily_transferred to 0 and stamp last_limit_reset now.
  *   2. Enforce the ceiling: if (incoming amount + daily_transferred) exceeds
  *      daily_transfer_limit, block instantly with a 400 and the exact message
- *      "Daily transfer limit exceeded. Remaining allowance: ₹<remaining>".
+ *      "Daily transfer limit exceeded. Remaining allowance: $<remaining>".
  *
  * The resolved account (post-reset) is attached to req.transferAccount so the
  * downstream controller can debit + increment usage without re-querying.
@@ -56,7 +56,7 @@ const verifyLimits = async (req, res, next) => {
       const remaining = Math.max(dailyLimit - usedToday, 0);
       return badRequest(
         res,
-        `Daily transfer limit exceeded. Remaining allowance: ₹${remaining.toLocaleString('en-IN')}`
+        `Daily transfer limit exceeded. Remaining allowance: $${remaining.toLocaleString('en-US')}`
       );
     }
 

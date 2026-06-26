@@ -16,7 +16,7 @@ const CRIMSON = '#c8102e';
 
 // RTGS removed per product spec. UPI + internal "Alister Internal" added.
 const MODES = [
-  { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to ₹2L', kind: 'bank', icon: RiBankLine },
+  { value: 'IMPS', label: 'IMPS', desc: 'Instant · 24/7 · Up to $2L', kind: 'bank', icon: RiBankLine },
   { value: 'NEFT', label: 'NEFT', desc: 'Batch settled · Any amount', kind: 'bank', icon: RiBankLine },
   { value: 'UPI', label: 'UPI Transfer', desc: 'Instant · Pay to any UPI ID', kind: 'upi', icon: RiSmartphoneLine },
   { value: 'ALISTER', label: 'Alister Internal', desc: 'Instant · Alister to Alister', kind: 'internal', icon: RiExchangeLine },
@@ -29,7 +29,7 @@ const MODE_TO_KEY = { IMPS: 'imps', NEFT: 'neft', UPI: 'upi', ALISTER: 'internal
 
 // Structural VPA check used to gate the debounced lookup.
 const VPA_REGEX = /^[\w.\-]{2,}@[a-zA-Z][\w.\-]{1,}$/;
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 export default function TransferPage() {
   const dispatch = useDispatch();
@@ -574,7 +574,7 @@ export default function TransferPage() {
               {/* Amount + description */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
-                  <label className="form-label">Amount (₹)</label>
+                  <label className="form-label">Amount ($)</label>
                   <input type="number" value={form.amount} onChange={set('amount')}
                     placeholder="0.00" min="1" className="input-field" />
                   {account && (

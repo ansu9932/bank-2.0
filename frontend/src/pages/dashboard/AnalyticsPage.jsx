@@ -12,7 +12,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       <p className="text-dark-300 mb-1">{label}</p>
       {payload.map(p => (
         <p key={p.name} style={{ color: p.color }}>
-          {p.name}: ₹{parseFloat(p.value).toLocaleString('en-IN')}
+          {p.name}: ${parseFloat(p.value).toLocaleString('en-US')}
         </p>
       ))}
     </div>
@@ -64,14 +64,14 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Total Credits" value={`₹${(totalCredit/1000).toFixed(1)}k`} color="text-green-400"
+        <StatCard label="Total Credits" value={`$${(totalCredit/1000).toFixed(1)}k`} color="text-green-400"
           sub={`${transactions.filter(t=>t.transaction_type==='credit').length} txns`} />
-        <StatCard label="Total Debits"  value={`₹${(totalDebit/1000).toFixed(1)}k`}  color="text-red-400"
+        <StatCard label="Total Debits"  value={`$${(totalDebit/1000).toFixed(1)}k`}  color="text-red-400"
           sub={`${transactions.filter(t=>t.transaction_type==='debit').length} txns`} />
         <StatCard label="Net Flow"
-          value={`${totalCredit >= totalDebit ? '+' : ''}₹${((totalCredit-totalDebit)/1000).toFixed(1)}k`}
+          value={`${totalCredit >= totalDebit ? '+' : ''}$${((totalCredit-totalDebit)/1000).toFixed(1)}k`}
           color={totalCredit >= totalDebit ? 'text-green-400' : 'text-red-400'} />
-        <StatCard label="Balance" value={`₹${parseFloat(account?.balance||0).toLocaleString('en-IN')}`} color="text-white" />
+        <StatCard label="Balance" value={`$${parseFloat(account?.balance||0).toLocaleString('en-US')}`} color="text-white" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -81,7 +81,7 @@ export default function AnalyticsPage() {
             <BarChart data={monthlyData} barCategoryGap="30%">
               <XAxis dataKey="month" tick={{ fill: '#666', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+                tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="credit" name="Credit" fill="#22c55e" radius={[6,6,0,0]} />
               <Bar dataKey="debit"  name="Debit"  fill="#ef4444" radius={[6,6,0,0]} />
@@ -98,7 +98,7 @@ export default function AnalyticsPage() {
                   <Pie data={modeBreakdown} cx="50%" cy="50%" outerRadius={70} dataKey="value" strokeWidth={0}>
                     {modeBreakdown.map((_, i) => <Cell key={i} fill={COLORS[i%COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={v => `₹${parseFloat(v).toLocaleString('en-IN')}`}
+                  <Tooltip formatter={v => `$${parseFloat(v).toLocaleString('en-US')}`}
                     contentStyle={{ background:'#1e1e2e', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, fontSize:12 }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -109,7 +109,7 @@ export default function AnalyticsPage() {
                       <div className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i%COLORS.length] }} />
                       <span className="text-dark-200">{item.name}</span>
                     </div>
-                    <span className="text-white font-medium">₹{item.value.toLocaleString('en-IN')}</span>
+                    <span className="text-white font-medium">${item.value.toLocaleString('en-US')}</span>
                   </div>
                 ))}
               </div>
@@ -130,7 +130,7 @@ export default function AnalyticsPage() {
             </defs>
             <XAxis dataKey="month" tick={{ fill:'#666', fontSize:11 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill:'#666', fontSize:10 }} axisLine={false} tickLine={false}
-              tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+              tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
             <Tooltip content={<CustomTooltip />} />
             <Area type="monotone" dataKey="net" name="Net" stroke="#c8102e" fill="url(#netGrad)" strokeWidth={2} />
           </AreaChart>

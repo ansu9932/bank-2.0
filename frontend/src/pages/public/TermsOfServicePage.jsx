@@ -41,7 +41,7 @@ const SECTIONS = [
           ]}
         />
         <LP>
-          {'Minimum opening deposit: ₹1,00,000 (INR) or equivalent.\nSavings Account minimum balance: ₹5,00,000 (INR) or equivalent.\nCurrent Account minimum balance: ₹10,00,000 (INR) or equivalent.'}
+          {'Minimum opening deposit: $100,000 or equivalent.\nSavings Account minimum balance: $500,000 or equivalent.\nCurrent Account minimum balance: $1,000,000 or equivalent.'}
         </LP>
       </>
     ),

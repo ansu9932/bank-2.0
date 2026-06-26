@@ -60,5 +60,5 @@ export function safeRelative(value, fallback = 'Recently') {
 export function safeCurrency(value) {
   const num = parseFloat(value);
   if (isNaN(num)) return '0';
-  return num.toLocaleString('en-IN');
+  return num.toLocaleString('en-US');
 }

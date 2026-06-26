@@ -97,7 +97,7 @@ async function createOrder({ amount, receipt, notes }) {
 
   return client.orders.create({
     amount: Math.round(Number(amount) * 100), // rupees → paise
-    currency: 'INR',
+    currency: 'USD',
     receipt: String(receipt).slice(0, 40),
     payment_capture: 1, // auto-capture on successful authorization
     notes,

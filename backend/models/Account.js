@@ -11,12 +11,12 @@ const Account = sequelize.define('Account', {
   balance: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   available_balance: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   hold_amount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
-  currency: { type: DataTypes.STRING(5), defaultValue: 'INR' },
+  currency: { type: DataTypes.STRING(5), defaultValue: 'USD' },
   status: { type: DataTypes.ENUM('active', 'frozen', 'dormant', 'closed'), defaultValue: 'active' },
   // Active daily transaction limit. New accounts start RESTRICTED at 100 (the
   // product-mandated default; intended as 100 USD — note the app currently
-  // renders amounts with the ₹ symbol). An admin can raise it up to the
-  // ₹5,00,000 max ceiling via modifyUserCeiling.
+  // renders amounts with the $ symbol). An admin can raise it up to the
+  // $500,000 max ceiling via modifyUserCeiling.
   daily_transfer_limit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 100.00 },
   // ── Per-user transfer-method locks ──────────────────────────────────────────
   // Which outgoing rails this customer may use. By policy the external rails
