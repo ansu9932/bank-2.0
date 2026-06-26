@@ -15,10 +15,18 @@ const docFields = [
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
-// Upload constraints (must mirror the backend): any file type up to 20MB,
+// Upload constraints (must mirror the backend): any file type up to 15MB,
 // except ZIP / archive files which are blocked.
-const MAX_UPLOAD_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_UPLOAD_SIZE = 15 * 1024 * 1024; // 15MB
+const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // warn (not block) over 10MB
 const isZipFile = (file) => /\.zipx?$/i.test(file?.name || '') || /zip/i.test(file?.type || '');
+
+// Human-readable file size: shows MB for >=1MB, otherwise KB.
+const formatFileSize = (bytes) => {
+  const b = Number(bytes) || 0;
+  if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(b / 1024).toFixed(0)} KB`;
+};
 
 // Format a raw (un-spaced) Aadhaar string into "XXXX XXXX XXXX" for display.
 const formatAadhaar = (raw) => raw.replace(/(.{4})/g, '$1 ').trim();
@@ -28,18 +36,20 @@ function FileUpload({ docKey, onDrop, file, error }) {
     onDrop: (files) => { if (files && files[0]) onDrop(docKey, files[0]); },
     onDropRejected: (rejections) => {
       const code = rejections?.[0]?.errors?.[0]?.code;
-      if (code === 'file-too-large') toast.error('File is too large. Maximum size is 20 MB.');
+      if (code === 'file-too-large') toast.error('File is too large. Maximum size is 15 MB.');
       else if (code === 'zip-not-allowed') toast.error('ZIP files are not allowed. Please upload an image, PDF, or document.');
       else toast.error('This file could not be added. Please try another file.');
     },
-    // Accept ANY file type (no `accept` whitelist) up to 20MB; only ZIP/archive
-    // files are rejected via the custom validator below.
+    // Accept ANY file type (no `accept` whitelist) up to 15MB — including
+    // iPhone HEIC/HEIF photos. Only ZIP/archive files are rejected (validator).
     maxFiles: 1,
     maxSize: MAX_UPLOAD_SIZE,
     validator: (file) => (isZipFile(file)
       ? { code: 'zip-not-allowed', message: 'ZIP files are not allowed.' }
       : null),
   });
+
+  const isLarge = file && file.size > LARGE_FILE_THRESHOLD;
 
   return (
     <>
@@ -48,19 +58,21 @@ function FileUpload({ docKey, onDrop, file, error }) {
         <input {...getInputProps()} />
         {file ? (
           <div className="flex items-center gap-2 justify-center">
-            <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center flex-shrink-0">
               <RiCheckLine className="text-green-400" />
             </div>
-            <div className="text-left">
+            <div className="text-left min-w-0">
               <p className="text-white text-xs font-medium truncate max-w-[160px]">{file.name}</p>
-              <p className="text-dark-300 text-[10px]">{(file.size / 1024).toFixed(0)} KB</p>
+              <p className={`text-[10px] ${isLarge ? 'text-amber-300' : 'text-dark-300'}`}>
+                {formatFileSize(file.size)}{isLarge ? ' • large file, upload may be slower' : ''}
+              </p>
             </div>
           </div>
         ) : (
           <>
             <RiUploadCloud2Line className="text-dark-300 text-2xl mx-auto mb-1" />
             <p className="text-dark-300 text-xs">{isDragActive ? 'Drop here' : 'Click or drag to upload'}</p>
-            <p className="text-dark-500 text-[10px] mt-0.5">Any file • Max 20MB • ZIP not allowed</p>
+            <p className="text-dark-500 text-[10px] mt-0.5">Any file (incl. iPhone photos) • Max 15MB • ZIP not allowed</p>
           </>
         )}
       </div>

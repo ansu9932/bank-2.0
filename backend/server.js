@@ -106,7 +106,7 @@ app.use((err, req, res, next) => {
   logger.error(`Unhandled error: ${err.message}\n${err.stack}`);
 
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ success: false, message: 'Each file must be 20 MB or smaller. Please upload a smaller file.' });
+    return res.status(400).json({ success: false, message: 'Each file must be 15 MB or smaller. Please upload a smaller file.' });
   }
   // ZIP/archive rejection from the KYC document filter (blockZipFilter).
   if (err.code === 'INVALID_FILE_TYPE') {
