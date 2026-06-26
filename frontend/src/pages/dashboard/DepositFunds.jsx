@@ -83,6 +83,7 @@ export default function DepositFunds() {
   const [netBankingOpen, setNetBankingOpen] = useState(false); // custom bank grid expanded?
   const [selectedBank, setSelectedBank] = useState(null);      // { code, name } chosen in the grid
   const [order, setOrder] = useState(null);          // { orderRef, image_url, amount }
+  const [qrImgError, setQrImgError] = useState(false); // QR image failed to load?
   const [creditedAmount, setCreditedAmount] = useState(0);
   const [newBalance, setNewBalance] = useState(null);
 
@@ -174,6 +175,7 @@ export default function DepositFunds() {
       const payload = data?.data;
       if (!payload?.image_url || !payload?.orderRef) throw new Error('Malformed QR response');
       setOrder(payload);
+      setQrImgError(false);
       setPhase('qr');
       startPolling(payload.orderRef);
     } catch (err) {
@@ -265,6 +267,7 @@ export default function DepositFunds() {
     stopPolling();
     if (redirectRef.current) { clearTimeout(redirectRef.current); redirectRef.current = null; }
     setOrder(null);
+    setQrImgError(false);
     setCheckoutMethod(null);
     setNetBankingOpen(false);
     setSelectedBank(null);
@@ -551,35 +554,43 @@ export default function DepositFunds() {
                     className="relative rounded-2xl bg-white"
                     style={{ padding: '14px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
                     {/* `order.image_url` is a base64 data URI of the Razorpay QR.
-                        Razorpay's PNG carries a wide white quiet-zone border, so the
-                        actual scannable matrix looks small. We crop that outer margin
-                        (square, overflow-hidden wrapper + a slightly up-scaled image)
-                        so ONLY the QR matrix shows, filling the box edge-to-edge. The
-                        white padding on this box provides the quiet zone scanners need.
-                        No border-radius on the image itself — that would clip the
-                        corner finder squares. */}
+                        Razorpay's PNG has a wide white quiet-zone border, so we zoom
+                        the image slightly inside an overflow-hidden box to trim that
+                        margin — only the QR matrix shows. Layout uses width:100% +
+                        height:auto (NOT css aspect-ratio) so it renders reliably in
+                        every browser. The white padding is the scanner quiet zone. */}
                     <div
                       style={{
-                        position: 'relative',
                         width: '100%',
                         maxWidth: '240px',
-                        aspectRatio: '1 / 1',
+                        margin: '0 auto',
                         overflow: 'hidden',
                         background: '#ffffff',
+                        borderRadius: '6px',
                       }}>
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        style={{
-                          position: 'absolute',
-                          top: '-8%',
-                          left: '-8%',
-                          width: '116%',
-                          height: '116%',
-                          objectFit: 'contain',
-                          imageRendering: 'pixelated',
-                        }}
-                      />
+                      {qrImgError ? (
+                        <div style={{ padding: '24px 12px', textAlign: 'center' }}>
+                          <p style={{ color: '#c8102e', fontSize: '13px', fontWeight: 600 }}>
+                            Couldn’t load the QR image.
+                          </p>
+                          <p style={{ color: '#555', fontSize: '11px', marginTop: '4px' }}>
+                            Please tap “Cancel and change amount” and try again.
+                          </p>
+                        </div>
+                      ) : (
+                        <img
+                          src={order.image_url}
+                          alt="UPI payment QR code"
+                          onError={() => setQrImgError(true)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            height: 'auto',
+                            transform: 'scale(1.12)',
+                            transformOrigin: 'center',
+                          }}
+                        />
+                      )}
                     </div>
                   </motion.div>
                 )}
