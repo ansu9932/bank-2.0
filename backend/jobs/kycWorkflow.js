@@ -16,14 +16,15 @@ const logger = require('../utils/logger');
  */
 
 const runKYCWorkflow = () => {
-  // Step 1: Auto-send Video KYC after 10 minutes of under_review
+  // Step 1: Auto-send Video KYC ~5 minutes after under_review. (The email copy
+  // still says 10–15 minutes; the actual dispatch is faster.)
   cron.schedule('* * * * *', async () => {
     try {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
       const users = await User.findAll({
         where: {
           kyc_status: 'under_review',
-          updated_at: { [Op.lte]: tenMinutesAgo },
+          updated_at: { [Op.lte]: fiveMinutesAgo },
           video_kyc_completed: false,
         },
         limit: 10,
@@ -64,17 +65,17 @@ const runKYCWorkflow = () => {
     }
   });
 
-  // Step 2: Auto-approve + send ACTIVATION DEPOSIT link after 10 minutes of
-  // video_kyc_pending with video completed. (Account-setup link follows in
-  // Step 3, ~1 minute after the simulated activation deposit is received.)
+  // Step 2: Auto-approve + send ACTIVATION DEPOSIT link ~2 minutes after the
+  // user submits their Video KYC. (Account-setup link follows in Step 3, ~1
+  // minute after the simulated activation deposit is received.)
   cron.schedule('* * * * *', async () => {
     try {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
       const users = await User.findAll({
         where: {
           kyc_status: 'video_kyc_pending',
           video_kyc_completed: true,
-          updated_at: { [Op.lte]: tenMinutesAgo },
+          updated_at: { [Op.lte]: twoMinutesAgo },
         },
         limit: 10,
       });
