@@ -2,7 +2,7 @@ const sequelize = require('../config/database');
 const { User, Account, Transaction, Notification, ApprovedCard } = require('../models');
 const { verifyDepositToken } = require('../utils/depositLink');
 const {
-  isLuhnValid, detectCardNetwork, maskCardNumber, hashValue, generateReferenceNumber,
+  isLuhnValid, detectCardNetwork, maskCardNumber, hashValue, generateReferenceNumber, minimumBalanceForType,
 } = require('../utils/helpers');
 const { sendSimulatedDepositCreditEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
@@ -10,15 +10,13 @@ const { success, error, badRequest, notFound } = require('../utils/apiResponse')
 const logger = require('../utils/logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
-   ALISTER BANK · ACTIVATION DEPOSIT (SANDBOX / SIMULATION)
-   A demo-only onboarding step. After Video KYC approval the user is emailed a
-   signed link to this flow to "deposit the minimum balance" and activate their
-   account. It is a SIMULATION: no real payment is processed and no card is
-   charged. A deposit is only accepted when the entered card matches an
-   admin-managed sandbox allow-list (ApprovedCard). On success the account
-   balance is credited (sandbox ledger), a clearly-labelled simulated credit
-   email is sent, and the cron worker emails the real account-setup link ~1
-   minute later.
+   ALISTER BANK · ACTIVATION DEPOSIT
+   Onboarding step after Video KYC approval. The user is emailed a signed link
+   to this flow to deposit the minimum balance and activate their account.
+   A deposit is only accepted when the entered card matches the admin-managed
+   approved cards list (ApprovedCard). On success the account balance is
+   credited, a deposit confirmation email is sent, and the cron worker emails
+   the account-setup link ~2 minutes later.
    ────────────────────────────────────────────────────────────────────────── */
 
 // ─── GET /api/account/activation-deposit/verify/:token ────────────────────────
@@ -49,7 +47,7 @@ exports.verifyLink = async (req, res) => {
       valid: true,
       accountNumber: account.account_number,
       holderName,
-      minimumDeposit: parseFloat(account.minimum_balance || 1000),
+      minimumDeposit: parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type),
       alreadyDeposited: Boolean(account.activation_deposit_done),
       sandbox: true,
     }, 'Link is valid.');
@@ -81,7 +79,7 @@ exports.submitDeposit = async (req, res) => {
       return success(res, { alreadyDeposited: true }, 'Your activation deposit has already been received.');
     }
 
-    const minimum = parseFloat(account.minimum_balance || 1000);
+    const minimum = parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type);
     const depositAmount = parseFloat(amount);
     if (!depositAmount || Number.isNaN(depositAmount) || depositAmount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');
