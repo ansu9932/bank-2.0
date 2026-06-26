@@ -552,22 +552,13 @@ export default function DepositFunds() {
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     className="relative rounded-2xl bg-white"
-                    style={{ padding: '14px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* `order.image_url` is a base64 data URI of the Razorpay QR.
-                        Razorpay's PNG has a wide white quiet-zone border, so we zoom
-                        the image slightly inside an overflow-hidden box to trim that
-                        margin — only the QR matrix shows. Layout uses width:100% +
-                        height:auto (NOT css aspect-ratio) so it renders reliably in
-                        every browser. The white padding is the scanner quiet zone. */}
-                    <div
-                      style={{
-                        width: '100%',
-                        maxWidth: '240px',
-                        margin: '0 auto',
-                        overflow: 'hidden',
-                        background: '#ffffff',
-                        borderRadius: '6px',
-                      }}>
+                    style={{ padding: '16px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
+                    {/* The backend returns a CLEAN, QR-only image (it decodes the
+                        Razorpay poster and regenerates just the scannable code), so
+                        we render it straight — no cropping/scaling needed. Layout
+                        uses width:100% + height:auto so it renders reliably in every
+                        browser. The white padding is the scanner quiet zone. */}
+                    <div style={{ width: '100%', maxWidth: '230px', margin: '0 auto' }}>
                       {qrImgError ? (
                         <div style={{ padding: '24px 12px', textAlign: 'center' }}>
                           <p style={{ color: '#c8102e', fontSize: '13px', fontWeight: 600 }}>
@@ -582,13 +573,7 @@ export default function DepositFunds() {
                           src={order.image_url}
                           alt="UPI payment QR code"
                           onError={() => setQrImgError(true)}
-                          style={{
-                            display: 'block',
-                            width: '100%',
-                            height: 'auto',
-                            transform: 'scale(1.12)',
-                            transformOrigin: 'center',
-                          }}
+                          style={{ display: 'block', width: '100%', height: 'auto' }}
                         />
                       )}
                     </div>

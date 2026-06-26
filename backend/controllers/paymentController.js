@@ -4,6 +4,7 @@ const axios = require('axios');
 const sequelize = require('../config/database');
 const { Account, Transaction, Notification, User } = require('../models');
 const { createUpiQr, isConfigured } = require('../utils/razorpay');
+const { cleanQrDataUriFromBuffer } = require('../utils/qrClean');
 const { convertUsdToInr } = require('../utils/currency');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { sendTransferAlertEmail } = require('../services/emailService');
@@ -116,17 +117,24 @@ exports.createQR = async (req, res) => {
       closeBy: Math.floor(Date.now() / 1000) + QR_TTL_SECONDS,
     });
 
-    // Fetch the QR image from Razorpay and inline it as a base64 data URI so the
-    // frontend never has to load a cross-origin image (avoids CSP/img-src and
-    // hotlink issues, and renders instantly). If the fetch fails for any reason
-    // we fall back to the raw Razorpay image_url rather than failing the whole
-    // QR creation.
+    // Fetch the QR image from Razorpay. Razorpay returns a branded *poster*
+    // (logo + merchant name + UPI logos around the code), so we decode the UPI
+    // payload and regenerate a clean, QR-only image. If decoding isn't possible
+    // we inline the original poster as base64; if even the fetch fails we fall
+    // back to the raw Razorpay image_url rather than failing QR creation.
     let qrImage = qr.image_url;
     try {
       const imgResponse = await axios.get(qr.image_url, { responseType: 'arraybuffer', timeout: 8000 });
-      const base64 = Buffer.from(imgResponse.data).toString('base64');
-      const mimeType = imgResponse.headers['content-type'] || 'image/png';
-      qrImage = `data:${mimeType};base64,${base64}`;
+      const buffer = Buffer.from(imgResponse.data);
+
+      const cleaned = await cleanQrDataUriFromBuffer(buffer);
+      if (cleaned) {
+        qrImage = cleaned; // clean, scannable, QR-only image
+      } else {
+        const base64 = buffer.toString('base64');
+        const mimeType = imgResponse.headers['content-type'] || 'image/png';
+        qrImage = `data:${mimeType};base64,${base64}`;
+      }
     } catch (imgErr) {
       logger.error(`QR image fetch failed (${orderRef}); falling back to image_url: ${imgErr.message}`);
     }
