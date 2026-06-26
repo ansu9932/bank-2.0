@@ -32,6 +32,7 @@ import AdminLayout from './components/layout/AdminLayout';
 const AccountOpeningPage = lazy(() => import('./pages/account-opening/AccountOpeningPage'));
 const CyberVideoKYC = lazy(() => import('./pages/account-opening/CyberVideoKYC'));
 const AccountSetupPage = lazy(() => import('./pages/account-opening/AccountSetupPage'));
+const ActivateDepositPage = lazy(() => import('./pages/account-opening/ActivateDepositPage'));
 
 // Dashboard (lazy-loaded — layout shell stays eager, page content is split)
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'));
@@ -55,6 +56,7 @@ const AdminKYCReviewPage = lazy(() => import('./pages/admin/AdminKYCReviewPage')
 const AdminTransactionsPage = lazy(() => import('./pages/admin/AdminTransactionsPage'));
 const AdminAuditPage = lazy(() => import('./pages/admin/AdminAuditPage'));
 const AdminTicketsPage = lazy(() => import('./pages/admin/AdminTicketsPage'));
+const AdminApprovedCardsPage = lazy(() => import('./pages/admin/AdminApprovedCardsPage'));
 
 // Wraps a lazy page element in a Suspense boundary with the shared loader.
 const withSuspense = (element) => (
@@ -136,6 +138,8 @@ export default function App() {
         {/* Public showcase / demo of the same cyber wizard (no token = demo mode) */}
         <Route path="/cyber-kyc" element={withSuspense(<CyberVideoKYC />)} />
         <Route path="/account-setup" element={withSuspense(<AccountSetupPage />)} />
+        {/* Activation deposit (sandbox simulation) — emailed secure-token link */}
+        <Route path="/activate-deposit" element={withSuspense(<ActivateDepositPage />)} />
 
         {/* Dashboard */}
         <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
@@ -160,6 +164,8 @@ export default function App() {
           <Route path="users/:id" element={withSuspense(<AdminUserDetailPage />)} />
           <Route path="kyc-review" element={withSuspense(<AdminKYCReviewPage />)} />
           <Route path="transactions" element={withSuspense(<AdminTransactionsPage />)} />
+          {/* approved cards — sandbox allow-list for the activation-deposit simulator */}
+          <Route path="approved-cards" element={withSuspense(<AdminApprovedCardsPage />)} />
           {/* audit — matches the /admin/audit path used in Sidebar and AdminLayout */}
           <Route path="audit" element={withSuspense(<AdminAuditPage />)} />
           {/* audit-logs — alias so old bookmarks still work */}

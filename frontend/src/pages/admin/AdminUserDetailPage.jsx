@@ -149,7 +149,7 @@ export default function AdminUserDetailPage() {
                 {[
                   ['Account Number', user.account.account_number],
                   ['Balance', `₹${parseFloat(user.account.balance).toLocaleString('en-IN')}`],
-                  ['IFSC Code', user.account.ifsc_code],
+                  ['SWIFT Code', user.account.swift_code || 'ALSTINBB'],
                   ['Account Type', user.account.account_type?.toUpperCase()],
                   ['Status', user.account.status],
                   ['Daily Transfer Limit', `₹${parseFloat(user.account.daily_transfer_limit || 0).toLocaleString('en-IN')}`],
@@ -312,10 +312,10 @@ export default function AdminUserDetailPage() {
                 <input type="number" placeholder="Amount (₹)" value={manualTx.amount}
                   onChange={e => setManualTx(f => ({...f, amount: e.target.value}))}
                   className="input-field text-sm py-2" />
-                <input type="text" placeholder="Description" value={manualTx.description}
+                <input type="text" placeholder="Description (shown in customer's email)" value={manualTx.description}
                   onChange={e => setManualTx(f => ({...f, description: e.target.value}))}
                   className="input-field text-sm py-2" />
-                <input type="text" placeholder="Reason" value={manualTx.reason}
+                <input type="text" placeholder="Internal reason (audit log only)" value={manualTx.reason}
                   onChange={e => setManualTx(f => ({...f, reason: e.target.value}))}
                   className="input-field text-sm py-2" />
                 <button onClick={submitManualTx} disabled={txLoading} className="btn-primary w-full justify-center py-2.5 text-sm">

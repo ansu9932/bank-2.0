@@ -415,7 +415,7 @@ function InlineAccountCard({ account, user }) {
   const statusLabel  = account?.status?.toUpperCase() || 'ACTIVE';
   const isActive     = account?.status === 'active' || !account?.status;
   const holderName   = `${user?.firstName || user?.first_name || ''} ${user?.lastName || user?.last_name || ''}`.trim() || 'Account Holder';
-  const ifscCode     = account?.ifsc_code || 'ALST0000001';
+  const swiftCode    = account?.swift_code || 'ALSTINBB';
 
   return (
     <motion.div
@@ -502,7 +502,7 @@ function InlineAccountCard({ account, user }) {
           </div>
         </div>
 
-        {/* Row 3 — account number + IFSC */}
+        {/* Row 3 — account number + SWIFT */}
         <div className="flex items-end justify-between">
           <div>
             <p className="text-white/40 text-[10px] uppercase tracking-widest mb-0.5">
@@ -513,8 +513,8 @@ function InlineAccountCard({ account, user }) {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-white/40 text-[10px] uppercase mb-0.5">IFSC</p>
-            <p className="text-white/70 text-xs font-mono">{ifscCode}</p>
+            <p className="text-white/40 text-[10px] uppercase mb-0.5">SWIFT</p>
+            <p className="text-white/70 text-xs font-mono">{swiftCode}</p>
           </div>
         </div>
 
@@ -961,8 +961,8 @@ export default function DashboardPage() {
                   value : account?.account_number || '—',
                 },
                 {
-                  label : 'IFSC Code',
-                  value : account?.ifsc_code || 'ALST0000001',
+                  label : 'SWIFT Code',
+                  value : account?.swift_code || 'ALSTINBB',
                 },
                 {
                   label : 'SWIFT Code',

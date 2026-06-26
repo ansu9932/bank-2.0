@@ -254,7 +254,7 @@ const sendAccountApprovedEmail = async (email, name, setupLink, accountNumber) =
     ${heading('Welcome to Alister Bank! 🎉')}
     ${para(`Dear ${hl(name)},`)}
     ${para('Congratulations! Your bank account has been <strong>approved and activated</strong>. You\'re now part of the Alister Bank family.')}
-    ${infoBox(`<strong>Account Number:</strong> ${accountNumber}<br/><span style="display:inline-block; margin-top:6px;"><strong>IFSC Code:</strong> ALST0000001</span><br/><span style="display:inline-block; margin-top:6px;"><strong>Bank:</strong> Alister Bank</span>`)}
+    ${infoBox(`<strong>Account Number:</strong> ${accountNumber}<br/><span style="display:inline-block; margin-top:6px;"><strong>SWIFT Code:</strong> ${process.env.BANK_SWIFT || 'ALSTINBB'}</span><br/><span style="display:inline-block; margin-top:6px;"><strong>Bank:</strong> Alister Bank</span>`)}
     ${para('Click the secure button below to set up your <strong>username, password, and security PIN</strong>:')}
     ${button('Set Up My Account →', setupLink)}
     ${infoBox('&#9201; This setup link expires in <strong>24 hours</strong>. Please complete setup immediately.')}
@@ -281,6 +281,12 @@ const sendLoginAlertEmail = async (email, name, loginData) => {
 
 const sendTransferAlertEmail = async (email, name, txData) => {
   const isDebit = txData.type === 'debit';
+  // Prefer an explicit, human-written description (e.g. an admin's note on a
+  // manual credit/debit). Fall back to the system reference when none is given.
+  const hasDescription = txData.description != null && String(txData.description).trim() !== '';
+  const noteRow = hasDescription
+    ? detailRow('Description', String(txData.description).trim())
+    : detailRow('Reference', txData.reference);
   const html = baseTemplate(bodyShell(`
     ${badge(isDebit ? '&#128184; Money Sent' : '&#128176; Money Received')}
     ${heading(`Transaction ${isDebit ? 'Debit' : 'Credit'} Alert`)}
@@ -288,7 +294,7 @@ const sendTransferAlertEmail = async (email, name, txData) => {
     ${para(`A transaction has been ${isDebit ? 'debited from' : 'credited to'} your account.`)}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
       ${detailRow('Amount', `₹${txData.amount}`, isDebit ? '#ef4444' : '#22c55e')}
-      ${detailRow('Reference', txData.reference)}
+      ${noteRow}
       ${detailRow(isDebit ? 'To Account' : 'From', txData.counterparty)}
       ${detailRow('Mode', txData.mode)}
       ${detailRow('Balance', `₹${txData.balance}`)}
@@ -413,6 +419,66 @@ const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, chan
   return sendEmail({ to: email, subject: 'Alister Bank — Card Control Updated', html });
 };
 
+/* A prominent sandbox/simulation notice block — makes it unmistakable that the
+   activation-deposit flow is a demo and no real money or card charge occurred. */
+const sandboxNotice = (text) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;"><tr>
+    <td style="background-color:#1a1500; border:1px solid #6b5500; border-radius:8px; padding:14px 18px;">
+      <p style="margin:0; color:#f5c451; font-size:13px; line-height:1.6;">&#129514; <strong>Sandbox / Simulation:</strong> ${text}</p>
+    </td>
+  </tr></table>`;
+
+/**
+ * Activation-deposit invitation — sent after Video KYC is approved. Tells the
+ * user their account is approved and invites them to make the minimum-balance
+ * "activation deposit" via the secure link. Clearly marked as a sandbox
+ * simulation so it can never be mistaken for a real funding request.
+ */
+const sendActivationDepositEmail = async (email, name, { depositLink, minimumBalance, accountNumber }) => {
+  const minLabel = `₹${Number(minimumBalance || 0).toLocaleString('en-IN')}`;
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#9989; Account Approved')}
+    ${heading('Activate Your Account — Minimum Balance Deposit')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Great news — your identity verification is complete and your account has been <strong>approved</strong>. One final step remains: fund your account with the minimum opening balance to activate it.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Account Number', accountNumber || '—')}
+      ${detailRow('Minimum Activation Deposit', minLabel, '#22c55e')}
+    </table>
+    ${button('Make Activation Deposit →', depositLink)}
+    ${sandboxNotice('This is a simulated activation deposit for demonstration. No real payment is processed and no card is charged.')}
+    ${para('Once your activation deposit is received, you\'ll get a confirmation and then a secure link to set up your username, password and security PIN.')}
+  `));
+  return sendEmail({ to: email, subject: 'Alister Bank — Account Approved: Deposit Minimum Balance to Activate', html });
+};
+
+/**
+ * Simulated deposit credit confirmation — sent after a (sandbox) activation
+ * deposit succeeds. Shows the payment mode as "Credit Card" with the last 4
+ * digits and cardholder name. Deliberately carries NO external bank name and is
+ * clearly labelled as a simulated transaction.
+ */
+const sendSimulatedDepositCreditEmail = async (email, name, { amount, last4, cardHolder, balance, reference, time }) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128176; Deposit Received')}
+    ${heading('Activation Deposit Confirmed')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Your activation deposit has been received and credited to your account.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Amount Credited', `₹${amount}`, '#22c55e')}
+      ${detailRow('Payment Mode', 'Credit Card')}
+      ${detailRow('Card', `Credit Card ending ${last4 || '••••'}`)}
+      ${detailRow('Card Holder', cardHolder || '—')}
+      ${detailRow('Reference', reference || '—')}
+      ${detailRow('Account Balance', `₹${balance}`)}
+      ${detailRow('Date &amp; Time', time)}
+    </table>
+    ${sandboxNotice('This is a simulated deposit for demonstration. No real payment was processed and no card was charged.')}
+    ${para('Your account setup link will arrive in your inbox shortly so you can complete your login credentials.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — Activation Deposit Confirmed: ₹${amount}`, html });
+};
+
 /**
  * KYC rejection notice — sent when an admin flags a user's identity profile or
  * documents as 'rejected'. Explains the verification could not be approved and
@@ -439,6 +505,8 @@ module.exports = {
   sendKYCUnderReviewEmail,
   sendVideoKYCEmail,
   sendAccountApprovedEmail,
+  sendActivationDepositEmail,
+  sendSimulatedDepositCreditEmail,
   sendLoginAlertEmail,
   sendTransferAlertEmail,
   sendPasswordResetEmail,

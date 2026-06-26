@@ -36,25 +36,12 @@ exports.registrationHandshake = async (req, res) => {
 // ─── Submit Account Opening Application ───────────────────────────────────────
 exports.openAccount = async (req, res) => {
   try {
-    // ── Ephemeral registration handshake validation (anti-CSRF / anti-replay) ─
-    // Entry-point guard for the onboarding pipeline. The nonce is read from the
-    // request headers (falling back to the body for resilience), and must be
-    // present, structurally valid, unexpired, single-use, and IP-consistent.
-    // On any failure we abort BEFORE any DB writes or external identity
-    // verification calls, protecting system stability.
-    const registrationToken =
-      req.headers['x-registration-token'] ||
-      req.headers['x-handshake-token'] ||
-      req.body?.registrationToken ||
-      req.body?.handshakeToken;
-    const hs = consumeRegistrationHandshake(registrationToken, req.ip);
-    if (!hs.valid) {
-      const msg = hs.reason === 'expired'
-        ? 'Your secure registration session expired. Please refresh the page and start again.'
-        : 'Invalid or missing security handshake. Please refresh the page and try again.';
-      logger.warn(`openAccount handshake rejected (${hs.reason}) from ${req.ip}`);
-      return badRequest(res, msg);
-    }
+    // NOTE: The previous ephemeral "registration handshake" nonce + 40-minute
+    // expiry was removed. It caused users who spent longer than the window on
+    // the multi-step KYC funnel (document uploads, etc.) to hit a
+    // "secure registration session expired — refresh and continue" error at the
+    // final step and lose their progress. Account opening no longer requires a
+    // short-lived onboarding token.
 
     const {
       firstName, lastName, email, phone, dateOfBirth, gender,

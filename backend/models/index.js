@@ -13,6 +13,7 @@ const TransferRequest = require('./TransferRequest');
 const SupportTicket = require('./SupportTicket');
 const SecureLink = require('./SecureLink');
 const CardRequest = require('./CardRequest');
+const ApprovedCard = require('./ApprovedCard');
 
 // Associations
 User.hasOne(Account, { foreignKey: 'user_id', as: 'account' });
@@ -55,4 +56,5 @@ module.exports = {
   SupportTicket,
   SecureLink,
   CardRequest,
+  ApprovedCard,
 };

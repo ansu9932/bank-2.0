@@ -2,12 +2,14 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest } = require('../models');
+const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notification, SupportTicket, SecureLink, CardRequest, ApprovedCard } = require('../models');
 const { generateAdminToken } = require('../middleware/auth');
 const {
   generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
+  isLuhnValid, detectCardNetwork, hashValue,
 } = require('../utils/helpers');
-const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail } = require('../services/emailService');
+const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail, sendActivationDepositEmail } = require('../services/emailService');
+const { issueDepositToken } = require('../utils/depositLink');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, unauthorized } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -314,16 +316,11 @@ exports.approveKYC = async (req, res) => {
     });
 
     // Send approval email with setup link
-    const setupToken = generateSecureToken();
-    await SecureLink.create({
-      user_id: user.id,
-      token: setupToken,
-      purpose: 'account_setup',
-      expires_at: getOnboardingLinkExpiry(),
-    });
-
-    const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
-    await sendAccountApprovedEmail(user.email, user.first_name, setupLink, accountNumber);
+    // Account approved — but instead of issuing the setup link immediately, we
+    // invite the user to make the (simulated) minimum-balance activation
+    // deposit first. The account-setup link is emailed automatically ~1 minute
+    // after the deposit is received (see kycWorkflow Step 3).
+    await startActivationDeposit(user, account);
 
     await user.update({ kyc_status: 'approved' });
 
@@ -336,7 +333,7 @@ exports.approveKYC = async (req, res) => {
     await Notification.create({
       user_id: user.id,
       title: 'KYC Approved! 🎉',
-      message: 'Your KYC verification is complete. Check your email to set up your account.',
+      message: 'Your KYC verification is complete. Check your email to make your activation deposit.',
       type: 'kyc',
       priority: 'high',
     });
@@ -351,7 +348,7 @@ exports.approveKYC = async (req, res) => {
       status: 'success',
     });
 
-    return success(res, { accountNumber }, 'KYC approved. Setup link sent to user.');
+    return success(res, { accountNumber }, 'KYC approved. Activation deposit link sent to user.');
   } catch (err) {
     logger.error(`Approve KYC error: ${err.message}`);
     return error(res, 'Failed to approve KYC.');
@@ -495,22 +492,20 @@ exports.reviewKYC = async (req, res) => {
     );
 
     if (!user.setup_completed) {
-      const setupToken = generateSecureToken();
-      await SecureLink.create({
-        user_id: user.id, token: setupToken, purpose: 'account_setup', expires_at: getOnboardingLinkExpiry(),
-      });
-      const setupLink = `${process.env.FRONTEND_URL}/account-setup?token=${setupToken}`;
+      // Approved — invite the user to make the (simulated) minimum-balance
+      // activation deposit. The account-setup link follows ~1 minute after the
+      // deposit lands (kycWorkflow Step 3), not here.
       try {
-        await sendAccountApprovedEmail(user.email, user.first_name, setupLink, account.account_number);
+        await startActivationDeposit(user, account);
       } catch (mailErr) {
-        logger.error(`Approval email failed: ${mailErr.message}`);
+        logger.error(`Activation deposit email failed: ${mailErr.message}`);
       }
     }
 
     await Notification.create({
       user_id: user.id,
       title: 'KYC Approved! 🎉',
-      message: 'Your identity verification passed and your account is now active.',
+      message: 'Your identity verification passed. Check your email to make your activation deposit.',
       type: 'kyc',
       priority: 'high',
     });
@@ -616,12 +611,15 @@ exports.manualTransaction = async (req, res) => {
     });
 
     // Transaction alert email — notify the user of this credit/debit event.
+    // The admin-written `description` is shown in the email (replacing the old
+    // generic "reference" line) so the customer sees exactly what the admin
+    // noted about this adjustment.
     User.findByPk(req.params.id).then((u) => {
       if (!u?.email) return;
       return sendTransferAlertEmail(u.email, u.first_name || 'Customer', {
         type: type === 'debit' ? 'debit' : 'credit',
         amount: parsedAmount.toFixed(2),
-        reference: 'Adjustment',
+        description: description || reason || 'Account adjustment',
         counterparty: 'Alister Bank',
         mode: 'SYSTEM',
         balance: balanceAfter.toFixed(2),
@@ -807,5 +805,144 @@ exports.flagTransaction = async (req, res) => {
     return success(res, {}, 'Transaction flagged.');
   } catch (err) {
     return error(res, 'Failed to flag transaction.');
+  }
+};
+
+
+// ─── Onboarding helper: start the (simulated) activation-deposit step ─────────
+// Issues a signed deposit link and emails it to the user. Used after Video KYC
+// approval instead of immediately sending the account-setup link. Declared as a
+// function declaration so it is hoisted for use by approveKYC / reviewKYC above.
+async function startActivationDeposit(user, account) {
+  const { token } = issueDepositToken(user.id);
+  const depositLink = `${process.env.FRONTEND_URL}/activate-deposit?token=${token}`;
+  await sendActivationDepositEmail(user.email, user.first_name || 'Customer', {
+    depositLink,
+    minimumBalance: parseFloat(account.minimum_balance || 1000),
+    accountNumber: account.account_number,
+  });
+}
+
+// ─── Approved Cards (SANDBOX allow-list for the activation-deposit simulator) ─
+// These cards are the ONLY ones the simulated activation-deposit page accepts.
+// No real payment is processed; this is a demo/sandbox control surface.
+
+// GET /api/admin/approved-cards
+exports.listApprovedCards = async (req, res) => {
+  try {
+    const cards = await ApprovedCard.findAll({
+      attributes: ['id', 'label', 'last4', 'card_holder_name', 'network', 'expiry', 'is_active', 'created_at'],
+      order: [['created_at', 'DESC']],
+      limit: 200,
+    });
+    return success(res, { cards });
+  } catch (err) {
+    logger.error(`List approved cards error: ${err.message}`);
+    return error(res, 'Failed to load approved cards.');
+  }
+};
+
+// POST /api/admin/approved-cards   body: { label, cardNumber, cardHolder, expiry }
+exports.addApprovedCard = async (req, res) => {
+  try {
+    const { label, cardNumber, cardHolder, expiry } = req.body;
+    const digits = String(cardNumber || '').replace(/\D/g, '');
+
+    if (digits.length < 12 || !isLuhnValid(digits)) {
+      return badRequest(res, 'Enter a valid card number (must pass the Luhn check).');
+    }
+    if (!cardHolder || !String(cardHolder).trim()) {
+      return badRequest(res, 'Cardholder name is required.');
+    }
+    if (expiry && !/^\d{2}\/\d{2}$/.test(String(expiry).trim())) {
+      return badRequest(res, 'Expiry must be in MM/YY format.');
+    }
+
+    const card_number_hash = hashValue(digits);
+    const existing = await ApprovedCard.findOne({ where: { card_number_hash } });
+    if (existing) return badRequest(res, 'This card has already been added.');
+
+    const card = await ApprovedCard.create({
+      label: label ? String(label).trim().slice(0, 120) : `Card ending ${digits.slice(-4)}`,
+      card_number_hash,
+      last4: digits.slice(-4),
+      card_holder_name: String(cardHolder).trim().slice(0, 120),
+      network: detectCardNetwork(digits),
+      expiry: expiry ? String(expiry).trim() : null,
+      is_active: true,
+      created_by: req.admin?.id || null,
+    });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      action: 'APPROVED_CARD_ADDED',
+      entityType: 'ApprovedCard',
+      entityId: card.id,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Sandbox approved card added (ending ${card.last4}).`,
+    });
+
+    return created(res, {
+      card: {
+        id: card.id, label: card.label, last4: card.last4,
+        card_holder_name: card.card_holder_name, network: card.network,
+        expiry: card.expiry, is_active: card.is_active,
+      },
+    }, 'Approved card added.');
+  } catch (err) {
+    logger.error(`Add approved card error: ${err.message}`);
+    return error(res, 'Failed to add the approved card.');
+  }
+};
+
+// PATCH /api/admin/approved-cards/:id   body: { is_active }
+exports.toggleApprovedCard = async (req, res) => {
+  try {
+    const card = await ApprovedCard.findByPk(req.params.id);
+    if (!card) return notFound(res, 'Approved card not found.');
+
+    const nextActive = typeof req.body.is_active === 'boolean' ? req.body.is_active : !card.is_active;
+    await card.update({ is_active: nextActive });
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      action: 'APPROVED_CARD_TOGGLED',
+      entityType: 'ApprovedCard',
+      entityId: card.id,
+      newValues: { is_active: nextActive },
+      ipAddress: req.ip,
+      status: 'success',
+    });
+
+    return success(res, { id: card.id, is_active: nextActive }, `Card ${nextActive ? 'enabled' : 'disabled'}.`);
+  } catch (err) {
+    logger.error(`Toggle approved card error: ${err.message}`);
+    return error(res, 'Failed to update the approved card.');
+  }
+};
+
+// DELETE /api/admin/approved-cards/:id
+exports.deleteApprovedCard = async (req, res) => {
+  try {
+    const card = await ApprovedCard.findByPk(req.params.id);
+    if (!card) return notFound(res, 'Approved card not found.');
+    const last4 = card.last4;
+    await card.destroy();
+
+    await createAuditLog({
+      adminId: req.admin.id,
+      action: 'APPROVED_CARD_DELETED',
+      entityType: 'ApprovedCard',
+      entityId: req.params.id,
+      ipAddress: req.ip,
+      status: 'success',
+      description: `Sandbox approved card deleted (ending ${last4}).`,
+    });
+
+    return success(res, {}, 'Approved card deleted.');
+  } catch (err) {
+    logger.error(`Delete approved card error: ${err.message}`);
+    return error(res, 'Failed to delete the approved card.');
   }
 };

@@ -27,6 +27,11 @@ const Account = sequelize.define('Account', {
   card_issued: { type: DataTypes.BOOLEAN, defaultValue: false },
   card_number_masked: { type: DataTypes.STRING(20) },
   cheque_book_issued: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // ── Activation deposit (SANDBOX onboarding simulation) ──────────────────────
+  // Set true once the user completes the simulated minimum-balance activation
+  // deposit; activation_deposit_at gates the ~1-minute-later account-setup email.
+  activation_deposit_done: { type: DataTypes.BOOLEAN, defaultValue: false },
+  activation_deposit_at: { type: DataTypes.DATE },
 }, {
   tableName: 'accounts',
   // account_number already has a unique index via field-level `unique: true`.
