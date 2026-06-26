@@ -1,29 +1,27 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const { User, SecureLink, Account } = require('../models');
-const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC } = require('../utils/helpers');
+const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC, minimumBalanceForType } = require('../utils/helpers');
 const { sendVideoKYCEmail, sendAccountApprovedEmail, sendActivationDepositEmail } = require('../services/emailService');
 const { issueDepositToken } = require('../utils/depositLink');
 const logger = require('../utils/logger');
 
 /**
  * KYC Workflow Automation:
- * 1. Every minute: find users in 'under_review' for 10+ min → send Video KYC link
- * 2. Every minute: find users in 'video_kyc_pending' with completed video for 10+ min → send approval + setup link
- *
- * NOTE: In production, these should be triggered by actual admin review.
- * This auto-flow simulates the banking process for demo/test purposes.
+ * 1. Every minute: find users in 'under_review' for 2+ min → send Video KYC link
+ * 2. Every minute: find users in 'video_kyc_pending' with completed video for 2+ min → send activation deposit link
+ * 3. Every minute: find users who completed activation deposit 2+ min ago → send account setup link
  */
 
 const runKYCWorkflow = () => {
-  // Step 1: Auto-send Video KYC after 10 minutes of under_review
+  // Step 1: Auto-send Video KYC after 2 minutes of under_review
   cron.schedule('* * * * *', async () => {
     try {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
       const users = await User.findAll({
         where: {
           kyc_status: 'under_review',
-          updated_at: { [Op.lte]: tenMinutesAgo },
+          updated_at: { [Op.lte]: twoMinutesAgo },
           video_kyc_completed: false,
         },
         limit: 10,
@@ -64,17 +62,17 @@ const runKYCWorkflow = () => {
     }
   });
 
-  // Step 2: Auto-approve + send ACTIVATION DEPOSIT link after 10 minutes of
+  // Step 2: Auto-approve + send ACTIVATION DEPOSIT link after 2 minutes of
   // video_kyc_pending with video completed. (Account-setup link follows in
-  // Step 3, ~1 minute after the simulated activation deposit is received.)
+  // Step 3, ~2 minutes after the activation deposit is received.)
   cron.schedule('* * * * *', async () => {
     try {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
       const users = await User.findAll({
         where: {
           kyc_status: 'video_kyc_pending',
           video_kyc_completed: true,
-          updated_at: { [Op.lte]: tenMinutesAgo },
+          updated_at: { [Op.lte]: twoMinutesAgo },
         },
         limit: 10,
       });
@@ -93,6 +91,7 @@ const runKYCWorkflow = () => {
             available_balance: 0.00,
             currency: 'USD',
             status: 'active',
+            minimum_balance: minimumBalanceForType(user.account_type),
           });
         }
 
@@ -101,7 +100,7 @@ const runKYCWorkflow = () => {
         const depositLink = `${process.env.FRONTEND_URL}/activate-deposit?token=${token}`;
         await sendActivationDepositEmail(user.email, user.first_name, {
           depositLink,
-          minimumBalance: parseFloat(account.minimum_balance || 1000),
+          minimumBalance: parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type),
           accountNumber: account.account_number,
         });
 
@@ -113,16 +112,16 @@ const runKYCWorkflow = () => {
     }
   });
 
-  // Step 3: ~1 minute after the (simulated) activation deposit is received,
+  // Step 3: ~2 minutes after the activation deposit is received,
   // email the account-setup link. Gated so it only fires once per user (no
   // existing unused account_setup link) and survives a process restart.
   cron.schedule('* * * * *', async () => {
     try {
-      const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
       const accounts = await Account.findAll({
         where: {
           activation_deposit_done: true,
-          activation_deposit_at: { [Op.lte]: oneMinuteAgo },
+          activation_deposit_at: { [Op.lte]: twoMinutesAgo },
         },
         limit: 20,
       });

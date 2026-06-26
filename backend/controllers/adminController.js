@@ -6,7 +6,7 @@ const { User, Account, Transaction, KYCDocument, AdminUser, AuditLog, Notificati
 const { generateAdminToken } = require('../middleware/auth');
 const {
   generateAccountNumber, generateIFSC, generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry,
-  isLuhnValid, detectCardNetwork, hashValue,
+  isLuhnValid, detectCardNetwork, hashValue, minimumBalanceForType,
 } = require('../utils/helpers');
 const { sendAccountApprovedEmail, sendVideoKYCEmail, sendTransferAlertEmail, sendKYCRejectedEmail, sendActivationDepositEmail } = require('../services/emailService');
 const { issueDepositToken } = require('../utils/depositLink');
@@ -311,6 +311,7 @@ exports.approveKYC = async (req, res) => {
       available_balance: 0.00,
       currency: 'USD',
       status: 'active',
+      minimum_balance: minimumBalanceForType(user.account_type),
       // New accounts start with a RESTRICTED daily limit of 100 (product
       // default; intended as 100 USD — amounts currently render with $). An
       // admin raises it via modifyUserCeiling.
@@ -322,8 +323,8 @@ exports.approveKYC = async (req, res) => {
 
     // Send approval email with setup link
     // Account approved — but instead of issuing the setup link immediately, we
-    // invite the user to make the (simulated) minimum-balance activation
-    // deposit first. The account-setup link is emailed automatically ~1 minute
+    // invite the user to make the minimum-balance activation
+    // deposit first. The account-setup link is emailed automatically ~2 minutes
     // after the deposit is received (see kycWorkflow Step 3).
     await startActivationDeposit(user, account);
 
@@ -483,6 +484,7 @@ exports.reviewKYC = async (req, res) => {
         available_balance: 0.00,
         currency: 'USD',
         status: 'active',
+        minimum_balance: minimumBalanceForType(user.account_type),
         // Restricted daily limit of 100 by default (product default; intended
         // as 100 USD — amounts currently render with $). Admin raises it via
         // modifyUserCeiling.
@@ -501,8 +503,8 @@ exports.reviewKYC = async (req, res) => {
     );
 
     if (!user.setup_completed) {
-      // Approved — invite the user to make the (simulated) minimum-balance
-      // activation deposit. The account-setup link follows ~1 minute after the
+      // Approved — invite the user to make the minimum-balance
+      // activation deposit. The account-setup link follows ~2 minutes after the
       // deposit lands (kycWorkflow Step 3), not here.
       try {
         await startActivationDeposit(user, account);
@@ -896,7 +898,7 @@ async function startActivationDeposit(user, account) {
   const depositLink = `${process.env.FRONTEND_URL}/activate-deposit?token=${token}`;
   await sendActivationDepositEmail(user.email, user.first_name || 'Customer', {
     depositLink,
-    minimumBalance: parseFloat(account.minimum_balance || 1000),
+    minimumBalance: parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type),
     accountNumber: account.account_number,
   });
 }
