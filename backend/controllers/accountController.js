@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { User, Account, KYCDocument, OTP, SecureLink, Notification } = require('../models');
+const sequelize = require('../config/database');
 const {
   generateCustomerID, generateAccountNumber, generateIFSC,
   generateSecureToken, getSecureLinkExpiry, hashValue, generateReferralCode, isExpired,
@@ -90,78 +91,89 @@ exports.openAccount = async (req, res) => {
       if (!existing) isUnique = true;
     }
 
-    // Create user
-    const user = await User.create({
-      customer_id: customerId,
-      first_name: firstName,
-      last_name: lastName,
-      email,
-      phone,
-      date_of_birth: dateOfBirth,
-      gender,
-      father_name: fatherName,
-      mother_name: motherName,
-      marital_status: maritalStatus || null,
-      nationality: nationality || 'Indian',
-      occupation,
-      // annual_income is DECIMAL — coerce blanks to null so an empty string
-      // doesn't trip a numeric validation error.
-      annual_income: annualIncome === '' || annualIncome === undefined ? null : annualIncome,
-      address_line1: addressLine1,
-      address_line2: addressLine2,
-      city,
-      state,
-      pincode,
-      country: country || 'India',
-      aadhaar_number: aadhaarClean,
-      pan_number: panClean,
-      passport_number: passportNumber || null,
-      account_type: accountType || 'savings',
-      kyc_status: 'pending',
-      account_status: 'pending',
-      email_verified: true, // verified during OTP step
-      referral_code: generateReferralCode(firstName),
-      ip_address: req.ip,
-      device_fingerprint: req.headers['user-agent'],
-    });
+    // Create the user + persist KYC documents inside a SINGLE transaction. If
+    // anything fails mid-way, the whole thing rolls back — so there's never an
+    // orphaned half-created user that would make a retry fail with "email
+    // already exists". This is what makes the submission reliably one-shot.
+    const t = await sequelize.transaction();
+    let user;
+    try {
+      user = await User.create({
+        customer_id: customerId,
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        date_of_birth: dateOfBirth,
+        gender,
+        father_name: fatherName,
+        mother_name: motherName,
+        marital_status: maritalStatus || null,
+        nationality: nationality || 'Indian',
+        occupation,
+        // annual_income is DECIMAL — coerce blanks to null so an empty string
+        // doesn't trip a numeric validation error.
+        annual_income: annualIncome === '' || annualIncome === undefined ? null : annualIncome,
+        address_line1: addressLine1,
+        address_line2: addressLine2,
+        city,
+        state,
+        pincode,
+        country: country || 'India',
+        aadhaar_number: aadhaarClean,
+        pan_number: panClean,
+        passport_number: passportNumber || null,
+        account_type: accountType || 'savings',
+        // Submission is complete and documents are attached → go straight to
+        // under_review (no intermediate 'pending' write needed).
+        kyc_status: 'under_review',
+        account_status: 'pending',
+        email_verified: true, // verified during OTP step
+        referral_code: generateReferralCode(firstName),
+        ip_address: req.ip,
+        device_fingerprint: req.headers['user-agent'],
+      }, { transaction: t });
 
-    // Save uploaded documents
-    const docTypeMap = {
-      aadhaar: 'aadhaar',
-      pan: 'pan',
-      passport: 'passport',
-      selfie: 'selfie',
-      signature: 'signature',
-      address_proof: 'address_proof',
-    };
+      // Save uploaded documents
+      const docTypeMap = {
+        aadhaar: 'aadhaar',
+        pan: 'pan',
+        passport: 'passport',
+        selfie: 'selfie',
+        signature: 'signature',
+        address_proof: 'address_proof',
+      };
 
-    if (req.files) {
-      for (const [fieldName, docType] of Object.entries(docTypeMap)) {
-        const fileArr = req.files[fieldName];
-        if (fileArr && fileArr[0]) {
-          const file = fileArr[0];
-          await KYCDocument.create({
-            user_id: user.id,
-            document_type: docType,
-            file_path: file.path,
-            file_name: file.originalname,
-            file_size: file.size,
-            mime_type: file.mimetype,
-          });
+      if (req.files) {
+        for (const [fieldName, docType] of Object.entries(docTypeMap)) {
+          const fileArr = req.files[fieldName];
+          if (fileArr && fileArr[0]) {
+            const file = fileArr[0];
+            await KYCDocument.create({
+              user_id: user.id,
+              document_type: docType,
+              file_path: file.path,
+              file_name: file.originalname,
+              file_size: file.size,
+              mime_type: file.mimetype,
+            }, { transaction: t });
+          }
         }
       }
+
+      await t.commit();
+    } catch (txErr) {
+      await t.rollback();
+      throw txErr; // handled by the outer catch (maps to a precise 400/500)
     }
 
-    // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
-    // successfully-created account into a 500; log it and continue.
+    // Send review email — NON-FATAL and AFTER commit. An SMTP hiccup must not
+    // roll back a successfully-created account; log it and continue.
     try {
       await sendKYCUnderReviewEmail(email, firstName, customerId);
     } catch (mailErr) {
       logger.error(`KYC review email failed for ${email} (non-fatal): ${mailErr.message}`);
     }
-
-    // Update kyc status to under_review
-    await user.update({ kyc_status: 'under_review' });
 
     await createAuditLog({
       userId: user.id,

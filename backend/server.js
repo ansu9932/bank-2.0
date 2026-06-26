@@ -106,7 +106,11 @@ app.use((err, req, res, next) => {
   logger.error(`Unhandled error: ${err.message}\n${err.stack}`);
 
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ success: false, message: 'File size exceeds the allowed limit.' });
+    return res.status(400).json({ success: false, message: 'Each file must be 20 MB or smaller. Please upload a smaller file.' });
+  }
+  // ZIP/archive rejection from the KYC document filter (blockZipFilter).
+  if (err.code === 'INVALID_FILE_TYPE') {
+    return res.status(400).json({ success: false, message: err.message || 'This file type is not allowed.' });
   }
   if (err.name === 'MulterError') {
     return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });

@@ -15,14 +15,30 @@ const docFields = [
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
+// Upload constraints (must mirror the backend): any file type up to 20MB,
+// except ZIP / archive files which are blocked.
+const MAX_UPLOAD_SIZE = 20 * 1024 * 1024; // 20MB
+const isZipFile = (file) => /\.zipx?$/i.test(file?.name || '') || /zip/i.test(file?.type || '');
+
 // Format a raw (un-spaced) Aadhaar string into "XXXX XXXX XXXX" for display.
 const formatAadhaar = (raw) => raw.replace(/(.{4})/g, '$1 ').trim();
 
 function FileUpload({ docKey, onDrop, file, error }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (files) => onDrop(docKey, files[0]),
-    accept: { 'image/*': [], 'application/pdf': [] },
+    onDrop: (files) => { if (files && files[0]) onDrop(docKey, files[0]); },
+    onDropRejected: (rejections) => {
+      const code = rejections?.[0]?.errors?.[0]?.code;
+      if (code === 'file-too-large') toast.error('File is too large. Maximum size is 20 MB.');
+      else if (code === 'zip-not-allowed') toast.error('ZIP files are not allowed. Please upload an image, PDF, or document.');
+      else toast.error('This file could not be added. Please try another file.');
+    },
+    // Accept ANY file type (no `accept` whitelist) up to 20MB; only ZIP/archive
+    // files are rejected via the custom validator below.
     maxFiles: 1,
+    maxSize: MAX_UPLOAD_SIZE,
+    validator: (file) => (isZipFile(file)
+      ? { code: 'zip-not-allowed', message: 'ZIP files are not allowed.' }
+      : null),
   });
 
   return (
@@ -44,7 +60,7 @@ function FileUpload({ docKey, onDrop, file, error }) {
           <>
             <RiUploadCloud2Line className="text-dark-300 text-2xl mx-auto mb-1" />
             <p className="text-dark-300 text-xs">{isDragActive ? 'Drop here' : 'Click or drag to upload'}</p>
-            <p className="text-dark-500 text-[10px] mt-0.5">PNG, JPG, PDF • Max 10MB</p>
+            <p className="text-dark-500 text-[10px] mt-0.5">Any file • Max 20MB • ZIP not allowed</p>
           </>
         )}
       </div>
