@@ -3,18 +3,17 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   RiBankLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
-  RiBankCardLine, RiLock2Line, RiFlaskLine,
+  RiBankCardLine, RiLock2Line,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import BackToHome from '../../components/common/BackToHome';
 
 /* ──────────────────────────────────────────────────────────────────────────
-   ALISTER BANK · ACTIVATION DEPOSIT (SANDBOX / SIMULATION)
+   ALISTER BANK · ACTIVATION DEPOSIT
    Onboarding step shown after Video KYC approval. The user is asked to deposit
-   the minimum balance to activate their account. THIS IS A SIMULATION — no real
-   payment is processed and no card is charged. A deposit is only accepted when
-   the entered card matches the admin-managed sandbox allow-list.
+   the minimum balance to activate their account. A deposit is only accepted
+   when the entered card matches the admin-managed allow-list.
    ────────────────────────────────────────────────────────────────────────── */
 
 const CRIMSON = '#c8102e';
@@ -96,11 +95,11 @@ export default function ActivateDepositPage() {
     }
   };
 
-  // Reusable trust/sandbox banner.
-  const SandboxBadge = (
+  // Reusable trust banner.
+  const TrustBadge = (
     <div className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium"
-      style={{ background: 'rgba(245,196,81,0.12)', border: '1px solid rgba(245,196,81,0.35)', color: '#f5c451' }}>
-      <RiFlaskLine /> Sandbox / Simulation — no real payment is processed
+      style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: '#22c55e' }}>
+      <RiShieldCheckLine /> Secure encrypted payment
     </div>
   );
 
@@ -144,7 +143,7 @@ export default function ActivateDepositPage() {
               <div className="text-center mb-5">
                 <h1 className="text-xl sm:text-2xl font-bold text-white">Activate Your Account</h1>
                 <p className="text-white/50 text-sm mt-1">Deposit the minimum balance to activate your account.</p>
-                <div className="mt-3 flex justify-center">{SandboxBadge}</div>
+                <div className="mt-3 flex justify-center">{TrustBadge}</div>
               </div>
 
               {/* Destination account card — which account is being funded */}
@@ -218,7 +217,7 @@ export default function ActivateDepositPage() {
 
                 <div className="flex items-center justify-center gap-2 mt-2 text-white/40 text-xs">
                   <RiShieldCheckLine style={{ color: '#ff3d52' }} />
-                  <span>Encrypted onboarding · Simulated sandbox environment</span>
+                  <span>Encrypted onboarding · Secure environment</span>
                 </div>
               </div>
             </div>
@@ -242,7 +241,6 @@ export default function ActivateDepositPage() {
             <p className="text-white/50 text-sm mt-3 mb-2">
               Your account setup link will arrive in your email shortly (about a minute). Use it to set your username, password and security PIN.
             </p>
-            <div className="mt-4 flex justify-center">{SandboxBadge}</div>
             <Link to="/login" className="inline-block mt-6 px-6 py-3 rounded-xl text-white font-semibold text-sm"
               style={{ background: `linear-gradient(135deg, ${CRIMSON}, #850a1e)` }}>Go to Login</Link>
           </motion.div>

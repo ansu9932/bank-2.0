@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const { User, SecureLink, Account } = require('../models');
-const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC } = require('../utils/helpers');
+const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC, minimumBalanceForType } = require('../utils/helpers');
 const { sendVideoKYCEmail, sendAccountApprovedEmail, sendActivationDepositEmail } = require('../services/emailService');
 const { issueDepositToken } = require('../utils/depositLink');
 const logger = require('../utils/logger');
@@ -93,6 +93,7 @@ const runKYCWorkflow = () => {
             available_balance: 0.00,
             currency: 'USD',
             status: 'active',
+            minimum_balance: minimumBalanceForType(user.account_type),
           });
         }
 
@@ -101,7 +102,7 @@ const runKYCWorkflow = () => {
         const depositLink = `${process.env.FRONTEND_URL}/activate-deposit?token=${token}`;
         await sendActivationDepositEmail(user.email, user.first_name, {
           depositLink,
-          minimumBalance: parseFloat(account.minimum_balance || 1000),
+          minimumBalance: parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type),
           accountNumber: account.account_number,
         });
 

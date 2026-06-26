@@ -2,7 +2,7 @@ const sequelize = require('../config/database');
 const { User, Account, Transaction, Notification, ApprovedCard } = require('../models');
 const { verifyDepositToken } = require('../utils/depositLink');
 const {
-  isLuhnValid, detectCardNetwork, maskCardNumber, hashValue, generateReferenceNumber,
+  isLuhnValid, detectCardNetwork, maskCardNumber, hashValue, generateReferenceNumber, minimumBalanceForType,
 } = require('../utils/helpers');
 const { sendSimulatedDepositCreditEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
@@ -49,7 +49,7 @@ exports.verifyLink = async (req, res) => {
       valid: true,
       accountNumber: account.account_number,
       holderName,
-      minimumDeposit: parseFloat(account.minimum_balance || 1000),
+      minimumDeposit: parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type),
       alreadyDeposited: Boolean(account.activation_deposit_done),
       sandbox: true,
     }, 'Link is valid.');
@@ -81,7 +81,7 @@ exports.submitDeposit = async (req, res) => {
       return success(res, { alreadyDeposited: true }, 'Your activation deposit has already been received.');
     }
 
-    const minimum = parseFloat(account.minimum_balance || 1000);
+    const minimum = parseFloat(account.minimum_balance) || minimumBalanceForType(account.account_type);
     const depositAmount = parseFloat(amount);
     if (!depositAmount || Number.isNaN(depositAmount) || depositAmount <= 0) {
       return badRequest(res, 'Please enter a valid deposit amount.');

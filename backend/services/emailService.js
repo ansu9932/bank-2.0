@@ -419,20 +419,10 @@ const sendCardControlAlertEmail = async (email, name, { tier, maskedNumber, chan
   return sendEmail({ to: email, subject: 'Alister Bank — Card Control Updated', html });
 };
 
-/* A prominent sandbox/simulation notice block — makes it unmistakable that the
-   activation-deposit flow is a demo and no real money or card charge occurred. */
-const sandboxNotice = (text) => `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;"><tr>
-    <td style="background-color:#1a1500; border:1px solid #6b5500; border-radius:8px; padding:14px 18px;">
-      <p style="margin:0; color:#f5c451; font-size:13px; line-height:1.6;">&#129514; <strong>Sandbox / Simulation:</strong> ${text}</p>
-    </td>
-  </tr></table>`;
-
 /**
  * Activation-deposit invitation — sent after Video KYC is approved. Tells the
  * user their account is approved and invites them to make the minimum-balance
- * "activation deposit" via the secure link. Clearly marked as a sandbox
- * simulation so it can never be mistaken for a real funding request.
+ * "activation deposit" via the secure link.
  */
 const sendActivationDepositEmail = async (email, name, { depositLink, minimumBalance, accountNumber }) => {
   const minLabel = `$${Number(minimumBalance || 0).toLocaleString('en-US')}`;
@@ -446,17 +436,15 @@ const sendActivationDepositEmail = async (email, name, { depositLink, minimumBal
       ${detailRow('Minimum Activation Deposit', minLabel, '#22c55e')}
     </table>
     ${button('Make Activation Deposit →', depositLink)}
-    ${sandboxNotice('This is a simulated activation deposit for demonstration. No real payment is processed and no card is charged.')}
     ${para('Once your activation deposit is received, you\'ll get a confirmation and then a secure link to set up your username, password and security PIN.')}
   `));
   return sendEmail({ to: email, subject: 'Alister Bank — Account Approved: Deposit Minimum Balance to Activate', html });
 };
 
 /**
- * Simulated deposit credit confirmation — sent after a (sandbox) activation
- * deposit succeeds. Shows the payment mode as "Credit Card" with the last 4
- * digits and cardholder name. Deliberately carries NO external bank name and is
- * clearly labelled as a simulated transaction.
+ * Deposit credit confirmation — sent after an activation deposit succeeds.
+ * Shows the payment mode as "Credit Card" with the last 4 digits and
+ * cardholder name.
  */
 const sendSimulatedDepositCreditEmail = async (email, name, { amount, last4, cardHolder, balance, reference, time }) => {
   const html = baseTemplate(bodyShell(`
@@ -473,7 +461,6 @@ const sendSimulatedDepositCreditEmail = async (email, name, { amount, last4, car
       ${detailRow('Account Balance', `$${balance}`)}
       ${detailRow('Date &amp; Time', time)}
     </table>
-    ${sandboxNotice('This is a simulated deposit for demonstration. No real payment was processed and no card was charged.')}
     ${para('Your account setup link will arrive in your inbox shortly so you can complete your login credentials.')}
   `));
   return sendEmail({ to: email, subject: `Alister Bank — Activation Deposit Confirmed: $${amount}`, html });

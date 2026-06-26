@@ -264,6 +264,18 @@ const maskCardNumber = (cardNumber) => {
 };
 
 /**
+ * Minimum balance required to keep an account active, by account type.
+ *   • Savings → $5,298
+ *   • Current → $10,598
+ * Defaults to the savings minimum when the type is unknown.
+ * @param {string} accountType 'savings' | 'current'
+ * @returns {number}
+ */
+const minimumBalanceForType = (accountType) => {
+  return String(accountType).toLowerCase() === 'current' ? 10598 : 5298;
+};
+
+/**
  * Detect device type from user agent
  */
 const detectDevice = (userAgent = '') => {
@@ -304,6 +316,7 @@ module.exports = {
   generateCVV,
   generateCardExpiry,
   maskCardNumber,
+  minimumBalanceForType,
   detectDevice,
   paginate,
 };
