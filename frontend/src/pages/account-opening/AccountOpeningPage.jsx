@@ -6,6 +6,7 @@ import api from '../../services/api';
 import toast from 'react-hot-toast';
 import useEntryPageGuard from '../../hooks/useEntryPageGuard';
 import BackToHome from '../../components/common/BackToHome';
+import { getDocsForCountry, getCountryByCode, ALL_DOC_ID_KEYS } from '../../config/kycRequirements';
 
 // Step components
 import StepPersonal from './steps/StepPersonal';
@@ -25,50 +26,56 @@ const STEPS = [
 // ── Field validation patterns (shared with the step components) ───────────────
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE   = /^[6-9]\d{9}$/;          // Indian mobile: 10 digits, starts 6-9
-const AADHAAR_RE = /^\d{12}$/;              // exactly 12 digits (raw, un-spaced)
-const PAN_RE     = /^[A-Z]{5}[0-9]{4}[A-Z]$/; // e.g. ABCDE1234F
-const PINCODE_RE = /^\d{6}$/;
-
-// Required document uploads for the Documents step.
-const REQUIRED_DOCS = [
-  ['aadhaar', 'Aadhaar card'],
-  ['pan', 'PAN card'],
-  ['selfie', 'Live selfie'],
-  ['signature', 'Signature'],
-  ['address_proof', 'Address proof'],
-];
+const GEN_PHONE_RE = /^\d{7,15}$/;          // Generic intl mobile (non-India)
+const PINCODE_RE = /^\d{6}$/;               // Indian PIN: 6 digits
 
 /**
  * Validate a single step's required fields. Returns a map of
  * { fieldKey: 'message' }. An empty map means the step is valid and the user
  * may advance. File-upload errors are keyed as `file_<docKey>`.
+ *
+ * The Documents step (3) is fully country-driven: only the selected country's
+ * documents are validated, using the config in kycRequirements.js.
  */
 export function getStepErrors(step, form, otpVerified) {
   const e = {};
+  const isIndia = (form.countryCode || 'IN') === 'IN';
 
   if (step === 1) {
+    if (!form.countryCode) e.countryCode = 'Please choose your country.';
     if (!form.firstName?.trim()) e.firstName = 'First name is required.';
     if (!form.lastName?.trim()) e.lastName = 'Last name is required.';
     if (!form.email?.trim()) e.email = 'Email address is required.';
     else if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address.';
     if (!form.phone?.trim()) e.phone = 'Mobile number is required.';
-    else if (!PHONE_RE.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number.';
+    else if (isIndia && !PHONE_RE.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number.';
+    else if (!isIndia && !GEN_PHONE_RE.test(form.phone.trim())) e.phone = 'Enter a valid mobile number.';
     if (!form.dateOfBirth) e.dateOfBirth = 'Date of birth is required.';
     if (!form.gender) e.gender = 'Please select your gender.';
     if (!form.accountType) e.accountType = 'Please select an account type.';
   } else if (step === 2) {
     if (!form.addressLine1?.trim()) e.addressLine1 = 'Address line 1 is required.';
     if (!form.city?.trim()) e.city = 'City is required.';
-    if (!form.state) e.state = 'Please select a state.';
-    if (!form.pincode?.trim()) e.pincode = 'PIN code is required.';
-    else if (!PINCODE_RE.test(form.pincode.trim())) e.pincode = 'Enter a valid 6-digit PIN code.';
+    if (!form.state?.trim()) e.state = isIndia ? 'Please select a state.' : 'State / province is required.';
+    if (!form.pincode?.trim()) e.pincode = isIndia ? 'PIN code is required.' : 'Postal code is required.';
+    else if (isIndia && !PINCODE_RE.test(form.pincode.trim())) e.pincode = 'Enter a valid 6-digit PIN code.';
   } else if (step === 3) {
-    if (!form.aadhaarNumber) e.aadhaarNumber = 'Aadhaar number is required.';
-    else if (!AADHAAR_RE.test(form.aadhaarNumber)) e.aadhaarNumber = 'Aadhaar must be exactly 12 digits.';
-    if (!form.panNumber) e.panNumber = 'PAN number is required.';
-    else if (!PAN_RE.test(form.panNumber)) e.panNumber = 'Enter a valid PAN (e.g. ABCDE1234F).';
-    REQUIRED_DOCS.forEach(([k, label]) => {
-      if (!form.files?.[k]) e[`file_${k}`] = `${label} upload is required.`;
+    // Country-driven document validation — only the selected country's docs.
+    const docs = getDocsForCountry(form.countryCode);
+    docs.forEach((d) => {
+      // ID-number field validation (when the doc has one).
+      if (d.idKey) {
+        const val = (form[d.idKey] || '').trim();
+        if (d.required && !val) {
+          e[d.idKey] = `${d.label} number is required.`;
+        } else if (val && d.pattern && !new RegExp(d.pattern).test(val)) {
+          e[d.idKey] = d.patternMsg || `Enter a valid ${d.label} number.`;
+        }
+      }
+      // File upload validation.
+      if (d.required && !form.files?.[d.key]) {
+        e[`file_${d.key}`] = `${d.label} upload is required.`;
+      }
     });
   } else if (step === 4) {
     if (!otpVerified) e.otp = 'Please verify your email with the OTP before continuing.';
@@ -78,15 +85,18 @@ export function getStepErrors(step, form, otpVerified) {
 }
 
 const initForm = {
+  // Country (drives KYC document requirements)
+  countryCode: 'IN', country: 'India',
   // Personal
   firstName: '', lastName: '', email: '', phone: '',
   dateOfBirth: '', gender: '', fatherName: '', motherName: '',
   maritalStatus: '', nationality: 'Indian', occupation: '', annualIncome: '',
   accountType: 'savings',
   // Address
-  addressLine1: '', addressLine2: '', city: '', state: '', pincode: '', country: 'India',
-  // Documents
+  addressLine1: '', addressLine2: '', city: '', state: '', pincode: '',
+  // Document ID numbers (per-country; only the relevant ones are shown)
   aadhaarNumber: '', panNumber: '', passportNumber: '',
+  citizenshipNumber: '', cidNumber: '', nationalIdNumber: '', tinNumber: '',
   // Files
   files: {},
 };
@@ -156,6 +166,24 @@ export default function AccountOpeningPage() {
   });
 
   const updateForm = (updates) => setForm(prev => ({ ...prev, ...updates }));
+
+  // Changing the country resets all document-dependent state (uploaded files,
+  // ID numbers, PAN name-lock) so one country's docs never carry into another.
+  const changeCountry = (code) => {
+    const c = getCountryByCode(code);
+    setForm(prev => {
+      const cleared = ALL_DOC_ID_KEYS.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
+      return {
+        ...prev,
+        ...cleared,
+        countryCode: code,
+        country: c.name,
+        nationality: code === 'IN' ? 'Indian' : prev.nationality,
+        files: {},
+      };
+    });
+    setNameLocked(false);
+  };
 
   // Live validation for the current step; drives the disabled Next button.
   const currentErrors = getStepErrors(step, form, otpVerified);
@@ -376,6 +404,7 @@ export default function AccountOpeningPage() {
                     form={form} update={updateForm}
                     errors={showErrors ? errors : {}}
                     nameLocked={nameLocked}
+                    onCountryChange={changeCountry}
                   />
                 )}
                 {step === 2 && (

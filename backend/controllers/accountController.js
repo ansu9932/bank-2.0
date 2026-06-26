@@ -48,6 +48,7 @@ exports.openAccount = async (req, res) => {
       fatherName, motherName, maritalStatus, nationality, occupation, annualIncome,
       addressLine1, addressLine2, city, state, pincode, country,
       aadhaarNumber, panNumber, passportNumber,
+      citizenshipNumber, cidNumber, nationalIdNumber, tinNumber,
       accountType,
     } = req.body;
 
@@ -116,6 +117,11 @@ exports.openAccount = async (req, res) => {
       aadhaar_number: aadhaarClean,
       pan_number: panClean,
       passport_number: passportNumber || null,
+      // Country-specific national IDs (only the relevant one is sent).
+      citizenship_number: citizenshipNumber || null,
+      cid_number: cidNumber || null,
+      national_id_number: nationalIdNumber || null,
+      tin_number: tinNumber || null,
       account_type: accountType || 'savings',
       kyc_status: 'pending',
       account_status: 'pending',
@@ -125,10 +131,15 @@ exports.openAccount = async (req, res) => {
       device_fingerprint: req.headers['user-agent'],
     });
 
-    // Save uploaded documents
+    // Save uploaded documents. Covers all countries' document types — only the
+    // files actually uploaded for the chosen country are persisted.
     const docTypeMap = {
       aadhaar: 'aadhaar',
       pan: 'pan',
+      citizenship_certificate: 'citizenship_certificate',
+      cid: 'cid',
+      national_id: 'national_id',
+      tin: 'tin',
       passport: 'passport',
       selfie: 'selfie',
       signature: 'signature',

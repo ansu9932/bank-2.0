@@ -3,20 +3,11 @@ import { useDropzone } from 'react-dropzone';
 import { RiUploadCloud2Line, RiCheckLine, RiLoader4Line, RiShieldCheckLine } from 'react-icons/ri';
 import api from '../../../services/api';
 import toast from 'react-hot-toast';
-
-const docFields = [
-  { key: 'aadhaar',       idKey: 'aadhaarNumber',   label: 'Aadhaar Card',     placeholder: '1234 5678 9012', required: true },
-  { key: 'pan',           idKey: 'panNumber',        label: 'PAN Card',         placeholder: 'ABCDE1234F',     required: true },
-  { key: 'passport',      idKey: 'passportNumber',   label: 'Passport',         placeholder: 'A1234567',       required: false },
-  { key: 'selfie',        idKey: null,               label: 'Live Selfie',      placeholder: null,             required: true },
-  { key: 'signature',     idKey: null,               label: 'Signature',        placeholder: null,             required: true },
-  { key: 'address_proof', idKey: null,               label: 'Address Proof',    placeholder: null,             required: true },
-];
+import {
+  getDocsForCountry, getCountryByCode, applyTransform, formatAadhaar,
+} from '../../../config/kycRequirements';
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-
-// Format a raw (un-spaced) Aadhaar string into "XXXX XXXX XXXX" for display.
-const formatAadhaar = (raw) => raw.replace(/(.{4})/g, '$1 ').trim();
 
 function FileUpload({ docKey, onDrop, file, error }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -54,6 +45,11 @@ function FileUpload({ docKey, onDrop, file, error }) {
 }
 
 export default function StepDocuments({ form, update, errors = {}, nameLocked = false, setNameLocked }) {
+  const countryCode = form.countryCode || 'IN';
+  const country = getCountryByCode(countryCode);
+  const docs = getDocsForCountry(countryCode);
+  const isIndia = countryCode === 'IN';
+
   const setFile = useCallback((key, file) => {
     update({ files: { ...form.files, [key]: file } });
   }, [form.files, update]);
@@ -61,59 +57,44 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
   const [panVerifying, setPanVerifying] = useState(false);
   const [panVerifyMsg, setPanVerifyMsg] = useState('');   // status line under the PAN field
   const [panVerifyOk, setPanVerifyOk] = useState(false);
-  // PAN value we've already DISPATCHED a request for (set synchronously before
-  // the network call). Guards against duplicate concurrent dispatches for the
-  // same value caused by re-renders, tab switches, or edit-and-retype races.
   const dispatchedPan = useRef('');
   const debounceRef = useRef(null);
 
-  // ── Aadhaar: digit-only, hard cap 12, store the RAW un-spaced value ─────────
-  const onAadhaarChange = (e) => {
-    const raw = e.target.value.replace(/\D/g, '').slice(0, 12);
-    update({ aadhaarNumber: raw });
+  // Generic ID-number change handler — applies the document's configured transform.
+  const onIdChange = (idKey, transform) => (e) => {
+    update({ [idKey]: applyTransform(transform, e.target.value) });
   };
 
-  // ── PAN: force uppercase alphanumeric, hard cap 10 ──────────────────────────
-  const onPanChange = (e) => {
-    const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-    update({ panNumber: val });
-  };
-
-  const onPlainChange = (k) => (e) => update({ [k]: e.target.value });
-
-  // ── PAN name auto-fetch ─────────────────────────────────────────────────────
-  // Fires EXACTLY ONCE the moment a clean, full 10-char PAN pattern is locked in.
-  // The effect only depends on form.panNumber, so unrelated state changes (file
-  // uploads, etc.) never re-trigger it; `dispatchedPan` blocks duplicate calls
-  // for the same value; and a stale-response guard discards results for a PAN
-  // the user has since edited.
+  // ── PAN name auto-fetch (India only) ────────────────────────────────────────
+  // Fires once a clean 10-char PAN pattern is entered AND the country is India.
   useEffect(() => {
+    // Only India uses the Cashfree PAN → income-tax name lookup.
+    if (!isIndia) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (panVerifyMsg) { setPanVerifyMsg(''); setPanVerifyOk(false); }
+      return;
+    }
+
     const pan = (form.panNumber || '').toUpperCase();
 
-    // Not a complete valid pattern → reset transient status, fire nothing.
     if (!PAN_RE.test(pan)) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (panVerifyMsg) { setPanVerifyMsg(''); setPanVerifyOk(false); }
       return;
     }
-    // Already dispatched (in-flight or completed) for this exact PAN — skip.
     if (pan === dispatchedPan.current) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      // Mark as dispatched BEFORE the call so any re-render during the in-flight
-      // window cannot launch a second request for the same value.
       dispatchedPan.current = pan;
       setPanVerifying(true);
       setPanVerifyOk(false);
       setPanVerifyMsg('Verifying your identity with income tax registry…');
       try {
         const { data } = await api.post('/kyc/verify-pan', { pan });
-        // Stale-response guard: ignore if the user changed the PAN meanwhile.
         if (pan !== (form.panNumber || '').toUpperCase()) return;
         const result = data?.data || {};
         if (result.verified && result.name) {
-          // Cashfree returns the full registered_name; split into first / last.
           const parts = String(result.name).trim().split(/\s+/);
           const firstName = parts.shift() || '';
           const lastName = parts.join(' ');
@@ -123,15 +104,12 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
           setPanVerifyMsg(`Verified: ${result.name}`);
           toast.success('PAN verified — name auto-filled from income tax registry.');
         } else {
-          // PAN not found / not valid — let the user re-check the number.
-          // Allow a retry for this same value by clearing the dispatch guard.
           dispatchedPan.current = '';
           if (setNameLocked) setNameLocked(false);
           setPanVerifyOk(false);
           setPanVerifyMsg(result.message || 'This PAN could not be verified. Please re-check the number.');
         }
       } catch (err) {
-        // Transient failure — clear the guard so the user can retry the same PAN.
         if (pan === (form.panNumber || '').toUpperCase()) dispatchedPan.current = '';
         if (setNameLocked) setNameLocked(false);
         setPanVerifyOk(false);
@@ -146,7 +124,7 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.panNumber]);
+  }, [form.panNumber, isIndia]);
 
   return (
     <div className="relative">
@@ -163,15 +141,19 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
       )}
 
       <h3 className="font-display text-xl font-700 text-white mb-1">KYC Documents</h3>
-      <p className="text-dark-300 text-sm mb-6">Upload clear, legible copies of your documents. Files are encrypted and stored securely.</p>
+      <p className="text-dark-300 text-sm mb-1">Upload clear, legible copies of your documents. Files are encrypted and stored securely.</p>
+      <p className="text-dark-400 text-xs mb-6 flex items-center gap-1.5">
+        <span className="text-base leading-none">{country.flag}</span>
+        Showing the documents required to open an account in <span className="text-white font-medium">{country.name}</span>.
+      </p>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {docFields.map(({ key, idKey, label, placeholder, required }) => {
-          const isAadhaar = key === 'aadhaar';
-          const isPan = key === 'pan';
-          // Aadhaar shows the spaced display value; raw is what's stored in form.
-          const displayValue = isAadhaar
-            ? formatAadhaar(form.aadhaarNumber || '')
-            : (form[idKey] || '');
+        {docs.map((d) => {
+          const { key, idKey, label, placeholder, required, format, transform, maxLength } = d;
+          const isPan = isIndia && key === 'pan';
+          const displayValue = format === 'aadhaar'
+            ? formatAadhaar(form[idKey] || '')
+            : (idKey ? (form[idKey] || '') : '');
 
           return (
             <div key={key}>
@@ -181,18 +163,18 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
                   <input
                     className={`input-field mb-1 ${errors[idKey] ? '!border-brand-500 focus:!border-brand-500' : ''} ${isPan && (panVerifying || panVerifyOk) ? 'opacity-70 cursor-not-allowed' : ''}`}
                     value={displayValue}
-                    onChange={isAadhaar ? onAadhaarChange : isPan ? onPanChange : onPlainChange(idKey)}
+                    onChange={onIdChange(idKey, transform)}
                     placeholder={placeholder}
-                    inputMode={isAadhaar ? 'numeric' : 'text'}
-                    maxLength={isAadhaar ? 14 : isPan ? 10 : undefined}
+                    inputMode={transform === 'digits' || transform === 'digits12' ? 'numeric' : 'text'}
+                    maxLength={format === 'aadhaar' ? 14 : maxLength}
                     autoCapitalize={isPan ? 'characters' : undefined}
-                    style={isPan ? { textTransform: 'uppercase' } : undefined}
+                    style={transform === 'pan' || transform === 'upper' ? { textTransform: 'uppercase' } : undefined}
                     disabled={isPan && panVerifying}
                     readOnly={isPan && panVerifyOk}
                   />
                   {errors[idKey] && <p className="text-brand-400 text-[11px] mb-1">{errors[idKey]}</p>}
 
-                  {/* PAN verification status line */}
+                  {/* PAN verification status line (India only) */}
                   {isPan && panVerifyMsg && (
                     <p className={`text-[11px] mb-1 flex items-center gap-1.5 ${panVerifyOk ? 'text-green-400' : panVerifying ? 'text-brand-300' : 'text-amber-300'}`}>
                       {panVerifying

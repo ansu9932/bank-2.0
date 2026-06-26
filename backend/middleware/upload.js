@@ -58,10 +58,19 @@ const profileUpload = multer({
   fileFilter: fileFilter(imageTypes),
 });
 
-// KYC multi-document upload fields
+// KYC multi-document upload fields. Covers every country's document set
+// (India + Nepal/Bhutan/Bangladesh national IDs). Only the fields relevant to
+// the chosen country are actually sent; the rest are simply absent.
 const kycFields = [
+  // India
   { name: 'aadhaar', maxCount: 1 },
   { name: 'pan', maxCount: 1 },
+  // Nepal / Bhutan / Bangladesh
+  { name: 'citizenship_certificate', maxCount: 1 },
+  { name: 'cid', maxCount: 1 },
+  { name: 'national_id', maxCount: 1 },
+  { name: 'tin', maxCount: 1 },
+  // Common
   { name: 'passport', maxCount: 1 },
   { name: 'selfie', maxCount: 1 },
   { name: 'signature', maxCount: 1 },
