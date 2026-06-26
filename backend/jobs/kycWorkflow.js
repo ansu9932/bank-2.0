@@ -89,7 +89,7 @@ const runKYCWorkflow = () => {
         if (!existingSetup) {
           // Create account
           const { Account } = require('../models');
-          const { generateAccountNumber, generateIFSC } = require('../utils/helpers');
+          const { generateAccountNumber, generateIFSC, minimumBalanceForType } = require('../utils/helpers');
 
           let account = await Account.findOne({ where: { user_id: user.id } });
           if (!account) {
@@ -103,6 +103,7 @@ const runKYCWorkflow = () => {
               available_balance: 0.00,
               currency: 'USD',
               status: 'active',
+              minimum_balance: minimumBalanceForType(user.account_type),
             });
           }
 

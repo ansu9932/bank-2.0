@@ -19,7 +19,7 @@ const Account = sequelize.define('Account', {
   daily_transferred: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },
   last_limit_reset: { type: DataTypes.DATE },
   interest_rate: { type: DataTypes.DECIMAL(5, 2), defaultValue: 4.00 },
-  minimum_balance: { type: DataTypes.DECIMAL(10, 2), defaultValue: 1000.00 },
+  minimum_balance: { type: DataTypes.DECIMAL(10, 2), defaultValue: 5298.00 },
   nomination_name: { type: DataTypes.STRING(200) },
   nomination_relation: { type: DataTypes.STRING(100) },
   branch_name: { type: DataTypes.STRING(200), defaultValue: 'Alister Bank Main Branch' },
