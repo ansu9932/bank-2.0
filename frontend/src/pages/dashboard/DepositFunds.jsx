@@ -119,6 +119,7 @@ export default function DepositFunds() {
   };
 
   const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const fmtInr = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // ── Handle a confirmed credit (shared by QR + Checkout flows) ──────────────
   const handleCredited = useCallback((payload) => {
@@ -527,10 +528,20 @@ export default function DepositFunds() {
 
                 <p className="text-slate-300 text-sm mb-1">
                   {order.image_url ? 'Scan to pay ' : 'Confirming payment of '}
-                  <span className="text-white font-bold">{fmt(order.amount)}</span>
+                  <span className="text-white font-bold">
+                    {order.image_url && order.inrAmount ? fmtInr(order.inrAmount) : fmt(order.amount)}
+                  </span>
                 </p>
                 {order.image_url && (
-                  <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
+                  <>
+                    {order.inrAmount && (
+                      <p className="text-slate-400 text-xs mb-1">
+                        ≈ <span className="text-slate-200 font-semibold">{fmt(order.amount)}</span> will be added to your balance
+                        {order.fxRate ? ` · 1 USD = ₹${Number(order.fxRate).toFixed(2)}` : ''}
+                      </p>
+                    )}
+                    <p className="text-slate-500 text-xs mb-6">Use any UPI app — GPay, PhonePe, Paytm or your bank app</p>
+                  </>
                 )}
 
                 {/* QR image (UPI flow only) */}
@@ -560,10 +571,6 @@ export default function DepositFunds() {
                         style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
                       />
                     </div>
-                    {['top-2 left-2 border-t-2 border-l-2', 'top-2 right-2 border-t-2 border-r-2',
-                      'bottom-2 left-2 border-b-2 border-l-2', 'bottom-2 right-2 border-b-2 border-r-2'].map((c, i) => (
-                      <div key={i} className={`absolute w-6 h-6 ${c} rounded-sm`} style={{ borderColor: CRIMSON }} />
-                    ))}
                   </motion.div>
                 )}
 

@@ -4,6 +4,7 @@ const axios = require('axios');
 const sequelize = require('../config/database');
 const { Account, Transaction, Notification, User } = require('../models');
 const { createUpiQr, isConfigured } = require('../utils/razorpay');
+const { convertUsdToInr } = require('../utils/currency');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { sendTransferAlertEmail } = require('../services/emailService');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
@@ -80,6 +81,16 @@ exports.createQR = async (req, res) => {
       return error(res, 'Add Money is currently disabled on your account. Please contact Alister Bank to enable it.', 403);
     }
 
+    // ── USD → INR conversion ────────────────────────────────────────────────
+    // The wallet is denominated in USD, but UPI settles in INR. Convert the USD
+    // top-up the user entered into its live-rate INR equivalent and mint the QR
+    // for that rupee amount (e.g. $1 → ₹95). The wallet is still credited the
+    // original USD value on payment (see creditDeposit).
+    const { inrAmount, rate } = await convertUsdToInr(amount);
+    if (!inrAmount || Number.isNaN(inrAmount) || inrAmount <= 0) {
+      return error(res, 'Could not determine the current exchange rate. Please try again.');
+    }
+
     const userName = `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || 'Customer';
     const orderRef = buildOrderRef();
 
@@ -92,10 +103,14 @@ exports.createQR = async (req, res) => {
       accountId: String(account.id),
       userName,
       purpose: 'wallet_topup',
+      // FX context so the credited USD value is recoverable from the webhook.
+      usdAmount: String(amount),
+      inrAmount: String(inrAmount),
+      fxRate: String(rate),
     };
 
     const qr = await createUpiQr({
-      amount,
+      amount: inrAmount, // QR is minted in INR (the converted rupee amount)
       description,
       notes,
       closeBy: Math.floor(Date.now() / 1000) + QR_TTL_SECONDS,
@@ -130,20 +145,33 @@ exports.createQR = async (req, res) => {
         category: 'deposit',
         status: 'pending',
         from_account_name: 'UPI Instant Deposit',
-        tags: { provider: 'razorpay', qrId: qr.id, orderRef, userId: String(req.user.id) },
+        tags: {
+          provider: 'razorpay',
+          qrId: qr.id,
+          orderRef,
+          userId: String(req.user.id),
+          // FX metadata — `depositCurrency: USD` tells creditDeposit to credit
+          // the original USD `amount` (above) rather than the INR paise paid.
+          depositCurrency: 'USD',
+          usdAmount: amount,
+          inrAmount,
+          fxRate: rate,
+        },
       });
     } catch (txErr) {
       // Non-fatal: the webhook has a fallback that creates the record on credit.
       logger.error(`Pending deposit record creation failed (${orderRef}): ${txErr.message}`);
     }
 
-    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=$${amount} user=${req.user.id}`);
+    logger.info(`UPI QR created: orderRef=${orderRef} qrId=${qr.id} amount=$${amount} (₹${inrAmount} @ ${rate}) user=${req.user.id}`);
 
     return success(res, {
       orderRef,
       qrId: qr.id,
       image_url: qrImage,
-      amount,
+      amount,            // USD top-up credited to the wallet on payment
+      inrAmount,         // INR amount actually charged on the UPI rail
+      fxRate: rate,      // USD → INR rate applied
       currency: 'USD',
       description,
       status: qr.status,
@@ -164,8 +192,8 @@ exports.createQR = async (req, res) => {
  * @returns {Promise<boolean>} true when a fresh credit was applied.
  */
 async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
-  const paymentAmount = Number(amountPaise) / 100;
-  if (!paymentAmount || Number.isNaN(paymentAmount) || paymentAmount <= 0) {
+  const paidAmount = Number(amountPaise) / 100; // amount actually paid on the rail (INR for UPI)
+  if (!paidAmount || Number.isNaN(paidAmount) || paidAmount <= 0) {
     logger.warn(`creditDeposit skipped — invalid amount (orderRef=${orderRef}, payment=${paymentId}).`);
     return false;
   }
@@ -179,6 +207,22 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
   if (txn && txn.status === DB_COMPLETED) {
     logger.info(`creditDeposit skipped — orderRef ${orderRef} already completed.`);
     return false;
+  }
+
+  // ── Determine the amount to credit to the (USD) wallet ──────────────────────
+  // UPI top-ups are minted in INR but the wallet is USD-denominated. When the
+  // pending record is tagged `depositCurrency: USD` we credit the original USD
+  // value stored on it (or carried in the webhook notes), NOT the INR paid.
+  // All other flows keep crediting the amount actually paid.
+  let creditAmount = paidAmount;
+  const isUsdDeposit =
+    (txn && txn.tags && txn.tags.depositCurrency === 'USD') ||
+    (notes && notes.usdAmount != null);
+  if (isUsdDeposit) {
+    const usd = Number((txn && txn.tags && txn.tags.usdAmount) || (notes && notes.usdAmount));
+    if (usd && !Number.isNaN(usd) && usd > 0) {
+      creditAmount = usd;
+    }
   }
 
   // Resolve the destination account: prefer the pending record, fall back to notes.
@@ -201,24 +245,25 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
     });
 
     const balanceBefore = parseFloat(locked.balance);
-    const balanceAfter = balanceBefore + paymentAmount;
+    const balanceAfter = balanceBefore + creditAmount;
 
     await locked.update({
       balance: balanceAfter,
-      available_balance: parseFloat(locked.available_balance) + paymentAmount,
+      available_balance: parseFloat(locked.available_balance) + creditAmount,
     }, { transaction: t });
 
     const mergedTags = {
       provider: 'razorpay',
       orderRef: orderRef || null,
       paymentId: paymentId || null,
+      paidAmount, // amount settled on the rail (INR for UPI top-ups)
     };
 
     if (txn) {
       // pending → completed
       await txn.update({
         status: DB_COMPLETED,
-        amount: paymentAmount,
+        amount: creditAmount,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         description: DEPOSIT_DESCRIPTION,
@@ -232,7 +277,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
         reference_number: orderRef || paymentId,
         transaction_type: 'credit',
         transfer_mode: 'IMPS',
-        amount: paymentAmount,
+        amount: creditAmount,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
         description: DEPOSIT_DESCRIPTION,
@@ -247,14 +292,14 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
 
     await Notification.create({
       user_id: locked.user_id,
-      title: `$${paymentAmount.toLocaleString('en-US')} added to your account`,
+      title: `$${creditAmount.toLocaleString('en-US')} added to your account`,
       message: `${DEPOSIT_DESCRIPTION}. Ref: ${paymentId || orderRef}`,
       type: 'transaction',
       priority: 'high',
     }, { transaction: t });
 
     await t.commit();
-    logger.info(`Deposit credited: $${paymentAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}).`);
+    logger.info(`Deposit credited: $${creditAmount} → account ${locked.id} (orderRef=${orderRef}, payment=${paymentId}, paid=${paidAmount}).`);
 
     createAuditLog({
       userId: locked.user_id,
@@ -262,7 +307,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
       entityType: 'Transaction',
       entityId: String(orderRef || paymentId).slice(0, 100),
       status: 'success',
-      description: `UPI deposit of $${paymentAmount} credited.`,
+      description: `UPI deposit of $${creditAmount} credited.`,
     }).catch(() => {});
 
     // Transaction alert email — every successful CREDIT notifies the user.
@@ -270,7 +315,7 @@ async function creditDeposit({ orderRef, paymentId, amountPaise, notes }) {
       if (!u?.email) return;
       return sendTransferAlertEmail(u.email, u.first_name || 'Customer', {
         type: 'credit',
-        amount: paymentAmount.toFixed(2),
+        amount: creditAmount.toFixed(2),
         reference: orderRef || paymentId,
         counterparty: 'UPI Instant Deposit',
         mode: 'UPI',
