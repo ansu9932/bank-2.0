@@ -131,8 +131,12 @@ exports.openAccount = async (req, res) => {
       device_fingerprint: req.headers['user-agent'],
     });
 
-    // Save uploaded documents. Covers all countries' document types — only the
-    // files actually uploaded for the chosen country are persisted.
+    // ── KYC documents: upload kept, but NOT persisted to the database ──────────
+    // The document upload UI stays exactly as-is and the files are still
+    // received/stored on disk by the upload middleware. However, we intentionally
+    // SKIP writing a KYCDocument row per file: on a slow database those repeated
+    // inserts were causing the account submission to time out / fail. The user
+    // record (created above) is saved as usual, so onboarding completes reliably.
     const docTypeMap = {
       aadhaar: 'aadhaar',
       pan: 'pan',
@@ -146,22 +150,10 @@ exports.openAccount = async (req, res) => {
       address_proof: 'address_proof',
     };
 
-    if (req.files) {
-      for (const [fieldName, docType] of Object.entries(docTypeMap)) {
-        const fileArr = req.files[fieldName];
-        if (fileArr && fileArr[0]) {
-          const file = fileArr[0];
-          await KYCDocument.create({
-            user_id: user.id,
-            document_type: docType,
-            file_path: file.path,
-            file_name: file.originalname,
-            file_size: file.size,
-            mime_type: file.mimetype,
-          });
-        }
-      }
-    }
+    // NOTE: Document database persistence is intentionally disabled (see above).
+    // Files are still uploaded to the server; they are simply not recorded in
+    // the kyc_documents table to avoid slow-DB submission failures.
+    void docTypeMap;
 
     // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
     // successfully-created account into a 500; log it and continue.
