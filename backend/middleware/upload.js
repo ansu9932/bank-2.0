@@ -56,13 +56,7 @@ const imageTypes = [
 ];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
 
-// Extension fallbacks (lower-case, with leading dot) used when the browser
-// reports a missing/generic MIME type.
-const documentExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
-const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
-const videoExts = ['.mp4', '.webm', '.mov'];
-
-const MAX_DOC_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_DOC_SIZE = 15 * 1024 * 1024; // 15MB (safety net; client compresses images)
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 
 const kycUpload = multer({

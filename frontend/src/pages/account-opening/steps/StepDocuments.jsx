@@ -3,17 +3,19 @@ import { useDropzone } from 'react-dropzone';
 import { RiUploadCloud2Line, RiCheckLine, RiLoader4Line, RiShieldCheckLine } from 'react-icons/ri';
 import api from '../../../services/api';
 import toast from 'react-hot-toast';
+import { compressImage } from '../../../utils/imageCompress';
 import {
   getDocsForCountry, getCountryByCode, applyTransform, formatAadhaar,
 } from '../../../config/kycRequirements';
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
-function FileUpload({ docKey, onDrop, file, error }) {
+function FileUpload({ docKey, onDrop, file, error, optimizing }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: (files) => onDrop(docKey, files[0]),
     accept: { 'image/*': [], 'application/pdf': [] },
     maxFiles: 1,
+    disabled: optimizing,
   });
 
   return (
@@ -21,7 +23,12 @@ function FileUpload({ docKey, onDrop, file, error }) {
       <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all text-center
         ${isDragActive ? 'border-brand-500 bg-brand-500/10' : file ? 'border-green-500/50 bg-green-500/5' : error ? 'border-brand-500/60' : 'border-white/[0.08] hover:border-white/20'}`}>
         <input {...getInputProps()} />
-        {file ? (
+        {optimizing ? (
+          <div className="flex items-center gap-2 justify-center">
+            <RiLoader4Line className="text-brand-400 animate-spin" />
+            <p className="text-dark-200 text-xs">Optimizing image…</p>
+          </div>
+        ) : file ? (
           <div className="flex items-center gap-2 justify-center">
             <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center">
               <RiCheckLine className="text-green-400" />
@@ -35,7 +42,7 @@ function FileUpload({ docKey, onDrop, file, error }) {
           <>
             <RiUploadCloud2Line className="text-dark-300 text-2xl mx-auto mb-1" />
             <p className="text-dark-300 text-xs">{isDragActive ? 'Drop here' : 'Click or drag to upload'}</p>
-            <p className="text-dark-500 text-[10px] mt-0.5">PNG, JPG, PDF • Max 10MB</p>
+            <p className="text-dark-500 text-[10px] mt-0.5">PNG, JPG, PDF • auto-compressed</p>
           </>
         )}
       </div>
@@ -50,9 +57,28 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
   const docs = getDocsForCountry(countryCode);
   const isIndia = countryCode === 'IN';
 
-  const setFile = useCallback((key, file) => {
-    update({ files: { ...form.files, [key]: file } });
-  }, [form.files, update]);
+  // Keep the latest files in a ref so an async compression that finishes after a
+  // second file is added still merges against the newest state (race-safe).
+  const filesRef = useRef(form.files);
+  useEffect(() => { filesRef.current = form.files; }, [form.files]);
+
+  // Per-document "optimizing" flags (shown while we compress the image).
+  const [optimizing, setOptimizing] = useState({});
+
+  const setFile = useCallback(async (key, file) => {
+    if (!file) return;
+    setOptimizing((o) => ({ ...o, [key]: true }));
+    let finalFile = file;
+    try {
+      // Downscale/compress big camera photos so they never exceed the upload
+      // limit and submit instantly. Falls back to the original on any error.
+      finalFile = await compressImage(file);
+    } catch {
+      finalFile = file;
+    }
+    update({ files: { ...filesRef.current, [key]: finalFile } });
+    setOptimizing((o) => ({ ...o, [key]: false }));
+  }, [update]);
 
   const [panVerifying, setPanVerifying] = useState(false);
   const [panVerifyMsg, setPanVerifyMsg] = useState('');   // status line under the PAN field
@@ -190,6 +216,7 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
                 onDrop={setFile}
                 file={form.files?.[key]}
                 error={errors[`file_${key}`]}
+                optimizing={!!optimizing[key]}
               />
             </div>
           );
