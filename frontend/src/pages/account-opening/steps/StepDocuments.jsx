@@ -10,6 +10,9 @@ import {
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
+// Keep in sync with the backend per-file limit (middleware/upload.js MAX_DOC_SIZE).
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
+
 function FileUpload({ docKey, onDrop, file, error, optimizing }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: (files) => onDrop(docKey, files[0]),
@@ -76,8 +79,21 @@ export default function StepDocuments({ form, update, errors = {}, nameLocked = 
     } catch {
       finalFile = file;
     }
-    update({ files: { ...filesRef.current, [key]: finalFile } });
     setOptimizing((o) => ({ ...o, [key]: false }));
+
+    // Hard guard: if the file is STILL over the server limit after compression
+    // (e.g. a very large PDF or an undecodable HEIC), do NOT accept it — so it
+    // never starts uploading and can never fail the submission mid-way. The
+    // user gets immediate, actionable feedback instead.
+    if (finalFile.size > MAX_FILE_BYTES) {
+      toast.error(
+        `This file is ${(finalFile.size / 1024 / 1024).toFixed(1)} MB, which is over the `
+        + `${MAX_FILE_BYTES / 1024 / 1024} MB limit. Please upload a smaller file or a clearer photo.`,
+      );
+      return; // not stored → not uploaded
+    }
+
+    update({ files: { ...filesRef.current, [key]: finalFile } });
   }, [update]);
 
   const [panVerifying, setPanVerifying] = useState(false);
