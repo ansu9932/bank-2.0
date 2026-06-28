@@ -5,20 +5,33 @@ let transporter;
 
 const createTransporter = () => {
   if (transporter) return transporter;
-  
-  const smtpPort = parseInt(process.env.SMTP_PORT) || 465;
+
+  // Brevo (smtp-relay.brevo.com) uses port 587 + STARTTLS. Generic logic:
+  // port 465 → implicit TLS (secure:true); 587/2525 → STARTTLS (secure:false).
+  const smtpPort = parseInt(process.env.SMTP_PORT, 10) || 587;
   const isSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
 
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+    host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
     port: smtpPort,
     secure: isSecure,
+    // Force STARTTLS upgrade when not using implicit TLS (correct for 587).
+    requireTLS: !isSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    tls: { 
-      rejectUnauthorized: false 
+    // ── Connection pooling + rate limiting ──────────────────────────────────
+    // Critical under load: pooling reuses a few SMTP connections and the rate
+    // limiter smooths bursts (e.g. 20 signups at once) so the relay doesn't
+    // reject/throttle us. Tuned conservatively for Brevo's transactional relay.
+    pool: true,
+    maxConnections: parseInt(process.env.SMTP_MAX_CONNECTIONS, 10) || 5,
+    maxMessages: parseInt(process.env.SMTP_MAX_MESSAGES, 10) || 100,
+    rateDelta: 1000,
+    rateLimit: parseInt(process.env.SMTP_RATE_LIMIT, 10) || 10, // ≤10 msgs/sec
+    tls: {
+      rejectUnauthorized: false,
     },
   });
   return transporter;
@@ -42,9 +55,13 @@ const MAX_EMAIL_ATTEMPTS = 3;
 const EMAIL_RETRY_DELAY_MS = 1000;
 
 const sendEmail = async ({ to, subject, html, text }) => {
-  const senderEmail = process.env.SMTP_USER || 'info@divyamoolya.in';
+  // IMPORTANT (Brevo): the "From" must be a VERIFIED sender on your domain
+  // (e.g. info@alisterbank.online), NOT the SMTP login (…@smtp-brevo.com).
+  // Set EMAIL_FROM to a sender you've verified in the Brevo dashboard.
+  const senderEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'no-reply@alisterbank.online';
+  const senderName = process.env.EMAIL_FROM_NAME || 'Alister Bank';
   const mailOptions = {
-    from: `"Alister Bank" <${senderEmail}>`,
+    from: `"${senderName}" <${senderEmail}>`,
     to,
     subject,
     html,

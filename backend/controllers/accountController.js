@@ -139,13 +139,11 @@ exports.openAccount = async (req, res) => {
     // inserts were causing the account submission to time out / fail. The user
     // record (created above) is saved as usual, so onboarding completes reliably.
 
-    // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
-    // successfully-created account into a 500; log it and continue.
-    try {
-      await sendKYCUnderReviewEmail(email, firstName, customerId);
-    } catch (mailErr) {
-      logger.error(`KYC review email failed for ${email} (non-fatal): ${mailErr.message}`);
-    }
+    // Send review email — fire-and-forget (NON-blocking). Awaiting SMTP here
+    // would hold the request (and a DB connection) open under load, hurting
+    // concurrency; a mail hiccup must never delay or fail a created account.
+    sendKYCUnderReviewEmail(email, firstName, customerId)
+      .catch((mailErr) => logger.error(`KYC review email failed for ${email} (non-fatal): ${mailErr.message}`));
 
     // Update kyc status to under_review
     await user.update({ kyc_status: 'under_review' });
