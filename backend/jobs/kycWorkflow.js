@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { Op } = require('sequelize');
 const { User, SecureLink, Account } = require('../models');
-const { generateSecureToken, getSecureLinkExpiry, generateAccountNumber, generateIFSC, minimumBalanceForType } = require('../utils/helpers');
+const { generateSecureToken, getSecureLinkExpiry, getOnboardingLinkExpiry, generateAccountNumber, generateIFSC, minimumBalanceForType } = require('../utils/helpers');
 const { sendVideoKYCEmail, sendAccountApprovedEmail, sendActivationDepositEmail } = require('../services/emailService');
 const { issueDepositToken } = require('../utils/depositLink');
 const logger = require('../utils/logger');
@@ -40,7 +40,10 @@ const runKYCWorkflow = () => {
 
         if (!existingLink) {
           const token = generateSecureToken();
-          const expiresAt = getSecureLinkExpiry(5);
+          // 24h expiry (was getSecureLinkExpiry(5) = 5 MINUTES, which expired
+          // before users could even open the email). Matches the manual
+          // admin/resend paths, which already use getOnboardingLinkExpiry().
+          const expiresAt = getOnboardingLinkExpiry();
 
           await SecureLink.create({
             user_id: user.id,
