@@ -56,6 +56,15 @@ const imageTypes = [
 ];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
 
+// Extension fallbacks (lower-case, with leading dot) used when the browser
+// reports a missing/generic MIME type (common for HEIC on macOS/iPhone).
+// NOTE: these were accidentally dropped during a merge; without them the
+// fileFilter(...) calls below reference undefined variables and the whole
+// module throws ReferenceError on load, crashing the server at boot.
+const documentExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
+const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+const videoExts = ['.mp4', '.webm', '.mov'];
+
 const MAX_DOC_SIZE = 15 * 1024 * 1024; // 15MB (safety net; client compresses images)
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 
