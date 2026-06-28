@@ -394,25 +394,43 @@ const start = async () => {
       console.error(`kyc_documents column backfill failed (non-fatal): ${colErr.message}`);
     }
 
-    // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
-    // Wrapped so any background crash is piped explicitly to stdout for the
-    // Hostinger live tracking dashboard.
-    try {
-      runKYCWorkflow();
-      logger.info('✅ Background workflows (runKYCWorkflow) started.');
-      console.log('✅ Background workflows (runKYCWorkflow) started.');
-    } catch (workflowErr) {
-      logger.error(`Background workflow failed to start: ${workflowErr.message}`);
-      console.error(workflowErr);
-    }
+    // ─── Background jobs — SINGLE INSTANCE ONLY ────────────────────────────────
+    // In PM2 cluster mode, runKYCWorkflow()/node-cron schedules inside EVERY
+    // worker, so each job (Video KYC, activation-deposit, and account-setup
+    // emails, cleanup, daily limit reset) would fire N times per minute. That
+    // sends duplicate emails AND multiplies SMTP volume — which on Hostinger's
+    // capped mailbox can exhaust the daily send limit and silently drop the LAST
+    // email in the funnel (the account-setup link). PM2 exposes a per-worker
+    // index in NODE_APP_INSTANCE ('0','1',…); in fork/single mode it's undefined.
+    // Run the schedulers (and the one-shot NEFT re-arm) on instance 0 / single
+    // mode only so every job executes exactly once.
+    const workerInstance = process.env.NODE_APP_INSTANCE;
+    const isPrimaryWorker = workerInstance === undefined || workerInstance === '0';
 
-    // Re-arm settlement timers for any NEFT payouts left 'processing' by a
-    // restart, so they still transition to completed after their delay window.
-    try {
-      const { resumePendingNeftSettlements } = require('./controllers/payoutController');
-      await resumePendingNeftSettlements();
-    } catch (neftErr) {
-      logger.error(`Failed to resume NEFT settlements: ${neftErr.message}`);
+    if (isPrimaryWorker) {
+      // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).
+      // Wrapped so any background crash is piped explicitly to stdout for the
+      // Hostinger live tracking dashboard.
+      try {
+        runKYCWorkflow();
+        logger.info('✅ Background workflows (runKYCWorkflow) started.');
+        console.log('✅ Background workflows (runKYCWorkflow) started.');
+      } catch (workflowErr) {
+        logger.error(`Background workflow failed to start: ${workflowErr.message}`);
+        console.error(workflowErr);
+      }
+
+      // Re-arm settlement timers for any NEFT payouts left 'processing' by a
+      // restart, so they still transition to completed after their delay window.
+      try {
+        const { resumePendingNeftSettlements } = require('./controllers/payoutController');
+        await resumePendingNeftSettlements();
+      } catch (neftErr) {
+        logger.error(`Failed to resume NEFT settlements: ${neftErr.message}`);
+      }
+    } else {
+      logger.info(`Cluster worker ${workerInstance}: background cron jobs skipped (run only on instance 0).`);
+      console.log(`Cluster worker ${workerInstance}: background cron jobs skipped (run only on instance 0).`);
     }
 
     app.listen(PORT, () => {
