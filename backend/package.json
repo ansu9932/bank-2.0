@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build": "echo \"No build step required for the backend (Express API).\"",
     "seed": "node utils/seed.js",
     "cleanup-indexes": "node utils/cleanup-indexes.js"
   },
