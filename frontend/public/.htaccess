@@ -1,0 +1,32 @@
+# ─── Alister Bank · frontend (Apache / Hostinger) ────────────────────────────
+# Vite copies everything in /public to the build root, so this .htaccess ships
+# inside dist/ and is served from the site root (public_html).
+
+<IfModule mod_headers.c>
+  # IMPORTANT (Video KYC camera fix):
+  # Explicitly ALLOW the camera + microphone for this origin at the PAGE level.
+  # A restrictive Permissions-Policy (or a leftover legacy Feature-Policy) header
+  # overrides the browser's per-site "Allow" toggle and makes getUserMedia throw
+  # NotAllowedError/SecurityError even when the user has granted permission.
+  # Setting it permissively here (and clearing any legacy Feature-Policy)
+  # guarantees the page is allowed to use the camera.
+  Header always set Permissions-Policy "camera=(self), microphone=(self), geolocation=(self)"
+  Header always unset Feature-Policy
+</IfModule>
+
+# ─── SPA fallback routing ─────────────────────────────────────────────────────
+# Without this, deep links / refreshes on client-side routes (e.g.
+# /video-kyc?token=..., /account-setup, /activate-deposit) return a 404 from
+# Apache. Route every non-file request to index.html so React Router handles it.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Never rewrite real files or directories (assets, images, etc.).
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else → index.html (SPA entry point).
+  RewriteRule ^ index.html [L]
+</IfModule>
