@@ -31,7 +31,7 @@ const documentTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'
 const imageTypes = ['image/jpeg', 'image/jpg', 'image/png'];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
 
-const MAX_DOC_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_DOC_SIZE = 15 * 1024 * 1024; // 15MB (safety net; client compresses images)
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 
 const kycUpload = multer({

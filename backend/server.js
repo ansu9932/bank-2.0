@@ -106,7 +106,7 @@ app.use((err, req, res, next) => {
   logger.error(`Unhandled error: ${err.message}\n${err.stack}`);
 
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ success: false, message: 'File size exceeds the allowed limit.' });
+    return res.status(400).json({ success: false, message: 'One of your files is too large. Please keep each file under 15 MB (photos are compressed automatically in the latest app version — refresh and try again).' });
   }
   if (err.name === 'MulterError') {
     return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
