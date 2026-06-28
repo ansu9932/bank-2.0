@@ -65,6 +65,12 @@ function describeCameraError(err) {
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':
+      // The most common "fails on EVERY device" cause: the link was opened in
+      // an in-app browser (Gmail/Instagram/Facebook/WhatsApp WebView), which
+      // blocks the camera no matter what permission is granted.
+      if (isInAppBrowser()) {
+        return 'This in-app browser blocks the camera. Open this page in Chrome or Safari instead: tap the ⋮ / "•••" menu (top corner) → "Open in browser" (or "Open in Chrome"), then tap Retry. You can also copy the link and paste it into Chrome/Safari.';
+      }
       return 'Camera is blocked for this site. Tap the lock 🔒 (or ⓘ) icon next to the address bar → Permissions → Camera → Allow, then reload this page. Note: enabling the camera in your phone\'s Settings is not enough — the browser blocks it separately for each website.';
     case 'NotFoundError':
     case 'DevicesNotFoundError':
@@ -77,6 +83,25 @@ function describeCameraError(err) {
     default:
       return 'Unable to access the camera. Please check your browser\'s camera permission for this site (tap the 🔒 icon → Permissions → Camera → Allow) and tap Retry.';
   }
+}
+
+// ─── Helper: detect in-app / embedded browsers (Android WebViews) ─────────────
+// Video KYC links arrive by email, so users frequently tap them from inside an
+// app's built-in browser (Gmail, Instagram, Facebook, WhatsApp, etc.). On
+// Android these are WebViews that BLOCK getUserMedia regardless of any
+// permission the user grants — so the camera fails on every device. The only
+// reliable fix is to reopen the page in the real Chrome/Safari browser.
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  const lc = ua.toLowerCase();
+  // Generic Android WebView marker is "; wv)" in the UA string.
+  const androidWebView = /;\s*wv\)/.test(ua) || (/android/i.test(ua) && /version\/\d/i.test(ua) && !/chrome\/\d/i.test(ua));
+  const namedApps = [
+    'fban', 'fbav', 'fb_iab', 'instagram', 'line/', 'whatsapp',
+    'micromessenger', 'gsa/', 'twitter', 'snapchat', 'tiktok',
+    'musical_ly', 'pinterest', 'linkedinapp',
+  ];
+  return androidWebView || namedApps.some((m) => lc.includes(m));
 }
 
 
@@ -194,7 +219,19 @@ function HardwareRow({ icon: Icon, label, state }) {
 }
 
 // ─── STEP 1 · Camera permission & secure-link initialization ─────────────────
-function Step1Setup({ stream, hw, initializing, error, onInitialize, onNext }) {
+function Step1Setup({ stream, hw, initializing, error, onInitialize, onNext, inApp }) {
+  const copyLink = () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(window.location.href);
+        toast.success('Link copied — paste it into Chrome or Safari.');
+      } else {
+        toast('Copy the link from the address bar and open it in Chrome/Safari.', { icon: 'ℹ️' });
+      }
+    } catch {
+      toast('Copy the link from the address bar and open it in Chrome/Safari.', { icon: 'ℹ️' });
+    }
+  };
   return (
     <motion.div key="step1"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }}
@@ -211,6 +248,21 @@ function Step1Setup({ stream, hw, initializing, error, onInitialize, onNext }) {
           Hardware diagnostics required before establishing the secure biometric link.
         </p>
       </div>
+
+      {inApp && (
+        <div className="mb-5 px-4 py-3 rounded-xl border text-sm"
+          style={{ borderColor: '#f59e0b66', background: '#f59e0b14', color: '#fcd34d' }}>
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>You appear to be using an in-app browser, which usually blocks the camera. For Video KYC to work, open this page in <strong>Chrome</strong> or <strong>Safari</strong> — tap the ⋮ / “•••” menu (top corner) → “Open in browser”.</span>
+          </div>
+          <button onClick={copyLink}
+            className="w-full mt-3 py-2.5 rounded-xl font-semibold text-xs tracking-wide uppercase text-white"
+            style={{ background: 'linear-gradient(135deg, #dc2626, #991b1b)' }}>
+            Copy link to open in Chrome / Safari
+          </button>
+        </div>
+      )}
 
       <div className="space-y-3 mb-5">
         <HardwareRow icon={Camera} label="Optical Camera Sensor" state={hw.camera} />
@@ -650,6 +702,9 @@ export default function CyberVideoKYC() {
   const isProduction = Boolean(token);
   const DONE_STEP = TOTAL_PHASES; // index 3 = completion screen
 
+  // Detected once: are we inside an in-app/WebView browser that blocks camera?
+  const inApp = isInAppBrowser();
+
   // Interceptor link validation: 'checking' | 'valid' | 'expired'.
   // Demo mode (no token) is always 'valid'.
   const [linkState, setLinkState] = useState(token ? 'checking' : 'valid');
@@ -809,24 +864,6 @@ export default function CyberVideoKYC() {
     setInitializing(false);
   }, []);
 
-  // Proactive permission probe (Android Chrome supports the Permissions API;
-  // iOS Safari does not — the query simply throws and we ignore it). If the
-  // site-level camera permission is already "denied", surface the fix-it
-  // instructions immediately so the user isn't left guessing why the prompt
-  // never appears.
-  useEffect(() => {
-    if (!navigator.permissions || !navigator.permissions.query) return;
-    let active = true;
-    navigator.permissions.query({ name: 'camera' })
-      .then((status) => {
-        if (active && status && status.state === 'denied') {
-          setError(describeCameraError({ name: 'NotAllowedError' }));
-        }
-      })
-      .catch(() => { /* Permissions API / 'camera' name unsupported — ignore. */ });
-    return () => { active = false; };
-  }, []);
-
   // Release the front stream on unmount.
   useEffect(() => () => { stream?.getTracks().forEach((t) => t.stop()); }, [stream]);
 
@@ -866,7 +903,7 @@ export default function CyberVideoKYC() {
               <AnimatePresence mode="wait">
                 {step === 0 && (
                   <Step1Setup stream={stream} hw={hw} initializing={initializing} error={error}
-                    onInitialize={initialize} onNext={next} />
+                    onInitialize={initialize} onNext={next} inApp={inApp} />
                 )}
                 {step === 1 && <SelfieCaptureStep stream={stream} onCapture={handleSelfieCapture} />}
                 {step === 2 && <DocumentCaptureStep onConfirm={submitKYC} processing={processing} />}
