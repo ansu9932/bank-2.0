@@ -6,7 +6,9 @@ const opfin = require('../utils/opfin');
 const { resolveUpiProvider, isValidVpa } = require('../utils/upiProviders');
 const { generateReferenceNumber } = require('../utils/helpers');
 const { isMethodEnabled, methodBlockedMessage, normalizeTransferMethods } = require('../utils/transferMethods');
-const { sendTransferAlertEmail } = require('../services/emailService');
+const {
+  sendTransferAlertEmail, sendNeftInitiatedEmail, sendNeftCompletedEmail, sendNeftFailedEmail,
+} = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
 const logger = require('../utils/logger');
@@ -20,73 +22,26 @@ const ALLOWED_MODES = ['IMPS', 'NEFT', 'UPI'];
 // IMPS + UPI settle instantly; NEFT is batch-cleared (pending → completed).
 const INSTANT_MODES = ['IMPS', 'UPI'];
 
-// Simulated NEFT batch-clearing delay (ms). Default 3 min mirrors real-world
-// half-hourly NEFT cycles at a demo-friendly cadence; override via env.
-const NEFT_SETTLEMENT_MS = (parseInt(process.env.NEFT_SETTLEMENT_MINUTES, 10) || 3) * 60 * 1000;
+// NEFT is NO LONGER auto-settled on a timer. It now requires explicit admin
+// approval (Approve → completed, Reject → refunded). This human-readable ETA is
+// shown to the user up-front (email + success screen) so they understand NEFT
+// is not instant. Override via env if operations target a different window.
+const NEFT_ETA_LABEL = process.env.NEFT_ETA_LABEL || 'within 2 hours (NEFT is processed in batches)';
 
 const fmtINR = (n) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 
 /**
- * In-memory tracker of pending NEFT settlement timers so they can be inspected
- * or cleared (e.g. on graceful shutdown). Keyed by transaction reference.
- */
-const pendingNeftTimers = new Map();
-
-/**
- * Promote a pending_settlement NEFT payout to completed after the simulated
- * clearing window. Idempotent: re-checks the row before flipping it.
- * @param {string} transactionId
- * @param {string} referenceNumber
- */
-function scheduleNeftSettlement(transactionId, referenceNumber) {
-  const timer = setTimeout(async () => {
-    try {
-      const txn = await Transaction.findByPk(transactionId);
-      if (!txn || txn.status !== 'processing') {
-        pendingNeftTimers.delete(referenceNumber);
-        return;
-      }
-      await txn.update({
-        status: 'success',
-        processed_at: new Date(),
-        tags: { ...(txn.tags || {}), settlement: 'settled' },
-      });
-
-      const account = await Account.findByPk(txn.account_id);
-      if (account) {
-        await Notification.create({
-          user_id: account.user_id,
-          title: `NEFT transfer of ${fmtINR(txn.amount)} settled`,
-          message: `Your NEFT transfer (Ref: ${referenceNumber}) has cleared successfully.`,
-          type: 'transaction',
-          priority: 'medium',
-        });
-      }
-      logger.info(`NEFT payout settled (simulated): ${referenceNumber}`);
-    } catch (err) {
-      logger.error(`NEFT settlement timer error for ${referenceNumber}: ${err.message}`);
-    } finally {
-      pendingNeftTimers.delete(referenceNumber);
-    }
-  }, NEFT_SETTLEMENT_MS);
-
-  // Don't let the timer keep the event loop alive on shutdown.
-  if (typeof timer.unref === 'function') timer.unref();
-  pendingNeftTimers.set(referenceNumber, timer);
-}
-
-/**
- * On boot, re-arm settlement timers for any NEFT payouts still 'processing'
- * (e.g. left mid-flight by a restart). Exported so server.js can call it.
+ * Boot hook (kept for server.js compatibility). NEFT transfers are now held in
+ * 'processing' until an admin approves/rejects them, so there are NO timers to
+ * re-arm — we simply log how many are awaiting review. This intentionally
+ * replaces the old auto-settlement timer so NEFT never self-completes.
  */
 async function resumePendingNeftSettlements() {
   try {
-    const pending = await Transaction.findAll({
+    const count = await Transaction.count({
       where: { status: 'processing', transfer_mode: 'NEFT', category: 'payout' },
-      limit: 200,
     });
-    pending.forEach((txn) => scheduleNeftSettlement(txn.id, txn.reference_number));
-    if (pending.length) logger.info(`Re-armed ${pending.length} pending NEFT settlement timer(s).`);
+    if (count) logger.info(`${count} NEFT transfer(s) awaiting admin approval.`);
   } catch (err) {
     logger.error(`resumePendingNeftSettlements error: ${err.message}`);
   }
@@ -300,7 +255,9 @@ exports.disbursePayout = async (req, res) => {
           railMode: upperMode,                 // preserves true UPI vs IMPS
           opfinPersonId,
           vpa: isUpi ? String(vpa).trim() : null,
-          settlement: isInstant ? 'instant' : 'pending_settlement',
+          // NEFT now waits for admin approval (pending_approval); IMPS/UPI are instant.
+          settlement: isInstant ? 'instant' : 'pending_approval',
+          etaLabel: isInstant ? null : NEFT_ETA_LABEL,
         },
       }, { transaction: t });
 
@@ -311,7 +268,7 @@ exports.disbursePayout = async (req, res) => {
           : `${fmtINR(parsedAmount)} NEFT transfer initiated`,
         message: isInstant
           ? `Your ${upperMode} transfer to ${beneLabel} is complete. Ref: ${referenceNumber}`
-          : `Your NEFT transfer to ${beneLabel} is processing and will settle shortly. Ref: ${referenceNumber}`,
+          : `Your NEFT transfer to ${beneLabel} has been initiated and typically completes ${NEFT_ETA_LABEL}. We'll email you the moment it's done. Ref: ${referenceNumber}`,
         type: 'transaction',
         priority: 'high',
       }, { transaction: t });
@@ -324,21 +281,34 @@ exports.disbursePayout = async (req, res) => {
       return error(res, 'Transfer could not be completed. Please try again.');
     }
 
-    // ── NEFT: schedule the simulated batch settlement ─────────────────────────
-    if (!isInstant) {
-      scheduleNeftSettlement(writeResult.transactionId, referenceNumber);
-    }
+    // ── NEFT: held in 'processing' until an admin approves/rejects it ─────────
+    // (No auto-settlement timer anymore — see resumePendingNeftSettlements.)
 
     // Async side-effects (don't block the response).
-    sendTransferAlertEmail(user.email, user.first_name, {
-      type: 'debit',
-      amount: parsedAmount.toFixed(2),
-      reference: referenceNumber,
-      counterparty: beneLabel,
-      mode: upperMode,
-      balance: writeResult.balanceAfter,
-      time: new Date().toLocaleString(),
-    }).catch(() => {});
+    if (isInstant) {
+      // IMPS / UPI — instant debit alert (unchanged).
+      sendTransferAlertEmail(user.email, user.first_name, {
+        type: 'debit',
+        amount: parsedAmount.toFixed(2),
+        reference: referenceNumber,
+        counterparty: beneLabel,
+        mode: upperMode,
+        balance: writeResult.balanceAfter,
+        time: new Date().toLocaleString(),
+      }).catch(() => {});
+    } else {
+      // NEFT — "initiated, needs time" email with the processing ETA.
+      sendNeftInitiatedEmail(user.email, user.first_name, {
+        amount: parsedAmount.toFixed(2),
+        reference: referenceNumber,
+        beneficiary: beneLabel,
+        accountNumber,
+        ifsc: String(ifsc).toUpperCase(),
+        eta: NEFT_ETA_LABEL,
+        balance: writeResult.balanceAfter,
+        time: new Date().toLocaleString(),
+      }).catch(() => {});
+    }
 
     createAuditLog({
       userId: req.user.id,
@@ -357,13 +327,14 @@ exports.disbursePayout = async (req, res) => {
       mode: upperMode,
       amount: parsedAmount,
       status: isInstant ? 'completed' : 'pending_settlement',
+      etaLabel: isInstant ? null : NEFT_ETA_LABEL,
       balance: writeResult.balanceAfter,
       available_balance: writeResult.balanceAfter,
       remainingDailyLimit: snapshot ? snapshot.remainingAfter
         : Math.max(parseFloat(account.daily_transfer_limit) - parseFloat(account.daily_transferred || 0) - parsedAmount, 0),
     }, isInstant
       ? 'Transfer completed successfully.'
-      : 'NEFT transfer initiated — it will settle shortly.');
+      : `NEFT transfer initiated — it typically completes ${NEFT_ETA_LABEL}.`);
   } catch (err) {
     logger.error(`disbursePayout error: ${err.message}`);
     return error(res, 'Transfer failed. Please try again.');
@@ -627,5 +598,214 @@ exports.internalTransfer = async (req, res) => {
   }
 };
 
+// ─── Admin: list pending NEFT transfers awaiting approval ─────────────────────
+// GET /api/admin/neft-requests   (adminProtect + role)
+// Returns every NEFT payout still held in 'processing' (i.e. awaiting an admin
+// decision), with the beneficiary account/IFSC/amount and the requesting user.
+exports.adminListNeftRequests = async (req, res) => {
+  try {
+    const txns = await Transaction.findAll({
+      where: { transfer_mode: 'NEFT', category: 'payout', status: 'processing' },
+      limit: 200,
+    });
+
+    const requests = [];
+    for (const txn of txns) {
+      // eslint-disable-next-line no-await-in-loop
+      const account = await Account.findByPk(txn.account_id);
+      let user = null;
+      if (account) {
+        // eslint-disable-next-line no-await-in-loop
+        user = await User.findByPk(account.user_id, {
+          attributes: ['id', 'first_name', 'last_name', 'email', 'phone', 'customer_id'],
+        });
+      }
+      requests.push({
+        id: txn.id,
+        reference: txn.reference_number,
+        amount: parseFloat(txn.amount),
+        beneficiaryName: txn.to_account_name,
+        beneficiaryAccount: txn.to_account_number,
+        ifsc: txn.to_ifsc,
+        description: txn.description,
+        createdAt: txn.createdAt || null,
+        eta: (txn.tags && txn.tags.etaLabel) || NEFT_ETA_LABEL,
+        fromAccount: account ? account.account_number : null,
+        user: user ? {
+          id: user.id,
+          name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          email: user.email,
+          phone: user.phone,
+          customerId: user.customer_id,
+        } : null,
+      });
+    }
+
+    // Newest first (sorted in JS to avoid any timestamp column-name coupling).
+    requests.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    return success(res, { requests, count: requests.length });
+  } catch (err) {
+    logger.error(`adminListNeftRequests error: ${err.message}`);
+    return error(res, 'Failed to fetch NEFT requests.');
+  }
+};
+
+// ─── Admin: approve / reject a pending NEFT transfer ──────────────────────────
+// POST /api/admin/neft-requests/:id/review   Body: { decision:'approve'|'reject', reason? }
+//   approve → mark the (already-debited) transfer 'success' + email the user.
+//   reject  → atomically REFUND the amount, mark 'failed', and email the user
+//             a failure reason (e.g. bank server down / beneficiary bank not
+//             responding). IMPS/UPI/internal are never routed here.
+exports.adminReviewNeftTransfer = async (req, res) => {
+  try {
+    const { decision, reason } = req.body;
+    if (!['approve', 'reject'].includes(decision)) {
+      return badRequest(res, "decision must be 'approve' or 'reject'.");
+    }
+
+    const txn = await Transaction.findByPk(req.params.id);
+    if (!txn || txn.transfer_mode !== 'NEFT' || txn.category !== 'payout') {
+      return notFound(res, 'NEFT transfer not found.');
+    }
+    if (txn.status !== 'processing') {
+      return badRequest(res, 'This NEFT transfer has already been processed.');
+    }
+
+    const account = await Account.findByPk(txn.account_id);
+    const user = account ? await User.findByPk(account.user_id) : null;
+    const beneLabel = txn.to_account_name
+      ? `${txn.to_account_name} · ${txn.to_account_number}`
+      : (txn.to_account_number || 'beneficiary');
+    const amount = parseFloat(txn.amount);
+
+    // ── APPROVE → complete (no balance change; it was debited at creation) ───
+    if (decision === 'approve') {
+      await txn.update({
+        status: 'success',
+        processed_at: new Date(),
+        tags: { ...(txn.tags || {}), settlement: 'settled', approvedBy: req.admin?.id || null },
+      });
+
+      if (account) {
+        await Notification.create({
+          user_id: account.user_id,
+          title: `NEFT transfer of ${fmtINR(amount)} completed`,
+          message: `Your NEFT transfer to ${beneLabel} (Ref: ${txn.reference_number}) has been processed successfully.`,
+          type: 'transaction',
+          priority: 'high',
+        }).catch(() => {});
+      }
+
+      if (user?.email) {
+        sendNeftCompletedEmail(user.email, user.first_name || 'Customer', {
+          amount: amount.toFixed(2),
+          reference: txn.reference_number,
+          beneficiary: beneLabel,
+          accountNumber: txn.to_account_number,
+          ifsc: txn.to_ifsc,
+          balance: account ? parseFloat(account.balance).toFixed(2) : null,
+          time: new Date().toLocaleString(),
+        }).catch((e) => logger.error(`NEFT completed email failed: ${e.message}`));
+      }
+
+      createAuditLog({
+        adminId: req.admin?.id, userId: account?.user_id, action: 'NEFT_APPROVED',
+        entityType: 'Transaction', entityId: txn.reference_number, ipAddress: req.ip,
+        status: 'success', description: `NEFT ${fmtINR(amount)} to ${beneLabel} approved & completed.`,
+      }).catch(() => {});
+
+      return success(res, { id: txn.id, status: 'success' }, 'NEFT transfer approved and completed.');
+    }
+
+    // ── REJECT → refund the debited amount + mark failed ─────────────────────
+    const failureReason = (reason && String(reason).trim())
+      || 'The beneficiary bank did not respond. Your money has been refunded.';
+
+    if (!account) {
+      await txn.update({
+        status: 'failed', failure_reason: failureReason,
+        tags: { ...(txn.tags || {}), settlement: 'failed' },
+      });
+      return success(res, { id: txn.id, status: 'failed' }, 'NEFT transfer rejected.');
+    }
+
+    const refundRef = `${txn.reference_number}-RV`;
+    const t = await sequelize.transaction();
+    let newBalance;
+    try {
+      const locked = await Account.findOne({ where: { id: account.id }, transaction: t, lock: t.LOCK.UPDATE });
+      const before = parseFloat(locked.balance);
+      newBalance = before + amount;
+
+      await locked.update({
+        balance: newBalance,
+        available_balance: parseFloat(locked.available_balance) + amount,
+        // Return the daily-limit headroom since the transfer didn't go through.
+        daily_transferred: Math.max(parseFloat(locked.daily_transferred || 0) - amount, 0),
+      }, { transaction: t });
+
+      await txn.update({
+        status: 'failed',
+        failure_reason: failureReason,
+        tags: { ...(txn.tags || {}), settlement: 'failed', rejectedBy: req.admin?.id || null },
+      }, { transaction: t });
+
+      await Transaction.create({
+        account_id: locked.id,
+        reference_number: refundRef,
+        transaction_type: 'credit',
+        transfer_mode: 'REVERSAL',
+        amount,
+        balance_before: before,
+        balance_after: newBalance,
+        description: `Refund — NEFT ${txn.reference_number} could not be completed`,
+        narration: `REVERSAL ${txn.reference_number}`,
+        category: 'reversal',
+        status: 'success',
+        processed_at: new Date(),
+        reversal_reason: failureReason,
+        tags: { reversalOf: txn.reference_number },
+      }, { transaction: t });
+
+      await Notification.create({
+        user_id: locked.user_id,
+        title: `NEFT transfer of ${fmtINR(amount)} failed — refunded`,
+        message: `Your NEFT transfer to ${beneLabel} could not be completed (${failureReason}) ${fmtINR(amount)} has been refunded to your account.`,
+        type: 'transaction',
+        priority: 'high',
+      }, { transaction: t });
+
+      await t.commit();
+    } catch (txErr) {
+      await t.rollback();
+      logger.error(`NEFT refund failed (${txn.reference_number}): ${txErr.message}`);
+      return error(res, 'Could not process the rejection/refund. Please try again.');
+    }
+
+    if (user?.email) {
+      sendNeftFailedEmail(user.email, user.first_name || 'Customer', {
+        amount: amount.toFixed(2),
+        reference: txn.reference_number,
+        beneficiary: beneLabel,
+        reason: failureReason,
+        refundAmount: amount.toFixed(2),
+        balance: newBalance.toFixed(2),
+        time: new Date().toLocaleString(),
+      }).catch((e) => logger.error(`NEFT failed email error: ${e.message}`));
+    }
+
+    createAuditLog({
+      adminId: req.admin?.id, userId: account.user_id, action: 'NEFT_REJECTED_REFUNDED',
+      entityType: 'Transaction', entityId: txn.reference_number, ipAddress: req.ip,
+      status: 'success', description: `NEFT ${fmtINR(amount)} to ${beneLabel} rejected & refunded. Reason: ${failureReason}`,
+    }).catch(() => {});
+
+    return success(res, { id: txn.id, status: 'failed', refunded: amount }, 'NEFT transfer rejected and refunded.');
+  } catch (err) {
+    logger.error(`adminReviewNeftTransfer error: ${err.message}`);
+    return error(res, 'Failed to process the NEFT transfer.');
+  }
+};
+
 exports.resumePendingNeftSettlements = resumePendingNeftSettlements;
-exports.scheduleNeftSettlement = scheduleNeftSettlement;

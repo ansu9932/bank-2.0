@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const adminController = require('../controllers/adminController');
 const requestController = require('../controllers/requestController');
+const payoutController = require('../controllers/payoutController');
 const { adminProtect, requireRole } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/security');
 
@@ -32,6 +33,11 @@ router.post('/users/:userId/transfer-methods', requireRole('super_admin', 'admin
 // Transactions
 router.get('/transactions', adminController.getAllTransactions);
 router.post('/transactions/:id/flag', requireRole('super_admin', 'admin'), adminController.flagTransaction);
+
+// NEFT transfers — admin approval queue. Approve = mark completed + notify;
+// Reject = refund the debit + notify. (IMPS/UPI/internal never appear here.)
+router.get('/neft-requests', requireRole('super_admin', 'admin'), payoutController.adminListNeftRequests);
+router.post('/neft-requests/:id/review', requireRole('super_admin', 'admin'), payoutController.adminReviewNeftTransfer);
 
 // Audit & Tickets
 router.get('/audit-logs', requireRole('super_admin', 'admin'), adminController.getAuditLogs);

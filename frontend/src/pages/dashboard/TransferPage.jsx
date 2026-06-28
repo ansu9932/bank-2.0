@@ -350,8 +350,9 @@ export default function TransferPage() {
             {isPending ? 'NEFT Transfer Initiated' : 'Transfer Successful!'}
           </h2>
           <p className="text-dark-200 text-sm mb-4">
-            {fmtINR(result.amount)} {isPending ? 'is processing and will settle shortly.' : 'sent successfully.'}
-            {result.recipientName ? ` to ${result.recipientName}` : ''}
+            {isPending
+              ? `${fmtINR(result.amount)} has been initiated and typically completes ${result.etaLabel || 'within a couple of hours'}. You'll get an email as soon as it's done.`
+              : `${fmtINR(result.amount)} sent successfully.${result.recipientName ? ` to ${result.recipientName}` : ''}`}
           </p>
           <div className="bg-dark-700/50 rounded-xl p-4 mb-5 space-y-2">
             <div className="flex justify-between text-sm">

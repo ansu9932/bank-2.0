@@ -14,6 +14,7 @@ const navItems = [
   { to: '/admin/users', icon: RiGroupLine, label: 'Users & KYC' },
   { to: '/admin/kyc-review', icon: RiShieldCheckLine, label: 'KYC Review' },
   { to: '/admin/transactions', icon: RiExchangeLine, label: 'Transactions' },
+  { to: '/admin/neft-requests', icon: RiBankLine, label: 'NEFT Requests' },
   { to: '/admin/approved-cards', icon: RiBankCard2Line, label: 'Approved Cards' },
   { to: '/admin/tickets', icon: RiCustomerService2Line, label: 'Tickets' },
   { to: '/admin/audit', icon: RiFileShield2Line, label: 'Audit Logs' },
