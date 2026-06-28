@@ -3,7 +3,12 @@ module.exports = {
     {
       name: 'alister-bank-api',
       script: './backend/server.js',
-      instances: 'max',
+      // ── Cluster size ──────────────────────────────────────────────────────
+      // Bounded (NOT 'max'). Total MySQL connections = instances × DB_POOL_MAX,
+      // so an unbounded 'max' (one worker per CPU core) can exhaust the shared
+      // MySQL connection limit and cause intermittent 500s on writes. Override
+      // per-host with the PM2_INSTANCES env var if more workers are needed.
+      instances: process.env.PM2_INSTANCES || 2,
       exec_mode: 'cluster',
       watch: false,
       env_production: {

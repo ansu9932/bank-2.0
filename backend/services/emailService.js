@@ -486,6 +486,81 @@ const sendKYCRejectedEmail = async (email, name, reason) => {
   return sendEmail({ to: email, subject: 'Alister Bank — Action Needed: KYC Verification Not Approved', html });
 };
 
+/**
+ * NEFT transfer INITIATED — sent the moment a NEFT payout is requested. Tells
+ * the user the transfer is being processed and how long NEFT typically takes,
+ * and that a completion email will follow.
+ */
+const sendNeftInitiatedEmail = async (email, name, { amount, reference, beneficiary, accountNumber, ifsc, eta, balance, time }) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#128338; NEFT Initiated')}
+    ${heading('Your NEFT Transfer Has Been Initiated')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para(`We've received your NEFT transfer request and it is now being processed. NEFT is settled in batches, so it usually completes <strong>${eta || 'within a couple of hours'}</strong>. Your account has been debited and the amount is on its way.`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Amount', `$${amount}`, '#f59e0b')}
+      ${detailRow('Beneficiary', beneficiary || '—')}
+      ${detailRow('Account Number', accountNumber || '—')}
+      ${detailRow('IFSC', ifsc || '—')}
+      ${detailRow('Reference', reference || '—')}
+      ${detailRow('Status', 'Processing', '#f59e0b')}
+      ${detailRow('Expected to complete', eta || '—')}
+      ${detailRow('Date &amp; Time', time)}
+    </table>
+    ${infoBox('&#9201; No action is needed from you. We\'ll send you another email as soon as your NEFT transfer is completed.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — NEFT Transfer Initiated: $${amount}`, html });
+};
+
+/**
+ * NEFT transfer COMPLETED — sent when an admin approves the NEFT payout.
+ */
+const sendNeftCompletedEmail = async (email, name, { amount, reference, beneficiary, accountNumber, ifsc, balance, time }) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#9989; NEFT Completed')}
+    ${heading('Your NEFT Transfer Is Complete')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('Good news — your NEFT transfer has been processed and credited to the beneficiary successfully.')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Amount', `$${amount}`, '#22c55e')}
+      ${detailRow('Beneficiary', beneficiary || '—')}
+      ${detailRow('Account Number', accountNumber || '—')}
+      ${detailRow('IFSC', ifsc || '—')}
+      ${detailRow('Reference', reference || '—')}
+      ${detailRow('Status', 'Completed', '#22c55e')}
+      ${balance != null ? detailRow('Account Balance', `$${balance}`) : ''}
+      ${detailRow('Date &amp; Time', time)}
+    </table>
+    ${para('Thank you for banking with Alister Bank.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — NEFT Transfer Completed: $${amount}`, html });
+};
+
+/**
+ * NEFT transfer FAILED + REFUNDED — sent when an admin rejects the NEFT payout.
+ * Communicates the failure reason (e.g. bank server down / beneficiary bank not
+ * responding) and confirms the full amount was refunded.
+ */
+const sendNeftFailedEmail = async (email, name, { amount, reference, beneficiary, reason, refundAmount, balance, time }) => {
+  const html = baseTemplate(bodyShell(`
+    ${badge('&#10060; NEFT Failed')}
+    ${heading('Your NEFT Transfer Could Not Be Completed')}
+    ${para(`Dear ${hl(name)},`)}
+    ${para('We\'re sorry — your NEFT transfer could not be completed and has been reversed.')}
+    ${infoBox(`<strong>Reason:</strong> ${reason || 'The beneficiary bank did not respond.'}`)}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${BRAND.panelAlt}; border-radius:10px; padding:4px 20px; margin:20px 0;">
+      ${detailRow('Amount', `$${amount}`, '#ef4444')}
+      ${detailRow('Beneficiary', beneficiary || '—')}
+      ${detailRow('Reference', reference || '—')}
+      ${detailRow('Refunded to your account', `$${refundAmount}`, '#22c55e')}
+      ${balance != null ? detailRow('Account Balance', `$${balance}`) : ''}
+      ${detailRow('Date &amp; Time', time)}
+    </table>
+    ${para('The full amount has been refunded to your Alister Bank account. You\'re welcome to try the transfer again later, or contact support if the issue continues.')}
+  `));
+  return sendEmail({ to: email, subject: `Alister Bank — NEFT Transfer Failed (Refunded): $${amount}`, html });
+};
+
 module.exports = {
   sendEmail,
   sendOTPEmail,
@@ -503,4 +578,7 @@ module.exports = {
   sendCheckbookRejectedEmail,
   sendCardControlAlertEmail,
   sendKYCRejectedEmail,
+  sendNeftInitiatedEmail,
+  sendNeftCompletedEmail,
+  sendNeftFailedEmail,
 };

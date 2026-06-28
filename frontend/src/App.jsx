@@ -54,6 +54,7 @@ const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/admin/AdminUserDetailPage'));
 const AdminKYCReviewPage = lazy(() => import('./pages/admin/AdminKYCReviewPage'));
 const AdminTransactionsPage = lazy(() => import('./pages/admin/AdminTransactionsPage'));
+const AdminNeftRequestsPage = lazy(() => import('./pages/admin/AdminNeftRequestsPage'));
 const AdminAuditPage = lazy(() => import('./pages/admin/AdminAuditPage'));
 const AdminTicketsPage = lazy(() => import('./pages/admin/AdminTicketsPage'));
 const AdminApprovedCardsPage = lazy(() => import('./pages/admin/AdminApprovedCardsPage'));
@@ -164,6 +165,8 @@ export default function App() {
           <Route path="users/:id" element={withSuspense(<AdminUserDetailPage />)} />
           <Route path="kyc-review" element={withSuspense(<AdminKYCReviewPage />)} />
           <Route path="transactions" element={withSuspense(<AdminTransactionsPage />)} />
+          {/* NEFT transfers awaiting admin approval (approve = complete, reject = refund) */}
+          <Route path="neft-requests" element={withSuspense(<AdminNeftRequestsPage />)} />
           {/* approved cards — sandbox allow-list for the activation-deposit simulator */}
           <Route path="approved-cards" element={withSuspense(<AdminApprovedCardsPage />)} />
           {/* audit — matches the /admin/audit path used in Sidebar and AdminLayout */}

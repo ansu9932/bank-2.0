@@ -137,23 +137,6 @@ exports.openAccount = async (req, res) => {
     // SKIP writing a KYCDocument row per file: on a slow database those repeated
     // inserts were causing the account submission to time out / fail. The user
     // record (created above) is saved as usual, so onboarding completes reliably.
-    const docTypeMap = {
-      aadhaar: 'aadhaar',
-      pan: 'pan',
-      citizenship_certificate: 'citizenship_certificate',
-      cid: 'cid',
-      national_id: 'national_id',
-      tin: 'tin',
-      passport: 'passport',
-      selfie: 'selfie',
-      signature: 'signature',
-      address_proof: 'address_proof',
-    };
-
-    // NOTE: Document database persistence is intentionally disabled (see above).
-    // Files are still uploaded to the server; they are simply not recorded in
-    // the kyc_documents table to avoid slow-DB submission failures.
-    void docTypeMap;
 
     // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
     // successfully-created account into a 500; log it and continue.
@@ -185,6 +168,7 @@ exports.openAccount = async (req, res) => {
     //    is identifiable on the live (Hostinger) dashboard ──────────────────────
     logger.error(`Account opening error: ${err.name}: ${err.message}`);
     if (err.original) logger.error(`Raw DB error: ${err.original.message}`);
+    if (err.parent && err.parent !== err.original) logger.error(`DB parent error: ${err.parent.message}`);
     if (err.stack) logger.error(err.stack);
 
     // Map known Sequelize failures to a precise 400 instead of a generic 500.
@@ -199,6 +183,26 @@ exports.openAccount = async (req, res) => {
     if (err.name === 'SequelizeDatabaseError') {
       // e.g. value too long, bad enum, datatype mismatch — actionable as 400.
       return badRequest(res, 'One or more submitted details are invalid. Please review and try again.');
+    }
+
+    // ── Database connectivity / pool-acquire timeouts ──────────────────────────
+    // On shared MySQL these are the usual cause of a generic 500 here: the DB
+    // refused/dropped the connection or the pool could not acquire one in time
+    // (frequently "Too many connections" when PM2 cluster workers × pool.max
+    // exceeds the server's max_connections). Surface a clear, RETRYABLE 503 so
+    // the client can try again, and so this stops masquerading as an opaque 500.
+    const connErrorNames = [
+      'SequelizeConnectionError',
+      'SequelizeConnectionRefusedError',
+      'SequelizeConnectionAcquireTimeoutError',
+      'SequelizeConnectionTimedOutError',
+      'SequelizeHostNotReachableError',
+      'SequelizeAccessDeniedError',
+      'TimeoutError',
+    ];
+    if (connErrorNames.includes(err.name)) {
+      logger.error(`Account opening failed due to a DB connectivity issue (${err.name}).`);
+      return error(res, 'We are experiencing a brief connection delay. Please try submitting again in a moment.', 503);
     }
 
     return error(res, 'Failed to submit application. Please try again.');
