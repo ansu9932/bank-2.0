@@ -54,6 +54,31 @@ function dataURLToBlob(dataURL) {
   return new Blob([bytes], { type: mime });
 }
 
+// ─── Helper: turn a getUserMedia DOMException into an ACTIONABLE message ──────
+// Android's #1 camera-KYC failure: the per-SITE camera permission in the
+// browser is set to "Block". That makes getUserMedia throw NotAllowedError
+// instantly WITHOUT re-prompting — and enabling the OS-level (Settings → Apps →
+// Chrome → Camera) permission does NOT fix it, because the site-level block is
+// separate. So we must tell the user exactly how to clear the site block.
+function describeCameraError(err) {
+  const name = err && err.name ? err.name : '';
+  switch (name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Camera is blocked for this site. Tap the lock 🔒 (or ⓘ) icon next to the address bar → Permissions → Camera → Allow, then reload this page. Note: enabling the camera in your phone\'s Settings is not enough — the browser blocks it separately for each website.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+    case 'OverconstrainedError':
+      return 'No usable camera was found on this device. Please try a device with a working camera.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+    case 'AbortError':
+      return 'Your camera is busy or in use by another app. Close other camera apps and browser tabs, then tap Retry.';
+    default:
+      return 'Unable to access the camera. Please check your browser\'s camera permission for this site (tap the 🔒 icon → Permissions → Camera → Allow) and tap Retry.';
+  }
+}
+
 
 // ─── Crimson grid background ──────────────────────────────────────────────────
 function GridBackground() {
@@ -207,7 +232,9 @@ function Step1Setup({ stream, hw, initializing, error, onInitialize, onNext }) {
           <span className="relative z-10 flex items-center justify-center gap-2">
             {initializing
               ? <><Loader2 size={16} className="animate-spin" /> Establishing Link…</>
-              : <><Power size={16} /> Initialize Secure Link</>}
+              : error
+                ? <><RefreshCw size={16} /> Retry Camera Access</>
+                : <><Power size={16} /> Initialize Secure Link</>}
           </span>
         </button>
       ) : (
@@ -376,11 +403,20 @@ function DocumentCaptureStep({ onConfirm, processing }) {
     stopStream();
     setCamReady(false);
     setCamError('');
+
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (mountedRef.current) {
+        setCamError('Camera unavailable here. Please open this link in Chrome or Safari over a secure (https) connection.');
+      }
+      return;
+    }
+
     const attempts = [
       { video: { facingMode: { exact: mode } }, audio: false },
       { video: { facingMode: mode }, audio: false },
       { video: true, audio: false },
     ];
+    let lastErr = null;
     for (const constraints of attempts) {
       try {
         const s = await navigator.mediaDevices.getUserMedia(constraints);
@@ -392,11 +428,14 @@ function DocumentCaptureStep({ onConfirm, processing }) {
         }
         setCamReady(true);
         return;
-      } catch {
-        // try the next, looser constraint
+      } catch (e) {
+        lastErr = e;
+        // A hard permission block won't be cured by a looser constraint — stop
+        // retrying and report the actionable fix immediately.
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) break;
       }
     }
-    if (mountedRef.current) setCamError('Unable to access the camera. Please allow camera access.');
+    if (mountedRef.current) setCamError(describeCameraError(lastErr));
   }, [stopStream]);
 
   // Release everything on unmount.
@@ -501,9 +540,16 @@ function DocumentCaptureStep({ onConfirm, processing }) {
       <canvas ref={canvasRef} className="hidden" />
 
       {camError && (
-        <div className="flex items-center gap-2 px-4 py-3 mt-4 rounded-xl border text-sm"
-          style={{ borderColor: `${RED.bright}55`, background: `${RED.bright}12`, color: RED.soft }}>
-          <AlertTriangle size={16} /> {camError}
+        <div className="mt-4">
+          <div className="flex items-start gap-2 px-4 py-3 rounded-xl border text-sm"
+            style={{ borderColor: `${RED.bright}55`, background: `${RED.bright}12`, color: RED.soft }}>
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" /> <span>{camError}</span>
+          </div>
+          <button onClick={() => acquire(facing)}
+            className="w-full mt-3 py-3 rounded-2xl font-semibold text-sm tracking-widest uppercase text-white flex items-center justify-center gap-2"
+            style={{ background: `linear-gradient(135deg, ${RED.base}, ${RED.deep})`, boxShadow: `0 0 24px ${RED.base}55` }}>
+            <RefreshCw size={16} /> Retry Camera
+          </button>
         </div>
       )}
 
@@ -706,12 +752,38 @@ export default function CyberVideoKYC() {
     setError('');
     setInitializing(true);
     setHw({ camera: 'pending', mic: 'pending', channel: 'pending' });
-    try {
-      const constraints = {
-        video: { facingMode: { ideal: 'user' } },
-        audio: false,
-      };
-      const media = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // Secure-context guard. getUserMedia only works over HTTPS (or localhost);
+    // on http:// Android Chrome throws and the wizard would dead-end.
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setHw({ camera: 'fail', mic: 'fail', channel: 'fail' });
+      setError('Camera unavailable here. Please open this link in Chrome or Safari over a secure (https) connection.');
+      setInitializing(false);
+      return;
+    }
+
+    // Try the front camera, then fall back to ANY camera so a device that
+    // can't satisfy the facing-mode hint still yields a working stream instead
+    // of failing outright.
+    const attempts = [
+      { video: { facingMode: { ideal: 'user' } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    let media = null;
+    let lastErr = null;
+    for (const constraints of attempts) {
+      try {
+        media = await navigator.mediaDevices.getUserMedia(constraints);
+        break;
+      } catch (e) {
+        lastErr = e;
+        // A hard block/secure error won't be cured by looser constraints.
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) break;
+      }
+    }
+
+    if (media) {
       setStream(media);
       const hasVideo = media.getVideoTracks().length > 0;
       setTimeout(() => setHw((h) => ({ ...h, camera: hasVideo ? 'ok' : 'fail' })), 400);
@@ -726,16 +798,33 @@ export default function CyberVideoKYC() {
           setHw((h) => ({ ...h, mic: 'ok' }));
         })
         .catch(() => setHw((h) => ({ ...h, mic: 'ok' })));
-    } catch (err) {
-      setHw({ camera: 'fail', mic: 'fail', channel: 'fail' });
-      setError(
-        err?.name === 'NotAllowedError'
-          ? 'Camera access denied. Please grant permission and retry.'
-          : 'Unable to access the camera. Check that no other app is using it.'
-      );
-    } finally {
+
       setInitializing(false);
+      return;
     }
+
+    // All attempts failed — classify the error into an actionable instruction.
+    setHw({ camera: 'fail', mic: 'fail', channel: 'fail' });
+    setError(describeCameraError(lastErr));
+    setInitializing(false);
+  }, []);
+
+  // Proactive permission probe (Android Chrome supports the Permissions API;
+  // iOS Safari does not — the query simply throws and we ignore it). If the
+  // site-level camera permission is already "denied", surface the fix-it
+  // instructions immediately so the user isn't left guessing why the prompt
+  // never appears.
+  useEffect(() => {
+    if (!navigator.permissions || !navigator.permissions.query) return;
+    let active = true;
+    navigator.permissions.query({ name: 'camera' })
+      .then((status) => {
+        if (active && status && status.state === 'denied') {
+          setError(describeCameraError({ name: 'NotAllowedError' }));
+        }
+      })
+      .catch(() => { /* Permissions API / 'camera' name unsupported — ignore. */ });
+    return () => { active = false; };
   }, []);
 
   // Release the front stream on unmount.
