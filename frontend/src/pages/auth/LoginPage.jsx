@@ -58,11 +58,13 @@ export default function LoginPage() {
         const url = new URL(window.location.href);
         url.searchParams.set('h', token);
         window.history.replaceState({}, '', url);
+        return token;
       }
     } catch {
-      // Non-fatal: surfaced on submit if still missing.
+      // Non-fatal: login proceeds without it (backend treats it as soft).
       setHandshakeToken('');
     }
+    return '';
   };
 
   useEffect(() => {
@@ -105,12 +107,11 @@ export default function LoginPage() {
     if (!form.username || !form.password) { toast.error('Please fill all fields'); return; }
     // Prefer in-state token; fall back to the URL param if state was reset.
     const tokenFromUrl = new URLSearchParams(window.location.search).get('h');
-    const hToken = handshakeToken || tokenFromUrl || '';
-    if (!hToken) {
-      toast.error('Secure session not ready. Refreshing…');
-      await initHandshake();
-      return;
-    }
+    let hToken = handshakeToken || tokenFromUrl || '';
+    // Best-effort: mint a handshake inline if we don't have one — but NEVER
+    // block login on it. The backend treats the handshake as a soft anti-replay
+    // signal, so a transient handshake hiccup must not stop a valid login.
+    if (!hToken) hToken = await initHandshake();
     const result = await dispatch(login({ ...form, handshakeToken: hToken }));
     if (login.fulfilled.match(result)) {
       allowNavigation(); // sanctioned success exit → no redirect-home

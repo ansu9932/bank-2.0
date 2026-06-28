@@ -38,15 +38,17 @@ exports.login = async (req, res) => {
   try {
     const { username, password, handshakeToken } = req.body;
 
-    // ── Ephemeral handshake validation (anti-replay) ─────────────────────────
-    // The token must be present, unexpired, single-use, and IP-consistent.
+    // ── Ephemeral handshake validation (anti-replay) — SOFT / non-blocking ───
+    // The handshake is an anti-replay nicety, NOT an authentication factor.
+    // A CDN/proxy IP shift, a page left open, a cold start, or a transient
+    // handshake-endpoint hiccup must never lock a legitimate user out (this was
+    // surfacing as a "Secure session not ready" dead-end on the login page).
+    // Login is already protected by the strict login rate-limiter, credential
+    // verification, and account lockout — so we LOG the handshake result and
+    // continue regardless of whether it validated.
     const hs = consumeHandshake(handshakeToken, req.ip);
     if (!hs.valid) {
-      const msg = hs.reason === 'expired'
-        ? 'Your secure login session expired. Please refresh the page and try again.'
-        : 'Invalid or missing security handshake. Please refresh the page and try again.';
-      logger.warn(`Login handshake rejected (${hs.reason}) from ${req.ip}`);
-      return badRequest(res, msg);
+      logger.warn(`Login handshake not validated (${hs.reason}) from ${req.ip} — proceeding (soft mode).`);
     }
 
     if (!username || !password) return badRequest(res, 'Username and password are required.');
