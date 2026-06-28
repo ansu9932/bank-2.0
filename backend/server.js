@@ -111,12 +111,23 @@ app.use((err, req, res, next) => {
   if (err.name === 'MulterError') {
     return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
   }
+  // Unsupported upload file type (tagged by middleware/upload.js fileFilter).
+  // Without this branch a rejected file surfaces as a confusing 500.
+  if (err.code === 'INVALID_FILE_TYPE') {
+    return res.status(400).json({ success: false, message: err.message });
+  }
   if (err.name === 'SequelizeUniqueConstraintError') {
     const field = err.errors[0]?.path || 'field';
     return res.status(400).json({ success: false, message: `${field} already exists.` });
   }
   if (err.name === 'SequelizeValidationError') {
     return res.status(400).json({ success: false, message: err.errors[0]?.message || 'Validation error.' });
+  }
+
+  // Honor any explicit client-actionable status set by upstream middleware
+  // (e.g. validation guards) so they don't get masked as a generic 500.
+  if (err.status === 400 || err.statusCode === 400) {
+    return res.status(400).json({ success: false, message: err.message || 'Bad request.' });
   }
 
   res.status(500).json({

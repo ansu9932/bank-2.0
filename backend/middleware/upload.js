@@ -19,17 +19,48 @@ const createStorage = (subDir) => multer.diskStorage({
   },
 });
 
-const fileFilter = (allowedTypes) => (req, file, cb) => {
-  if (allowedTypes.includes(file.mimetype)) {
+// Accept a file if EITHER its reported MIME type OR its file extension is in
+// the allow-list. The extension fallback is important: macOS/iPhone HEIC files
+// are frequently delivered by the browser with an empty or
+// "application/octet-stream" MIME type, which would otherwise be rejected.
+//
+// IMPORTANT: a rejected file is reported with a TAGGED 400 error (code
+// 'INVALID_FILE_TYPE', status 400) — NOT a bare `new Error`. A bare Error is
+// not a MulterError, so the global error handler in server.js let it fall
+// through to a confusing HTTP 500. This produces a clear, actionable 400 that
+// tells the user exactly which formats are accepted.
+const fileFilter = (allowedTypes, allowedExts) => (req, file, cb) => {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const okByMime = allowedTypes.includes(file.mimetype);
+  const okByExt = allowedExts.includes(ext);
+  if (okByMime || okByExt) {
     cb(null, true);
   } else {
-    cb(new Error(`Invalid file type. Allowed: ${allowedTypes.join(', ')}`), false);
+    const err = new Error('Unsupported file type. Please upload a JPG, PNG, HEIC, WebP, or PDF file.');
+    err.code = 'INVALID_FILE_TYPE';
+    err.status = 400;
+    cb(err, false);
   }
 };
 
-const documentTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
-const imageTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+// NOTE: HEIC/HEIF and WebP are accepted because real devices (especially Macs
+// and iPhones) commonly produce them. KYC files are stored as-is (not
+// transcoded), so accepting these formats is safe and unblocks onboarding.
+const documentTypes = [
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+  'image/heic', 'image/heif', 'application/pdf',
+];
+const imageTypes = [
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+  'image/heic', 'image/heif',
+];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+
+// Extension fallbacks (lower-case, with leading dot) used when the browser
+// reports a missing/generic MIME type.
+const documentExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
+const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+const videoExts = ['.mp4', '.webm', '.mov'];
 
 const MAX_DOC_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
@@ -37,25 +68,25 @@ const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 const kycUpload = multer({
   storage: createStorage('documents'),
   limits: { fileSize: MAX_DOC_SIZE },
-  fileFilter: fileFilter(documentTypes),
+  fileFilter: fileFilter(documentTypes, documentExts),
 });
 
 const selfieUpload = multer({
   storage: createStorage('selfies'),
   limits: { fileSize: MAX_DOC_SIZE },
-  fileFilter: fileFilter(imageTypes),
+  fileFilter: fileFilter(imageTypes, imageExts),
 });
 
 const videoUpload = multer({
   storage: createStorage('kyc-videos'),
   limits: { fileSize: MAX_VIDEO_SIZE },
-  fileFilter: fileFilter(videoTypes),
+  fileFilter: fileFilter(videoTypes, videoExts),
 });
 
 const profileUpload = multer({
   storage: createStorage('profiles'),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: fileFilter(imageTypes),
+  fileFilter: fileFilter(imageTypes, imageExts),
 });
 
 // KYC multi-document upload fields. Covers every country's document set
