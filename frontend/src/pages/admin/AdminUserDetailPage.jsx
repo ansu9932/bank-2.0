@@ -8,13 +8,13 @@ import toast from 'react-hot-toast';
 // Absolute backend origin for static /uploads assets. The frontend is served
 // from a separate static host, so KYC document links MUST point at the Node
 // backend domain explicitly — a relative path would 404 against the frontend
-// host. Hardcoded (not env-derived) so links compile to the exact absolute
-// production URL regardless of the local build-time env vars. The backend
-// serves these under express.static('/uploads'); doc.document_url already
-// carries the correct sub-folder (documents/ selfies/ kyc-videos/), sliced
-// from file_path, so the prefixed link resolves to e.g.:
-//   https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
-const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+// host. Derived from VITE_API_BASE_URL (with the trailing /api stripped) so it
+// always tracks the same backend the API client uses. Falls back to the AWS API.
+// The backend serves these under express.static('/uploads'); doc.document_url
+// already carries the correct sub-folder (documents/ selfies/ kyc-videos/),
+// sliced from file_path, so the prefixed link resolves to e.g.:
+//   {BACKEND_ORIGIN}/uploads/documents/{filename}
+const BACKEND_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'https://api.alisterbank.online/api').replace(/\/api\/?$/, '');
 const IMG_ORIGIN = BACKEND_ORIGIN;
 
 // Tolerant JSON parse for the account.transfer_methods value (object or string).

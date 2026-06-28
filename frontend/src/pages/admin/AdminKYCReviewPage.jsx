@@ -17,14 +17,14 @@ const NEON = { green: '#10b981', cyan: '#06b6d4', red: '#ef4444', amber: '#f59e0
 // Absolute backend origin for static /uploads assets. The frontend is served
 // from a separate static host, so KYC asset links MUST point at the Node
 // backend domain explicitly — a relative path would 404 against the frontend
-// host. Hardcoded (not env-derived) so the links compile to the exact absolute
-// production URL regardless of the local build-time VITE_API_URL value.
+// host. Derived from VITE_API_BASE_URL (with the trailing /api stripped) so it
+// always tracks the same backend the API client uses. Falls back to the AWS API.
 // The backend serves these under express.static('/uploads'):
-//   documents → https://aqua-salamander-597310.hostingersite.com/uploads/documents/{filename}
-//   selfies   → https://aqua-salamander-597310.hostingersite.com/uploads/selfies/{filename}
-//   videos    → https://aqua-salamander-597310.hostingersite.com/uploads/kyc-videos/{filename}
+//   documents → {BACKEND_ORIGIN}/uploads/documents/{filename}
+//   selfies   → {BACKEND_ORIGIN}/uploads/selfies/{filename}
+//   videos    → {BACKEND_ORIGIN}/uploads/kyc-videos/{filename}
 // document_url already carries the correct sub-folder (sliced from file_path).
-const BACKEND_ORIGIN = 'https://aqua-salamander-597310.hostingersite.com';
+const BACKEND_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'https://api.alisterbank.online/api').replace(/\/api\/?$/, '');
 const IMG_ORIGIN = BACKEND_ORIGIN;
 
 // Safe date formatter — never throws on null/invalid timestamps.
