@@ -7,6 +7,7 @@ const {
 const { sendSimulatedDepositCreditEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound } = require('../utils/apiResponse');
+const { scheduleAccountSetup } = require('../jobs/kycWorkflow');
 const logger = require('../utils/logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -167,6 +168,10 @@ exports.submitDeposit = async (req, res) => {
       status: 'success',
       description: `Simulated activation deposit of $${depositAmount} via Credit Card ending ${last4}.`,
     }).catch(() => {});
+
+    // Reliably send the account-setup email ~2 minutes from now (in-process
+    // timer, independent of the minute-cron which is unreliable on shared hosting).
+    scheduleAccountSetup(user.id);
 
     // Simulated credit confirmation email (mode "Credit Card", no bank name).
     sendSimulatedDepositCreditEmail(user.email, user.first_name || 'Customer', {

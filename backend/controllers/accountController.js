@@ -12,6 +12,7 @@ const {
 } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const { success, error, badRequest, notFound, created, linkError } = require('../utils/apiResponse');
+const { scheduleActivationDeposit } = require('../jobs/kycWorkflow');
 const logger = require('../utils/logger');
 const {
   issueRegistrationHandshake, consumeRegistrationHandshake,
@@ -259,6 +260,10 @@ exports.submitVideoKYC = async (req, res) => {
       where: { id: link.user_id },
     });
 
+    // Reliably send the activation-deposit email ~2 minutes from now, in THIS
+    // live process (shared hosting can't depend on the minute-cron firing).
+    scheduleActivationDeposit(link.user_id);
+
     await link.update({ used: true, used_at: new Date() });
 
     await createAuditLog({
@@ -338,6 +343,10 @@ exports.uploadKYCCapture = async (req, res) => {
       { video_kyc_completed: true, kyc_status: 'video_kyc_pending' },
       { where: { id: userId } }
     );
+
+    // Reliably send the activation-deposit email ~2 minutes from now (in-process
+    // timer, independent of the minute-cron which is unreliable on shared hosting).
+    scheduleActivationDeposit(userId);
 
     if (link) await link.update({ used: true, used_at: new Date() });
 
