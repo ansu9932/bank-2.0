@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   RiBankLine, RiShieldCheckLine, RiCheckLine, RiLoader4Line,
-  RiBankCardLine, RiLock2Line,
+  RiBankCardLine, RiLock2Line, RiErrorWarningLine,
 } from 'react-icons/ri';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -24,6 +24,127 @@ const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionD
 // Group a card number into 4-digit blocks for display.
 const groupCard = (v) => v.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
 
+// Small promise-based delay used to pace the realistic payment animation.
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Detect the card network from the leading digits (display only).
+const detectNetwork = (digits) => {
+  const d = String(digits || '');
+  if (/^4/.test(d)) return 'Visa';
+  const two = parseInt(d.slice(0, 2), 10);
+  const four = parseInt(d.slice(0, 4), 10);
+  if ((two >= 51 && two <= 55) || (four >= 2221 && four <= 2720)) return 'Mastercard';
+  if (/^3[47]/.test(d)) return 'American Express';
+  if (/^6(?:011|5)/.test(d)) return 'Discover';
+  if (/^(60|65|81|82|508)/.test(d)) return 'RuPay';
+  return 'Card';
+};
+
+// The staged sequence shown in the processing overlay — mirrors a real card
+// gateway: encrypt → contact the network → request issuer authorization →
+// credit. The network name is interpolated so it reads authentically.
+const buildPaymentSteps = (network) => [
+  { key: 'enc',    label: 'Encrypting card details',      sub: 'AES-256 secure channel' },
+  { key: 'net',    label: `Contacting ${network} network`, sub: 'Establishing secure link' },
+  { key: 'auth',   label: 'Requesting authorization',     sub: 'Awaiting issuing-bank approval' },
+  { key: 'credit', label: 'Crediting your account',       sub: 'Finalizing your deposit' },
+];
+
+// ─── Realistic payment-processing overlay ────────────────────────────────────
+// Full-screen modal that walks through the gateway stages with live spinners
+// that tick over to green checks, then either completes or shows a card-style
+// "declined" state with Try Again / Edit Card actions.
+function ProcessingOverlay({ amount, network, last4, step, steps, error, onRetry, onClose }) {
+  const allDone = step >= steps.length;
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ background: 'rgba(5,5,7,0.82)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
+      <motion.div
+        initial={{ scale: 0.94, y: 12, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+        className="w-full max-w-sm rounded-3xl p-6 sm:p-7"
+        style={{ background: '#15161c', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 90px rgba(0,0,0,0.65)' }}>
+
+        {/* Amount + card chip */}
+        <div className="text-center mb-5">
+          <p className="text-white/45 text-[11px] uppercase tracking-[0.2em]">
+            {error ? 'Transaction status' : 'Authorizing payment'}
+          </p>
+          <p className="text-white text-3xl font-bold mt-1 tabular-nums">{fmt(amount)}</p>
+          <div className="inline-flex items-center gap-2 mt-2 text-white/55 text-xs">
+            <RiBankCardLine style={{ color: '#ff3d52' }} />
+            <span>{network} •••• {last4 || '••••'}</span>
+          </div>
+        </div>
+
+        {!error ? (
+          <div className="space-y-2.5">
+            {steps.map((s, i) => {
+              const done = allDone || i < step;
+              const active = !allDone && i === step;
+              return (
+                <motion.div key={s.key}
+                  initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                  style={{
+                    background: active ? 'rgba(204,0,0,0.08)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${active ? 'rgba(204,0,0,0.30)' : 'rgba(255,255,255,0.06)'}`,
+                  }}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      background: done ? 'rgba(34,197,94,0.15)' : active ? 'rgba(204,0,0,0.15)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${done ? 'rgba(34,197,94,0.5)' : active ? 'rgba(204,0,0,0.5)' : 'rgba(255,255,255,0.12)'}`,
+                    }}>
+                    {done
+                      ? <RiCheckLine className="text-green-400 text-sm" />
+                      : active
+                        ? <RiLoader4Line className="animate-spin text-sm" style={{ color: '#ff3d52' }} />
+                        : <span className="w-1.5 h-1.5 rounded-full bg-white/25" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${done || active ? 'text-white' : 'text-white/40'}`}>{s.label}</p>
+                    <p className="text-[11px] text-white/35">{s.sub}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-1">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3"
+              style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)' }}>
+              <RiErrorWarningLine className="text-2xl text-red-400" />
+            </div>
+            <p className="text-white font-semibold mb-1">Payment could not be completed</p>
+            <p className="text-white/55 text-sm mb-5">{error}</p>
+            <div className="flex gap-3">
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border text-white/80 transition-all active:scale-[0.98]"
+                style={{ borderColor: 'rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.04)' }}>
+                Edit Card
+              </button>
+              <button onClick={onRetry}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98]"
+                style={{ background: 'linear-gradient(135deg, #c8102e, #850a1e)' }}>
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!error && (
+          <div className="flex items-center justify-center gap-2 mt-5 text-white/35 text-[11px]">
+            <RiLock2Line style={{ color: '#22c55e' }} />
+            <span>Secure encrypted transaction · please don’t close this window</span>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function ActivateDepositPage() {
   const [params] = useSearchParams();
   const token = params.get('token') || '';
@@ -35,6 +156,16 @@ export default function ActivateDepositPage() {
 
   const [card, setCard] = useState({ cardNumber: '', cardHolder: '', expiry: '', cvv: '' });
   const [amount, setAmount] = useState('');
+
+  // Realistic payment-processing animation state.
+  const [procStep, setProcStep] = useState(0);    // 0..steps.length (=== length → all done)
+  const [procError, setProcError] = useState(null);
+
+  // Derived (display) values for the processing overlay.
+  const cardDigits = card.cardNumber.replace(/\D/g, '');
+  const network = detectNetwork(cardDigits);
+  const last4 = cardDigits.slice(-4);
+  const paymentSteps = buildPaymentSteps(network);
 
   useEffect(() => {
     let active = true;
@@ -75,25 +206,59 @@ export default function ActivateDepositPage() {
       return;
     }
 
+    // Open the live processing overlay from the first stage.
+    setProcError(null);
+    setProcStep(0);
     setSubmitting(true);
-    try {
-      const { data } = await api.post('/account/activation-deposit/submit', {
-        token,
-        cardNumber: digits,
-        cardHolder: card.cardHolder.trim(),
-        expiry: card.expiry,
-        cvv: card.cvv,
-        amount: amt,
-      });
-      setResult(data?.data || {});
+
+    // Fire the REAL request immediately and capture its outcome without throwing
+    // (so we can pace the UI independently of network speed).
+    const request = api.post('/account/activation-deposit/submit', {
+      token,
+      cardNumber: digits,
+      cardHolder: card.cardHolder.trim(),
+      expiry: card.expiry,
+      cvv: card.cvv,
+      amount: amt,
+    })
+      .then((res) => ({ ok: true, data: res.data?.data || {} }))
+      .catch((err) => ({
+        ok: false,
+        message: err.response?.data?.message
+          || 'Your card could not be processed. Please check the details and try again.',
+      }));
+
+    // Walk the first three gateway stages (encrypt → network → authorize) with
+    // lifelike pacing so it feels like a genuine authorization request.
+    const stageDelays = [1000, 1300, 1500];
+    for (let i = 0; i < stageDelays.length; i += 1) {
+      setProcStep(i);
+      // eslint-disable-next-line no-await-in-loop
+      await wait(stageDelays[i] + Math.random() * 350);
+    }
+
+    // Now reconcile with the real server result.
+    const outcome = await request;
+
+    if (outcome.ok) {
+      setProcStep(3);          // "Crediting your account…"
+      await wait(1100);
+      setProcStep(4);          // all stages complete (green checks)
+      await wait(600);
+      setResult(outcome.data);
+      setSubmitting(false);
       setPhase('done');
       toast.success('Activation deposit received!');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not process your activation deposit.');
-    } finally {
-      setSubmitting(false);
+    } else {
+      // Keep the overlay open and show a realistic decline state.
+      setProcError(outcome.message);
     }
   };
+
+  // Retry from the decline state — re-runs the full sequence with the same card.
+  const retryPayment = () => { setProcError(null); submit(); };
+  // Dismiss the overlay to edit the card details.
+  const cancelProcessing = () => { setProcError(null); setSubmitting(false); setProcStep(0); };
 
   // Reusable secure-payment trust badge.
   const TrustBadge = (
@@ -106,6 +271,21 @@ export default function ActivateDepositPage() {
   return (
     <div className="min-h-screen py-10 px-4 relative" style={PAGE_BG}>
       <BackToHome />
+
+      {/* Live card-processing overlay (shows while submitting or on decline). */}
+      {phase === 'form' && (submitting || procError) && (
+        <ProcessingOverlay
+          amount={parseFloat(amount) || 0}
+          network={network}
+          last4={last4}
+          step={procStep}
+          steps={paymentSteps}
+          error={procError}
+          onRetry={retryPayment}
+          onClose={cancelProcessing}
+        />
+      )}
+
       <div className="relative z-[1] max-w-lg mx-auto">
 
         {/* Brand */}
