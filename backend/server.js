@@ -239,6 +239,63 @@ async function ensureAccountColumns() {
   }
 }
 
+/**
+ * Idempotently add the country-specific national-ID columns to an EXISTING
+ * users table (Nepal / Bhutan / Bangladesh). Mirrors the other ensure*()
+ * helpers: only adds named columns when absent, no index changes.
+ */
+async function ensureUserColumns() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+
+  let table;
+  try {
+    table = await qi.describeTable('users');
+  } catch {
+    return; // table absent; plain sync will create it complete.
+  }
+
+  const columns = {
+    citizenship_number: { type: DataTypes.STRING(30), allowNull: true },
+    cid_number: { type: DataTypes.STRING(20), allowNull: true },
+    national_id_number: { type: DataTypes.STRING(20), allowNull: true },
+    tin_number: { type: DataTypes.STRING(20), allowNull: true },
+  };
+
+  for (const [name, def] of Object.entries(columns)) {
+    if (!table[name]) {
+      try {
+        await qi.addColumn('users', name, def);
+        logger.info(`users: added column '${name}'.`);
+      } catch (e) {
+        logger.error(`users: could not add column '${name}': ${e.message}`);
+      }
+    }
+  }
+}
+
+/**
+ * The kyc_documents.document_type column was originally a constrained ENUM. New
+ * country document types (citizenship_certificate, cid, national_id, tin) would
+ * be rejected by an existing ENUM column, so widen it to a plain STRING — the
+ * same approach used for card_requests.status. Best-effort and non-fatal.
+ */
+async function ensureKycDocumentTypeColumn() {
+  const qi = sequelize.getQueryInterface();
+  const { DataTypes } = require('sequelize');
+  try {
+    await qi.describeTable('kyc_documents');
+  } catch {
+    return; // table absent; plain sync creates it with the full model ENUM.
+  }
+  try {
+    await qi.changeColumn('kyc_documents', 'document_type', { type: DataTypes.STRING(40), allowNull: false });
+    logger.info("kyc_documents: widened 'document_type' to STRING(40).");
+  } catch (e) {
+    logger.warn(`kyc_documents: document_type widen skipped: ${e.message}`);
+  }
+}
+
 const start = async () => {
   try {
     // Guarantee the uploads tree exists before anything serves/writes to it.
@@ -308,6 +365,22 @@ const start = async () => {
     } catch (colErr) {
       logger.error(`accounts column backfill failed (non-fatal): ${colErr.message}`);
       console.error(`accounts column backfill failed (non-fatal): ${colErr.message}`);
+    }
+
+    // Country-specific national-ID columns on users (Nepal/Bhutan/Bangladesh).
+    try {
+      await ensureUserColumns();
+    } catch (colErr) {
+      logger.error(`users column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`users column backfill failed (non-fatal): ${colErr.message}`);
+    }
+
+    // Widen kyc_documents.document_type so new country doc types are accepted.
+    try {
+      await ensureKycDocumentTypeColumn();
+    } catch (colErr) {
+      logger.error(`kyc_documents column backfill failed (non-fatal): ${colErr.message}`);
+      console.error(`kyc_documents column backfill failed (non-fatal): ${colErr.message}`);
     }
 
     // Start cron jobs (KYC automated workflow, cleanup, daily limit reset).

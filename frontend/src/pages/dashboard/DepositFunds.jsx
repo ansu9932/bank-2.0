@@ -83,6 +83,7 @@ export default function DepositFunds() {
   const [netBankingOpen, setNetBankingOpen] = useState(false); // custom bank grid expanded?
   const [selectedBank, setSelectedBank] = useState(null);      // { code, name } chosen in the grid
   const [order, setOrder] = useState(null);          // { orderRef, image_url, amount }
+  const [qrImgError, setQrImgError] = useState(false); // QR image failed to load?
   const [creditedAmount, setCreditedAmount] = useState(0);
   const [newBalance, setNewBalance] = useState(null);
 
@@ -174,6 +175,7 @@ export default function DepositFunds() {
       const payload = data?.data;
       if (!payload?.image_url || !payload?.orderRef) throw new Error('Malformed QR response');
       setOrder(payload);
+      setQrImgError(false);
       setPhase('qr');
       startPolling(payload.orderRef);
     } catch (err) {
@@ -265,6 +267,7 @@ export default function DepositFunds() {
     stopPolling();
     if (redirectRef.current) { clearTimeout(redirectRef.current); redirectRef.current = null; }
     setOrder(null);
+    setQrImgError(false);
     setCheckoutMethod(null);
     setNetBankingOpen(false);
     setSelectedBank(null);
@@ -548,28 +551,31 @@ export default function DepositFunds() {
                 {order.image_url && (
                   <motion.div
                     initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                    className="relative rounded-3xl bg-white p-4"
-                    style={{ boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
-                    {/* `order.image_url` is now a base64 data URI of the Razorpay QR
-                        (the backend fetches the QR image and inlines it), so it can be
-                        rendered directly by a plain <img> with no external request. */}
-                    <div
-                      style={{
-                        width: '220px',
-                        height: '220px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        background: '#ffffff',
-                        borderRadius: '12px',
-                      }}>
-                      <img
-                        src={order.image_url}
-                        alt="UPI payment QR code"
-                        width={200}
-                        height={200}
-                        style={{ display: 'block', borderRadius: '8px', objectFit: 'contain' }}
-                      />
+                    className="relative rounded-2xl bg-white"
+                    style={{ padding: '16px', boxShadow: `0 0 40px ${CRIMSON}44, 0 18px 50px rgba(0,0,0,0.5)` }}>
+                    {/* The backend returns a CLEAN, QR-only image (it decodes the
+                        Razorpay poster and regenerates just the scannable code), so
+                        we render it straight — no cropping/scaling needed. Layout
+                        uses width:100% + height:auto so it renders reliably in every
+                        browser. The white padding is the scanner quiet zone. */}
+                    <div style={{ width: '100%', maxWidth: '230px', margin: '0 auto' }}>
+                      {qrImgError ? (
+                        <div style={{ padding: '24px 12px', textAlign: 'center' }}>
+                          <p style={{ color: '#c8102e', fontSize: '13px', fontWeight: 600 }}>
+                            Couldn’t load the QR image.
+                          </p>
+                          <p style={{ color: '#555', fontSize: '11px', marginTop: '4px' }}>
+                            Please tap “Cancel and change amount” and try again.
+                          </p>
+                        </div>
+                      ) : (
+                        <img
+                          src={order.image_url}
+                          alt="UPI payment QR code"
+                          onError={() => setQrImgError(true)}
+                          style={{ display: 'block', width: '100%', height: 'auto' }}
+                        />
+                      )}
                     </div>
                   </motion.div>
                 )}

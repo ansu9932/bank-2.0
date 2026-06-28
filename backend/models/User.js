@@ -25,6 +25,11 @@ const User = sequelize.define('User', {
   aadhaar_number: { type: DataTypes.STRING(12) },
   pan_number: { type: DataTypes.STRING(10) },
   passport_number: { type: DataTypes.STRING(20) },
+  // Country-specific national ID numbers (Nepal / Bhutan / Bangladesh).
+  citizenship_number: { type: DataTypes.STRING(30) },
+  cid_number: { type: DataTypes.STRING(20) },
+  national_id_number: { type: DataTypes.STRING(20) },
+  tin_number: { type: DataTypes.STRING(20) },
   username: { type: DataTypes.STRING(100), unique: true },
   password_hash: { type: DataTypes.STRING(255) },
   security_pin: { type: DataTypes.STRING(255) },

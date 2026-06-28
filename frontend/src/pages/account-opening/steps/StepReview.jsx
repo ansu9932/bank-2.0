@@ -1,7 +1,10 @@
 import React from 'react';
 import { RiCheckLine } from 'react-icons/ri';
+import { getDocsForCountry, getCountryByCode, formatAadhaar } from '../../../config/kycRequirements';
 
 export default function StepReview({ form }) {
+  const country = getCountryByCode(form.countryCode);
+  const docs = getDocsForCountry(form.countryCode);
   const Row = ({ label, value }) => value ? (
     <div className="flex justify-between py-2.5 border-b border-white/[0.04] last:border-0">
       <span className="text-dark-300 text-sm">{label}</span>
@@ -36,20 +39,26 @@ export default function StepReview({ form }) {
       <Section title="Address" icon="📍">
         <Row label="Address" value={`${form.addressLine1} ${form.addressLine2 || ''}`} />
         <Row label="City / State" value={`${form.city}, ${form.state}`} />
-        <Row label="PIN Code" value={form.pincode} />
-        <Row label="Country" value={form.country} />
+        <Row label={form.countryCode === 'IN' ? 'PIN Code' : 'Postal Code'} value={form.pincode} />
+        <Row label="Country" value={`${country.flag} ${country.name}`} />
       </Section>
 
       <Section title="KYC Documents" icon="📄">
-        <Row label="Aadhaar Number" value={(form.aadhaarNumber || '').replace(/(.{4})/g, '$1 ').trim()} />
-        <Row label="PAN Number" value={form.panNumber} />
-        <Row label="Passport Number" value={form.passportNumber} />
+        {docs.map((d) => {
+          if (!d.idKey) return null;
+          const raw = form[d.idKey];
+          if (!raw) return null;
+          const value = d.format === 'aadhaar' ? formatAadhaar(raw) : raw;
+          return <Row key={d.idKey} label={`${d.label} Number`} value={value} />;
+        })}
         <div className="mt-2 flex flex-wrap gap-2">
-          {Object.keys(form.files || {}).map(k => (
-            <span key={k} className="badge badge-success">
-              <RiCheckLine /> {k.replace('_', ' ')}
-            </span>
-          ))}
+          {docs
+            .filter((d) => form.files?.[d.key])
+            .map((d) => (
+              <span key={d.key} className="badge badge-success">
+                <RiCheckLine /> {d.label}
+              </span>
+            ))}
         </div>
       </Section>
 

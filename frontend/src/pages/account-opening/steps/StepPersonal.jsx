@@ -1,4 +1,6 @@
 import React from 'react';
+import CountrySelect from '../../../components/common/CountrySelect';
+import { getCountryByCode } from '../../../config/kycRequirements';
 
 const Field = ({ label, error, children, hint }) => (
   <div>
@@ -9,12 +11,15 @@ const Field = ({ label, error, children, hint }) => (
   </div>
 );
 
-export default function StepPersonal({ form, update, errors = {}, nameLocked = false }) {
+export default function StepPersonal({ form, update, errors = {}, nameLocked = false, onCountryChange }) {
   const set = (k) => (e) => update({ [k]: e.target.value });
+  const isIndia = (form.countryCode || 'IN') === 'IN';
 
-  // Digit-only handler for the mobile number, capped at 10 digits.
+  // Digit-only handler for the mobile number. India is capped at 10 digits;
+  // other countries allow up to 15 (international).
   const setPhone = (e) => {
-    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+    const max = isIndia ? 10 : 15;
+    const digits = e.target.value.replace(/\D/g, '').slice(0, max);
     update({ phone: digits });
   };
 
@@ -25,6 +30,19 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
     <div>
       <h3 className="font-display text-xl font-700 text-white mb-1">Personal Information</h3>
       <p className="text-dark-300 text-sm mb-6">Fill in your basic personal details as per government ID</p>
+
+      {/* Country selector — drives which KYC documents are required (Step 3). */}
+      <div className="mb-5">
+        <label className="form-label">Choose Country *</label>
+        <CountrySelect
+          value={form.countryCode}
+          onChange={(code) => onCountryChange?.(code)}
+          error={errors.countryCode}
+        />
+        <p className="text-dark-400 text-[11px] mt-1">
+          Your KYC document requirements are based on the country you select.
+        </p>
+      </div>
 
       {nameLocked && (
         <div className="mb-5 p-3 rounded-xl bg-green-500/10 border border-green-500/30 text-xs text-green-300 flex items-center gap-2">
@@ -52,7 +70,7 @@ export default function StepPersonal({ form, update, errors = {}, nameLocked = f
           <input className={`input-field${ring('email')}`} type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
         </Field>
         <Field label="Mobile Number *" error={errors.phone}>
-          <input className={`input-field${ring('phone')}`} type="tel" inputMode="numeric" value={form.phone} onChange={setPhone} placeholder="9876543210" maxLength={10} />
+          <input className={`input-field${ring('phone')}`} type="tel" inputMode="numeric" value={form.phone} onChange={setPhone} placeholder={isIndia ? '9876543210' : 'Mobile number'} maxLength={isIndia ? 10 : 15} />
         </Field>
         <Field label="Date of Birth *" error={errors.dateOfBirth}>
           <input className={`input-field${ring('dateOfBirth')}`} type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} max={new Date(Date.now() - 18*365*24*60*60*1000).toISOString().split('T')[0]} />
