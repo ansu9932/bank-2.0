@@ -1,6 +1,3 @@
-const sharp = require('sharp');
-const jsQR = require('jsqr');
-const QRCode = require('qrcode');
 const logger = require('./logger');
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -11,14 +8,34 @@ const logger = require('./logger');
    decode the UPI payload out of the poster and regenerate a crisp, square,
    QR-only PNG from that exact payload. The regenerated code encodes the same
    UPI string, so it scans identically — just without any branding.
+
+   IMPORTANT — boot safety:
+   `sharp` is a NATIVE module and can fail to load on some hosting platforms.
+   We therefore require it (and the other image libs) LAZILY, inside a
+   try/catch, so a load/processing failure can NEVER crash the server at
+   startup — it simply falls back to the original Razorpay image.
    ────────────────────────────────────────────────────────────────────────── */
 
 /**
  * @param {Buffer} buffer Raw bytes of the Razorpay QR poster image.
  * @returns {Promise<string|null>} A `data:image/png;base64,...` URI of a clean
- *   QR-only image, or null if the code could not be decoded (caller falls back).
+ *   QR-only image, or null if it could not be produced (caller falls back to
+ *   the original poster image).
  */
 async function cleanQrDataUriFromBuffer(buffer) {
+  let sharp;
+  let jsQR;
+  let QRCode;
+  try {
+    // Lazy, guarded requires — a missing/broken native binary won't crash boot.
+    sharp = require('sharp');
+    jsQR = require('jsqr');
+    QRCode = require('qrcode');
+  } catch (loadErr) {
+    logger?.warn?.(`QR cleaner unavailable (image libs failed to load): ${loadErr.message}`);
+    return null;
+  }
+
   try {
     // 1) Decode the poster to raw RGBA pixels for the QR reader.
     const { data, info } = await sharp(buffer)
