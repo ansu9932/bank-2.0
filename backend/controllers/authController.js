@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const { User, Account, OTP, Session, Notification } = require('../models');
 const { generateToken } = require('../middleware/auth');
-const { sendOTPEmail, sendLoginAlertEmail, sendPasswordResetEmail, sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
+const { sendOTPEmail, sendPasswordResetEmail, sendVideoKYCEmail, sendAccountApprovedEmail } = require('../services/emailService');
 const { createAuditLog } = require('../middleware/auditLogger');
 const {
   generateOTP, hashValue, getOTPExpiry, generateSecureToken,
@@ -123,13 +123,7 @@ exports.login = async (req, res) => {
     const token = generateToken(user.id, session.id);
     await session.update({ token_hash: hashValue(token) });
 
-    // Send login alert (async, don't wait)
-    sendLoginAlertEmail(user.email, user.first_name, {
-      time: new Date().toLocaleString(),
-      ip: req.ip,
-      device: detectDevice(req.headers['user-agent']),
-      location: 'Unknown',
-    }).catch(() => {});
+    // Login-detected alert email intentionally disabled (per product decision).
 
     await createAuditLog({
       userId: user.id,
