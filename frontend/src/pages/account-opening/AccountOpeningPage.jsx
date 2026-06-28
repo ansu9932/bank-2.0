@@ -238,6 +238,12 @@ export default function AccountOpeningPage() {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        // Document uploads can be several MB. The global 30s axios timeout is
+        // fine for JSON calls but too short for a multi-MB multipart upload on
+        // a slow/remote network — it aborted client-side (ECONNABORTED) and
+        // surfaced as a generic "Submission failed". Give the upload a generous
+        // 3-minute window so it completes reliably on weaker connections.
+        timeout: 180000,
       });
       setCustomerId(data.data.customerId);
       setSubmitted(true);
@@ -245,7 +251,20 @@ export default function AccountOpeningPage() {
       // screen so the exit guard does not redirect the user to the homepage.
       allowNavigation();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Submission failed. Please try again.');
+      // Distinguish a real server rejection (has a response body) from a
+      // network/timeout failure (no response) so the user gets actionable
+      // guidance instead of a vague message.
+      let msg = err.response?.data?.message;
+      if (!msg) {
+        if (err.code === 'ECONNABORTED') {
+          msg = 'The upload timed out — your network looks slow. Please retry on a more stable connection.';
+        } else if (!err.response) {
+          msg = 'Network error while submitting. Please check your internet connection and try again.';
+        } else {
+          msg = 'Submission failed. Please try again.';
+        }
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
