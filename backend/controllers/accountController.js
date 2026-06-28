@@ -137,23 +137,6 @@ exports.openAccount = async (req, res) => {
     // SKIP writing a KYCDocument row per file: on a slow database those repeated
     // inserts were causing the account submission to time out / fail. The user
     // record (created above) is saved as usual, so onboarding completes reliably.
-    const docTypeMap = {
-      aadhaar: 'aadhaar',
-      pan: 'pan',
-      citizenship_certificate: 'citizenship_certificate',
-      cid: 'cid',
-      national_id: 'national_id',
-      tin: 'tin',
-      passport: 'passport',
-      selfie: 'selfie',
-      signature: 'signature',
-      address_proof: 'address_proof',
-    };
-
-    // NOTE: Document database persistence is intentionally disabled (see above).
-    // Files are still uploaded to the server; they are simply not recorded in
-    // the kyc_documents table to avoid slow-DB submission failures.
-    void docTypeMap;
 
     // Send review email — NON-FATAL. An SMTP hiccup must not roll back a
     // successfully-created account into a 500; log it and continue.
